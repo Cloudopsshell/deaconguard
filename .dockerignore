@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+.goreleaser.yaml
+charts
+dist
+tests
+README.md
+LICENSE
+opsarmor

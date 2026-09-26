@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oval_definitions xmlns="http://oval.mitre.org/XMLSchema/oval-definitions-5" xmlns:linux-def="http://oval.mitre.org/XMLSchema/oval-definitions-5#linux">
+  <definitions>
+    <definition id="oval:com.ubuntu.noble:def:100" class="inventory" version="1">
+      <metadata><title>Ubuntu 24.04 LTS (noble)</title></metadata>
+      <criteria><criterion test_ref="oval:com.ubuntu.noble:tst:100" comment="Ubuntu is installed" /></criteria>
+    </definition>
+    <definition id="oval:com.ubuntu.noble:def:20223602" class="vulnerability" version="1">
+      <metadata>
+        <title>OpenSSL vulnerabilities</title>
+        <reference source="CVE" ref_id="CVE-2022-3602" ref_url="https://ubuntu.com/security/CVE-2022-3602" />
+        <advisory><cve priority="high" cvss_severity="HIGH">CVE-2022-3602</cve></advisory>
+      </metadata>
+      <criteria operator="AND">
+        <extend_definition definition_ref="oval:com.ubuntu.noble:def:100" applicability_check="true" comment="Ubuntu 24.04 is installed" />
+        <criteria operator="OR"><criterion test_ref="oval:com.ubuntu.noble:tst:20223602" comment="openssl is below its fixed version" /></criteria>
+      </criteria>
+    </definition>
+  </definitions>
+  <tests>
+    <linux-def:dpkginfo_test id="oval:com.ubuntu.noble:tst:20223602" version="1" check="at least one" check_existence="at_least_one_exists">
+      <linux-def:object object_ref="oval:com.ubuntu.noble:obj:20223602" />
+      <linux-def:state state_ref="oval:com.ubuntu.noble:ste:20223602" />
+    </linux-def:dpkginfo_test>
+  </tests>
+  <objects>
+    <linux-def:dpkginfo_object id="oval:com.ubuntu.noble:obj:20223602" version="1">
+      <linux-def:name var_ref="oval:com.ubuntu.noble:var:20223602" var_check="at least one" />
+    </linux-def:dpkginfo_object>
+  </objects>
+  <states>
+    <linux-def:dpkginfo_state id="oval:com.ubuntu.noble:ste:20223602" version="1">
+      <linux-def:evr datatype="debian_evr_string" operation="less than">3.0.2-0ubuntu1.7</linux-def:evr>
+    </linux-def:dpkginfo_state>
+  </states>
+  <variables>
+    <constant_variable id="oval:com.ubuntu.noble:var:20223602" version="1" datatype="string">
+      <value>openssl</value>
+    </constant_variable>
+  </variables>
+</oval_definitions>
