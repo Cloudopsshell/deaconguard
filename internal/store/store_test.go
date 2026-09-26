@@ -39,9 +39,9 @@ func TestHostProfilesRoundTripWithPrivatePermissions(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, host) {
 		t.Fatalf("GetHost() = %+v, %v; want %+v", got, err, host)
 	}
-	info, err := os.Stat(filepath.Join(directory, "hosts.json"))
+	info, err := os.Stat(filepath.Join(directory, "opsarmor.db"))
 	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("hosts.json permissions = %v, %v; want 0600", info, err)
+		t.Fatalf("opsarmor.db permissions = %v, %v; want 0600", info, err)
 	}
 }
 
