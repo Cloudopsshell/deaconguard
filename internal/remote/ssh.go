@@ -13,9 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
-	"golang.org/x/term"
 
 	"opsarmor/internal/platform"
 	"opsarmor/internal/store"
@@ -61,74 +59,81 @@ func (buffer *limitedBuffer) Write(value []byte) (int, error) {
 	return buffer.buffer.Write(value)
 }
 
-func Collect(host store.Host) (Inventory, error) {
-	methods, cleanup, err := authenticationMethods(host)
-	if err != nil {
-		return Inventory{}, err
-	}
-	defer cleanup()
-	return collectWithAuth(host, methods)
+// Session is an authenticated connection to a registered host. Callers run
+// only fixed, read-only commands defined in OpsArmor's source.
+type Session struct {
+	client   *ssh.Client
+	host     store.Host
+	observer CommandObserver
 }
 
-func CollectWithTrust(host store.Host, confirm func(*UnknownHostKey) (bool, error)) (Inventory, error) {
-	methods, cleanup, err := authenticationMethods(host)
-	if err != nil {
-		return Inventory{}, err
-	}
-	defer cleanup()
-	for {
-		inventory, err := collectWithAuth(host, methods)
-		var unknownKey *UnknownHostKey
-		if !errors.As(err, &unknownKey) {
-			return inventory, err
-		}
-		if confirm == nil {
-			return Inventory{}, unknownKey
-		}
-		accepted, err := confirm(unknownKey)
-		if err != nil {
-			return Inventory{}, err
-		}
-		if !accepted {
-			return Inventory{}, fmt.Errorf("SSH host key was not trusted; scan cancelled")
-		}
-		if err := store.TrustHostKey(host, unknownKey.KnownHostsLine); err != nil {
-			return Inventory{}, err
-		}
-	}
+// CommandObserver is told about every command a session runs, for live
+// progress. It never receives command input, which can hold a sudo password.
+type CommandObserver interface {
+	CommandStarted(command string)
+	CommandFinished(command string, outputBytes int, elapsed time.Duration, err error)
 }
 
-func collectWithAuth(host store.Host, methods []ssh.AuthMethod) (Inventory, error) {
-	client, err := connect(host, methods)
+// Observe reports every later command on this session to observer.
+func (s *Session) Observe(observer CommandObserver) { s.observer = observer }
+
+func (s *Session) Host() store.Host { return s.host }
+
+func (s *Session) Close() error { return s.client.Close() }
+
+// Run executes command, feeding stdin if it is not nil, and returns at most
+// limit bytes of output. Output read before a non-zero exit is returned
+// alongside the error, which wraps *ssh.ExitError.
+func (s *Session) Run(command string, stdin []byte, limit int, timeout time.Duration) ([]byte, error) {
+	if s.observer == nil {
+		return run(s.client, command, stdin, limit, timeout)
+	}
+	s.observer.CommandStarted(command)
+	started := time.Now()
+	output, err := run(s.client, command, stdin, limit, timeout)
+	s.observer.CommandFinished(command, len(output), time.Since(started), err)
+	return output, err
+}
+
+// OSRelease reads /etc/os-release.
+func (s *Session) OSRelease() (string, error) {
+	osRelease, err := s.Run("cat /etc/os-release", nil, maxOSReleaseBytes, commandTimeout)
+	if err != nil {
+		return "", fmt.Errorf("read /etc/os-release on %s: %w", s.host.Address, err)
+	}
+	return string(osRelease), nil
+}
+
+// Inventory collects the OS release, installed packages, and running kernel.
+func (s *Session) Inventory() (Inventory, error) {
+	host := s.host
+	osRelease, err := s.OSRelease()
 	if err != nil {
 		return Inventory{}, err
 	}
-	defer client.Close()
-
-	osRelease, err := run(client, "cat /etc/os-release", maxOSReleaseBytes)
 	if err != nil {
 		return Inventory{}, fmt.Errorf("read /etc/os-release on %s: %w", host.Address, err)
 	}
-	target, err := platform.Detect(string(osRelease))
+	target, err := platform.Detect(osRelease)
 	if err != nil {
 		return Inventory{}, err
 	}
-	inventory := Inventory{OSRelease: string(osRelease)}
+	inventory := Inventory{OSRelease: osRelease}
 	if target.Family == platform.Ubuntu || target.Family == platform.Debian {
-		packages, err := run(client, "head -c 33554433 /var/lib/dpkg/status", maxPackageBytes)
+		packages, err := s.Run("head -c 33554433 /var/lib/dpkg/status", nil, maxPackageBytes, commandTimeout)
 		if err != nil {
 			return Inventory{}, fmt.Errorf("read /var/lib/dpkg/status on %s: %w", host.Address, err)
 		}
 		inventory.DPKGStatus = string(packages)
 	} else {
 		query := "rpm -qa --qf '%{NAME}\\t%{EPOCHNUM}\\t%{VERSION}\\t%{RELEASE}\\t%{SOURCERPM}\\t%{ARCH}\\n'"
-		packages, err := run(client, query, maxPackageBytes)
+		packages, err := s.Run(query, nil, maxPackageBytes, commandTimeout)
 		if err != nil {
 			return Inventory{}, fmt.Errorf("collect installed RPM inventory on %s: %w", host.Address, err)
 		}
 		inventory.RPMQuery = string(packages)
 	}
-	kernel, err := run(client, "uname -r", 256)
+	kernel, err := s.Run("uname -r", nil, 256, commandTimeout)
 	if err != nil {
 		return Inventory{}, fmt.Errorf("read running kernel on %s: %w", host.Address, err)
 	}
@@ -167,8 +172,9 @@ func connect(host store.Host, methods []ssh.AuthMethod) (*ssh.Client, error) {
 		if errors.As(err, &keyError) {
 			return nil, fmt.Errorf("SSH host key changed for %s; refusing to replace the trusted key", host.Address)
 		}
-		if strings.Contains(strings.ToLower(err.Error()), "unable to authenticate") {
-			return nil, fmt.Errorf("SSH authentication failed for %s@%s; check the username, key authorization, and key passphrase", host.Username, host.Address)
+		if strings.Contains(strings.ToLower(err.Error()), "unable to authenticate") || errors.Is(err, errPasswordOffered) {
+			return nil, fmt.Errorf("%w for %s@%s; check the username and that the key or password is authorized",
+				ErrAuthenticationFailed, host.Username, host.Address)
 		}
 		return nil, fmt.Errorf("SSH handshake with %s failed: %w", host.Address, err)
 	}
@@ -221,75 +227,6 @@ func hostKeyCallback(host store.Host) (ssh.HostKeyCallback, error) {
 	}, nil
 }
 
-func authenticationMethods(host store.Host) ([]ssh.AuthMethod, func(), error) {
-	methods := make([]ssh.AuthMethod, 0, 4)
-	cleanup := func() {}
-	if host.KeyPath != nil && *host.KeyPath != "" {
-		path := expandHome(*host.KeyPath)
-		keyData, err := os.ReadFile(path)
-		if err != nil {
-			return nil, cleanup, fmt.Errorf("read SSH key %s: %w", path, err)
-		}
-		signer, err := ssh.ParsePrivateKey(keyData)
-		if err != nil {
-			var missingPassphrase *ssh.PassphraseMissingError
-			if !errors.As(err, &missingPassphrase) {
-				return nil, cleanup, fmt.Errorf("parse SSH key %s: %w", path, err)
-			}
-			if !term.IsTerminal(int(os.Stdin.Fd())) {
-				return nil, cleanup, fmt.Errorf("encrypted SSH key requires an interactive passphrase prompt or an SSH agent")
-			}
-			fmt.Fprintf(os.Stderr, "Enter passphrase for key '%s': ", path)
-			passphrase, readErr := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Fprintln(os.Stderr)
-			if readErr != nil {
-				return nil, cleanup, fmt.Errorf("read SSH key passphrase: %w", readErr)
-			}
-			signer, err = ssh.ParsePrivateKeyWithPassphrase(keyData, passphrase)
-			for index := range passphrase {
-				passphrase[index] = 0
-			}
-			if err != nil {
-				return nil, cleanup, fmt.Errorf("decrypt SSH key %s: %w", path, err)
-			}
-		}
-		methods = append(methods, ssh.PublicKeys(signer))
-	} else {
-		methods = append(methods, defaultKeyMethods()...)
-	}
-	if socket := os.Getenv("SSH_AUTH_SOCK"); socket != "" {
-		connection, err := net.Dial("unix", socket)
-		if err == nil {
-			client := agent.NewClient(connection)
-			methods = append(methods, ssh.PublicKeysCallback(client.Signers))
-			cleanup = func() { connection.Close() }
-		}
-	}
-	if len(methods) == 0 {
-		return nil, cleanup, fmt.Errorf("no SSH key or agent identity is available")
-	}
-	return methods, cleanup, nil
-}
-
-func defaultKeyMethods() []ssh.AuthMethod {
-	currentUser, err := user.Current()
-	if err != nil {
-		return nil
-	}
-	methods := make([]ssh.AuthMethod, 0, 3)
-	for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
-		contents, err := os.ReadFile(filepath.Join(currentUser.HomeDir, ".ssh", name))
-		if err != nil {
-			continue
-		}
-		signer, err := ssh.ParsePrivateKey(contents)
-		if err == nil {
-			methods = append(methods, ssh.PublicKeys(signer))
-		}
-	}
-	return methods
-}
-
 func expandHome(path string) string {
 	if path == "~" || strings.HasPrefix(path, "~/") {
 		if currentUser, err := user.Current(); err == nil {
@@ -299,12 +236,15 @@ func expandHome(path string) string {
 	return path
 }
 
-func run(client *ssh.Client, command string, limit int) ([]byte, error) {
+func run(client *ssh.Client, command string, stdin []byte, limit int, timeout time.Duration) ([]byte, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return nil, err
 	}
 	defer session.Close()
+	if stdin != nil {
+		session.Stdin = bytes.NewReader(stdin)
+	}
 	stdout := &limitedBuffer{limit: limit}
 	stderr := &limitedBuffer{limit: maxStderrBytes}
 	session.Stdout = stdout
@@ -323,9 +263,9 @@ func run(client *ssh.Client, command string, limit int) ([]byte, error) {
 			return stdout.Bytes(), err
 		}
 		return stdout.Bytes(), nil
-	case <-time.After(commandTimeout):
+	case <-time.After(timeout):
 		_ = session.Close()
-		return nil, fmt.Errorf("command timed out after %s", commandTimeout)
+		return nil, fmt.Errorf("command timed out after %s", timeout)
 	}
 }
 

@@ -2,18 +2,27 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
 
+	"opsarmor/internal/checks"
 	"opsarmor/internal/remote"
-	"opsarmor/internal/scanner"
+	"opsarmor/internal/scan"
+	"opsarmor/internal/server"
 	"opsarmor/internal/store"
+	"opsarmor/web"
 )
 
 func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int {
@@ -38,6 +47,8 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runScan(arguments[1:], input, output, diagnostics)
 	case "report":
 		err = runReport(arguments[1:], output)
+	case "serve":
+		err = runServe(arguments[1:], output)
 	case "help", "--help", "-h":
 		usage(output)
 		return 0
@@ -53,11 +64,20 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 
 func runHost(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("host requires add, list, or remove")
+		return fmt.Errorf("host requires add, list, sudo, or remove")
 	}
 	switch arguments[0] {
 	case "add":
-		address, username, port, keyPath, err := parseHostAdd(arguments[1:])
+		allowSudo := false
+		addArguments := make([]string, 0, len(arguments))
+		for _, argument := range arguments[1:] {
+			if argument == "--allow-sudo" {
+				allowSudo = true
+				continue
+			}
+			addArguments = append(addArguments, argument)
+		}
+		address, username, port, keyPath, err := parseHostAdd(addArguments)
 		if err != nil {
 			return err
 		}
@@ -65,7 +85,21 @@ func runHost(arguments []string, output io.Writer) error {
 		if err != nil {
 			return err
 		}
+		if allowSudo {
+			if host, err = store.SetAllowSudo(host.ID, true); err != nil {
+				return err
+			}
+		}
 		fmt.Fprintf(output, "Added %s (%s)\n", host.Address, host.ID)
+	case "sudo":
+		if len(arguments) != 3 || (arguments[2] != "on" && arguments[2] != "off") {
+			return fmt.Errorf("usage: opsarmor host sudo HOST_ID on|off")
+		}
+		host, err := store.SetAllowSudo(arguments[1], arguments[2] == "on")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(output, "Sudo for deeper checks on %s: %s\n", host.Address, arguments[2])
 	case "list":
 		hosts, err := store.ListHosts()
 		if err != nil {
@@ -76,7 +110,11 @@ func runHost(arguments []string, output io.Writer) error {
 			return nil
 		}
 		for _, host := range hosts {
-			fmt.Fprintf(output, "%s  %s@%s:%d\n", host.ID, host.Username, host.Address, host.Port)
+			sudo := ""
+			if host.AllowSudo {
+				sudo = "  (sudo allowed)"
+			}
+			fmt.Fprintf(output, "%s  %s@%s:%d%s\n", host.ID, host.Username, host.Address, host.Port, sudo)
 		}
 	case "remove":
 		if len(arguments) != 2 {
@@ -134,7 +172,24 @@ func parseHostAdd(arguments []string) (string, string, int, *string, error) {
 }
 
 func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer) error {
-	hostID, asJSON, err := parseIDAndJSON(arguments, "scan")
+	selected := []string{checks.Packages}
+	remaining := make([]string, 0, len(arguments))
+	for index := 0; index < len(arguments); index++ {
+		if arguments[index] != "--checks" {
+			remaining = append(remaining, arguments[index])
+			continue
+		}
+		if index+1 >= len(arguments) {
+			return fmt.Errorf("--checks requires a comma-separated list such as packages,integrity,malware,config,antivirus")
+		}
+		index++
+		selected = strings.Split(arguments[index], ",")
+	}
+	selected, err := checks.Normalize(selected)
+	if err != nil {
+		return err
+	}
+	hostID, asJSON, err := parseIDAndJSON(remaining, "scan")
 	if err != nil {
 		return err
 	}
@@ -142,7 +197,7 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 	if err != nil {
 		return err
 	}
-	inventory, err := remote.CollectWithTrust(host, func(unknownKey *remote.UnknownHostKey) (bool, error) {
+	confirm := func(unknownKey *remote.UnknownHostKey) (bool, error) {
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
 			return false, fmt.Errorf("%s; compare this fingerprint with AWS or another trusted source, then rerun in a terminal", unknownKey)
 		}
@@ -155,14 +210,16 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			return false, fmt.Errorf("read host-key confirmation: %w", readErr)
 		}
 		return strings.TrimSpace(answer) == "trust", nil
+	}
+	report, err := scan.Run(host, selected, scan.Options{
+		Remote:       remote.TerminalOptions(host, confirm),
+		SudoPassword: remote.TerminalSecret(fmt.Sprintf("[sudo] password for %s on %s: ", host.Username, host.Address)),
 	})
 	if err != nil {
 		return err
 	}
-	report, err := scanner.Scan(inventory.OSRelease, inventory.DPKGStatus, inventory.RPMQuery, inventory.Kernel, nil, time.Now().UTC())
-	if err != nil {
-		return err
-	}
+	// Round-trip through JSON so the saved and printed report match what
+	// `opsarmor report` later reads back.
 	encoded, err := json.Marshal(report)
 	if err != nil {
 		return err
@@ -171,8 +228,6 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 	if err := json.Unmarshal(encoded, &payload); err != nil {
 		return err
 	}
-	payload["host_id"] = host.ID
-	payload["address"] = host.Address
 	saved, err := store.SaveReport(payload)
 	if err != nil {
 		return err
@@ -220,8 +275,12 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(report)
 	}
-	fmt.Fprintf(output, "Report: %v\nHost: %v (%v)\n", report["report_id"], report["address"], report["os"])
-	fmt.Fprintf(output, "Scanned: %v\nFindings: %v\n", report["scanned_at"], report["finding_count"])
+	fmt.Fprintf(output, "Report: %v\nHost: %v (%v)\nScanned: %v\n", report["report_id"], report["address"], report["os"], report["scanned_at"])
+	showCheckResults(report, output)
+	if _, packages := report["finding_count"]; !packages {
+		return nil
+	}
+	fmt.Fprintf(output, "\nPackage vulnerabilities: %v findings\n", report["finding_count"])
 	fmt.Fprintf(output, "Coverage: %v\nMaintenance: %v\n", report["coverage"], report["maintenance"])
 	if database, ok := report["advisory_database"].(map[string]any); ok {
 		freshness := "current"
@@ -255,13 +314,90 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 	return nil
 }
 
+const defaultListen = "127.0.0.1:7480"
+
+func runServe(arguments []string, output io.Writer) error {
+	listen := defaultListen
+	for index := 0; index < len(arguments); index++ {
+		if arguments[index] != "--listen" || index+1 >= len(arguments) {
+			return fmt.Errorf("usage: opsarmor serve [--listen 127.0.0.1:PORT]")
+		}
+		index++
+		listen = arguments[index]
+	}
+	if !server.IsLoopback(listen) {
+		return fmt.Errorf("the web UI only listens on a loopback address such as %s", defaultListen)
+	}
+	handler, err := server.New(web.Files(), nil)
+	if err != nil {
+		return err
+	}
+	listener, err := net.Listen("tcp", listen)
+	if err != nil {
+		return err
+	}
+	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		// Restore default signal handling so a second Ctrl+C exits at once.
+		stop()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		httpServer.Shutdown(shutdown)
+	}()
+	fmt.Fprintf(output, "OpsArmor web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", listener.Addr(), store.DatabasePath())
+	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	fmt.Fprintln(output, "Waiting for running scans to finish (press Ctrl+C again to quit now)...")
+	handler.Close()
+	return nil
+}
+
+func showCheckResults(report map[string]any, output io.Writer) {
+	results, ok := report["check_results"].(map[string]any)
+	if !ok {
+		return
+	}
+	for _, definition := range checks.Definitions() {
+		result, ok := results[definition.ID].(map[string]any)
+		if !ok {
+			continue
+		}
+		access := "without sudo"
+		if privileged, _ := result["privileged"].(bool); privileged {
+			access = "with sudo"
+		}
+		fmt.Fprintf(output, "\n%s: %v (%s) - %v\n", definition.Name, result["status"], access, result["summary"])
+		if message, _ := result["error"].(string); message != "" {
+			fmt.Fprintf(output, "  ERROR %s\n", message)
+		}
+		if findings, ok := result["findings"].([]any); ok {
+			for _, value := range findings {
+				if finding, ok := value.(map[string]any); ok {
+					fmt.Fprintf(output, "  %-8v %v: %v\n", finding["severity"], finding["title"], finding["evidence"])
+				}
+			}
+		}
+		if notes, ok := result["notes"].([]any); ok {
+			for _, note := range notes {
+				fmt.Fprintf(output, "  note: %v\n", note)
+			}
+		}
+	}
+}
+
 func usage(output io.Writer) {
 	fmt.Fprintln(output, `OpsArmor scans registered Linux hosts over SSH using Go.
 
 Commands:
-  opsarmor host add ADDRESS --username USER [--port PORT] [--key-path PATH]
+  opsarmor host add ADDRESS --username USER [--port PORT] [--key-path PATH] [--allow-sudo]
   opsarmor host list
+  opsarmor host sudo HOST_ID on|off
   opsarmor host remove HOST_ID
-  opsarmor scan HOST_ID [--json]
-  opsarmor report REPORT_ID [--json]`)
+  opsarmor scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
+  opsarmor report REPORT_ID [--json]
+  opsarmor serve [--listen 127.0.0.1:PORT]   web UI, default http://127.0.0.1:7480`)
 }
