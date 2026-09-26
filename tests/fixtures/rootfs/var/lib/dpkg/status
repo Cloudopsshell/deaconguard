@@ -1,0 +1,11 @@
+Package: openssl
+Status: install ok installed
+Priority: optional
+Section: utils
+Installed-Size: 2286
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Architecture: amd64
+Source: openssl
+Version: 3.0.2-0ubuntu1
+Description: Secure Sockets Layer toolkit - cryptographic utility
+ This package is part of the OpenSSL project's implementation of the SSL and TLS cryptographic protocols for secure communication over the Internet.

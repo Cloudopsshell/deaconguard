@@ -1,0 +1,72 @@
+version: 2
+project_name: opsarmor
+
+builds:
+  - id: opsarmor
+    main: ./cmd/opsarmor
+    binary: opsarmor
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: linux
+    ids:
+      - opsarmor
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+
+nfpms:
+  - id: linux-packages
+    package_name: opsarmor
+    ids:
+      - opsarmor
+    vendor: CloudOpsShell
+    homepage: https://github.com/Cloudopsshell/OpsArmor
+    maintainer: CloudOpsShell <opensource@cloudopsshell.com>
+    description: Agentless Linux package vulnerability scanner
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: README.md
+        dst: /usr/share/doc/opsarmor/README.md
+        type: doc
+      - src: LICENSE
+        dst: /usr/share/doc/opsarmor/copyright
+        type: doc
+    deb:
+      lintian_overrides:
+        - statically-linked-binary
+    rpm:
+      summary: Agentless Linux package vulnerability scanner
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: Cloudopsshell
+    name: OpsArmor
