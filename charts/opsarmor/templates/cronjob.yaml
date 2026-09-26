@@ -1,0 +1,83 @@
+{{- if .Values.scan.schedule }}
+{{- range .Values.hosts }}
+{{- $root := $ }}
+{{- $hostName := include "opsarmor.safeHostID" .id }}
+{{- $releaseName := include "opsarmor.fullname" $root | trunc 13 | trimSuffix "-" }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ printf "%s-%s" $releaseName $hostName | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "opsarmor.labels" $root | nindent 4 }}
+    opsarmor.cloudopsshell.com/host-id: {{ .id | quote }}
+spec:
+  schedule: {{ $root.Values.scan.schedule | quote }}
+  concurrencyPolicy: {{ $root.Values.scan.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ $root.Values.scan.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ $root.Values.scan.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $root.Values.scan.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $root.Values.scan.backoffLimit }}
+      activeDeadlineSeconds: {{ $root.Values.scan.activeDeadlineSeconds }}
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            {{- include "opsarmor.labels" $root | nindent 12 }}
+            opsarmor.cloudopsshell.com/host-id: {{ .id | quote }}
+        spec:
+          restartPolicy: Never
+          securityContext:
+            {{- toYaml $root.Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: opsarmor
+              image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag | default (printf "v%s" $root.Chart.AppVersion) }}"
+              imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+              args:
+                - scan
+                - {{ .id | quote }}
+              env:
+                - name: OPSARMOR_HOME
+                  value: /data
+              securityContext:
+                {{- toYaml $root.Values.containerSecurityContext | nindent 16 }}
+              resources:
+                {{- toYaml $root.Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: profile
+                  mountPath: /data/hosts.json
+                  subPath: hosts.json
+                  readOnly: true
+                - name: profile
+                  mountPath: /home/nonroot/.ssh/known_hosts
+                  subPath: known_hosts
+                  readOnly: true
+                - name: ssh-keys
+                  mountPath: /ssh-keys
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              {{- if $root.Values.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ printf "%s-%s-data" $releaseName $hostName | trunc 63 | trimSuffix "-" }}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+            - name: profile
+              configMap:
+                name: {{ include "opsarmor.fullname" $root }}-config
+                defaultMode: 0444
+            - name: ssh-keys
+              secret:
+                secretName: {{ $root.Values.ssh.existingSecret }}
+                defaultMode: 0440
+            - name: tmp
+              emptyDir: {}
+---
+{{- end }}
+{{- end }}

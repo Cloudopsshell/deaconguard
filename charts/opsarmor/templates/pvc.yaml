@@ -1,0 +1,23 @@
+{{- if and .Values.scan.schedule .Values.persistence.enabled }}
+{{- range .Values.hosts }}
+{{- $root := $ }}
+{{- $hostName := include "opsarmor.safeHostID" .id }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-%s-data" (include "opsarmor.fullname" $root | trunc 13 | trimSuffix "-") $hostName | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "opsarmor.labels" $root | nindent 4 }}
+    opsarmor.cloudopsshell.com/host-id: {{ .id | quote }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with $root.Values.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $root.Values.persistence.size }}
+---
+{{- end }}
+{{- end }}
