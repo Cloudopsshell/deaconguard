@@ -1,6 +1,10 @@
 version: 2
 project_name: opsarmor
 
+before:
+  hooks:
+    - sh -c "cd web && npm ci && npm run build"
+
 builds:
   - id: opsarmor
     main: ./cmd/opsarmor

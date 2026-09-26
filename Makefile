@@ -1,8 +1,15 @@
 IMAGE ?= opsarmor:dev
 
-.PHONY: build test vet release-snapshot docker-build helm-lint helm-template clean
+.PHONY: ui ui-dev build test vet release-snapshot docker-build helm-lint helm-template clean
 
-build:
+ui:
+	cd web && npm ci && npm run build
+
+# Runs the React dev server on :5173 with hot reload; start `./opsarmor serve` alongside it.
+ui-dev:
+	cd web && npm run dev
+
+build: ui
 	go build -trimpath -ldflags="-s -w" -o opsarmor ./cmd/opsarmor
 
 test:
