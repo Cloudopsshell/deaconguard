@@ -24,6 +24,7 @@ type Report struct {
 	AdvisoryDatabase advisory.FeedMetadata  `json:"advisory_database"`
 	Maintenance      string                 `json:"maintenance"`
 	PackageManager   string                 `json:"package_manager"`
+	PackageCount     int                    `json:"package_count"`
 	Evaluator        string                 `json:"evaluator"`
 }
 
@@ -88,7 +89,7 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 		return Report{}, fmt.Errorf("scan %s %s advisory data: %w", target.Family, target.VersionID, err)
 	}
 	return Report{
-		OS:               platformName(target),
+		OS:               PlatformName(target),
 		ScannedAt:        now.UTC().Format(time.RFC3339),
 		FindingCount:     len(evaluation.Findings),
 		Findings:         evaluation.Findings,
@@ -99,10 +100,12 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 		Maintenance:      maintenance(target),
 		PackageManager:   packageManager,
 		Evaluator:        "OpsArmor Go scanner",
+		PackageCount:     len(packages),
 	}, nil
 }
 
-func platformName(target platform.Platform) string {
+// PlatformName is the display name of a detected platform, such as "Ubuntu 24.04 LTS".
+func PlatformName(target platform.Platform) string {
 	switch target.Family {
 	case platform.Ubuntu:
 		return "Ubuntu " + target.VersionID + " LTS"
