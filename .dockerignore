@@ -3,8 +3,10 @@
 .gitignore
 .goreleaser.yaml
 charts
-dist
+/dist
 tests
 README.md
 LICENSE
 opsarmor
+web/node_modules
+web/dist
