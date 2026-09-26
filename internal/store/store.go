@@ -2,12 +2,18 @@ package store
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 type Host struct {
@@ -16,7 +22,16 @@ type Host struct {
 	Username string  `json:"username"`
 	Port     int     `json:"port"`
 	KeyPath  *string `json:"key_path"`
+	// AllowSudo lets deeper checks run fixed read-only commands through sudo.
+	AllowSudo bool `json:"allow_sudo"`
 }
+
+const databaseName = "opsarmor.db"
+
+var (
+	databasesMu sync.Mutex
+	databases   = make(map[string]*sql.DB)
+)
 
 func DataDir() string {
 	if configured := os.Getenv("OPSARMOR_HOME"); configured != "" {
@@ -31,20 +46,280 @@ func DataDir() string {
 
 func KnownHostsPath() string { return filepath.Join(DataDir(), "known_hosts") }
 
-func ListHosts() ([]Host, error) {
-	path := filepath.Join(DataDir(), "hosts.json")
-	contents, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return []Host{}, nil
+func DatabasePath() string { return filepath.Join(DataDir(), databaseName) }
+
+// database returns a shared connection for the current data directory, creating
+// the schema and importing JSON profiles and reports from earlier releases once.
+func database() (*sql.DB, error) {
+	path := DatabasePath()
+	databasesMu.Lock()
+	defer databasesMu.Unlock()
+	if db, ok := databases[path]; ok {
+		return db, nil
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	// SQLite gives the WAL and shared-memory files the database file's mode,
+	// so creating it owner-only first keeps all three private.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	var hosts []Host
-	if err := json.Unmarshal(contents, &hosts); err != nil {
-		return nil, fmt.Errorf("read host profiles: %w", err)
+	if err := file.Close(); err != nil {
+		return nil, err
 	}
-	return hosts, nil
+	if err := os.Chmod(path, 0o600); err != nil {
+		return nil, err
+	}
+	dsn := "file:" + filepath.ToSlash(path) +
+		"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("prepare OpsArmor database: %w", err)
+	}
+	if err := importLegacy(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("import earlier OpsArmor data: %w", err)
+	}
+	databases[path] = db
+	return db, nil
+}
+
+func migrate(db *sql.DB) error {
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	if version < 1 {
+		if _, err := db.Exec(schemaV1); err != nil {
+			return err
+		}
+	}
+	if version < 2 {
+		if err := execInTx(db, schemaV2); err != nil {
+			return err
+		}
+	}
+	if version < 3 {
+		if err := execInTx(db, schemaV3); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func execInTx(db *sql.DB, statements string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(statements); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+const schemaV1 = `
+CREATE TABLE IF NOT EXISTS meta (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hosts (
+	id         TEXT PRIMARY KEY,
+	address    TEXT NOT NULL,
+	username   TEXT NOT NULL,
+	port       INTEGER NOT NULL,
+	key_path   TEXT,
+	created_at TEXT NOT NULL
+);
+-- Scans keep host_id and address without a foreign key so reports survive host removal.
+CREATE TABLE IF NOT EXISTS scans (
+	id                   TEXT PRIMARY KEY,
+	host_id              TEXT NOT NULL,
+	address              TEXT NOT NULL,
+	status               TEXT NOT NULL,
+	error                TEXT NOT NULL DEFAULT '',
+	host_key_fingerprint TEXT NOT NULL DEFAULT '',
+	started_at           TEXT NOT NULL,
+	finished_at          TEXT,
+	os                   TEXT NOT NULL DEFAULT '',
+	finding_count        INTEGER NOT NULL DEFAULT 0,
+	unsupported_count    INTEGER NOT NULL DEFAULT 0,
+	critical             INTEGER NOT NULL DEFAULT 0,
+	high                 INTEGER NOT NULL DEFAULT 0,
+	medium               INTEGER NOT NULL DEFAULT 0,
+	low                  INTEGER NOT NULL DEFAULT 0,
+	unknown              INTEGER NOT NULL DEFAULT 0,
+	feed_stale           INTEGER NOT NULL DEFAULT 0,
+	report_json          TEXT
+);
+CREATE INDEX IF NOT EXISTS scans_by_host ON scans (host_id, started_at DESC);
+CREATE TABLE IF NOT EXISTS findings (
+	scan_id           TEXT NOT NULL REFERENCES scans (id) ON DELETE CASCADE,
+	cve               TEXT NOT NULL,
+	package           TEXT NOT NULL,
+	installed_version TEXT NOT NULL,
+	fixed_version     TEXT NOT NULL,
+	severity          TEXT NOT NULL,
+	url               TEXT NOT NULL,
+	title             TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS findings_by_scan ON findings (scan_id);
+CREATE INDEX IF NOT EXISTS findings_by_cve ON findings (cve);
+PRAGMA user_version = 1;`
+
+// schemaV2 adds per-host sudo consent and scans made of several checks.
+// Scans stored before it only ran the package vulnerability check.
+const schemaV2 = `
+ALTER TABLE hosts ADD COLUMN allow_sudo INTEGER NOT NULL DEFAULT 0;
+-- Comma-delimited on both ends so a check can be matched with LIKE '%,id,%'.
+ALTER TABLE scans ADD COLUMN checks TEXT NOT NULL DEFAULT ',packages,';
+CREATE TABLE scan_checks (
+	scan_id       TEXT NOT NULL REFERENCES scans (id) ON DELETE CASCADE,
+	check_id      TEXT NOT NULL,
+	status        TEXT NOT NULL,
+	privileged    INTEGER NOT NULL DEFAULT 0,
+	summary       TEXT NOT NULL DEFAULT '',
+	notes         TEXT NOT NULL DEFAULT '[]',
+	error         TEXT NOT NULL DEFAULT '',
+	finding_count INTEGER NOT NULL DEFAULT 0,
+	critical      INTEGER NOT NULL DEFAULT 0,
+	high          INTEGER NOT NULL DEFAULT 0,
+	medium        INTEGER NOT NULL DEFAULT 0,
+	low           INTEGER NOT NULL DEFAULT 0,
+	unknown       INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (scan_id, check_id)
+);
+CREATE TABLE check_findings (
+	scan_id  TEXT NOT NULL REFERENCES scans (id) ON DELETE CASCADE,
+	check_id TEXT NOT NULL,
+	rule     TEXT NOT NULL,
+	severity TEXT NOT NULL,
+	title    TEXT NOT NULL,
+	detail   TEXT NOT NULL,
+	evidence TEXT NOT NULL
+);
+CREATE INDEX check_findings_by_scan ON check_findings (scan_id, check_id);
+INSERT INTO scan_checks (scan_id, check_id, status, finding_count, critical, high, medium, low, unknown)
+	SELECT id, 'packages', CASE WHEN unsupported_count > 0 THEN 'partial' ELSE 'completed' END,
+		finding_count, critical, high, medium, low, unknown
+	FROM scans WHERE status = 'succeeded';
+PRAGMA user_version = 2;`
+
+// schemaV3 keeps each scan's activity log so it can be replayed later.
+const schemaV3 = `
+ALTER TABLE scans ADD COLUMN events_json TEXT;
+PRAGMA user_version = 3;`
+
+// importLegacy copies hosts.json and reports/*.json from the file-based store
+// into the database once. The original files are left untouched.
+func importLegacy(db *sql.DB) error {
+	var done string
+	err := db.QueryRow("SELECT value FROM meta WHERE key = 'legacy_import'").Scan(&done)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	contents, err := os.ReadFile(filepath.Join(DataDir(), "hosts.json"))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err == nil {
+		var hosts []Host
+		if err := json.Unmarshal(contents, &hosts); err != nil {
+			return fmt.Errorf("read host profiles: %w", err)
+		}
+		now := nowText()
+		for _, host := range hosts {
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO hosts (id, address, username, port, key_path, created_at)
+				VALUES (?, ?, ?, ?, ?, ?)`, host.ID, host.Address, host.Username, host.Port, host.KeyPath, now); err != nil {
+				return err
+			}
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(DataDir(), "reports"))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, entry := range entries {
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || !validID(id) {
+			continue
+		}
+		contents, err := os.ReadFile(filepath.Join(DataDir(), "reports", entry.Name()))
+		if err != nil {
+			return err
+		}
+		var report map[string]any
+		if err := json.Unmarshal(contents, &report); err != nil {
+			// An unreadable legacy report stays on disk; it must not block the rest.
+			continue
+		}
+		var exists int
+		if err := tx.QueryRow("SELECT COUNT(*) FROM scans WHERE id = ?", id).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			if err := insertReport(tx, id, report); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.Exec("INSERT INTO meta (key, value) VALUES ('legacy_import', ?)", nowText()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func ListHosts() ([]Host, error) {
+	db, err := database()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query("SELECT id, address, username, port, key_path, allow_sudo FROM hosts ORDER BY created_at, rowid")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	hosts := make([]Host, 0)
+	for rows.Next() {
+		host, err := scanHost(rows)
+		if err != nil {
+			return nil, err
+		}
+		hosts = append(hosts, host)
+	}
+	return hosts, rows.Err()
+}
+
+type rowScanner interface {
+	Scan(destinations ...any) error
+}
+
+func scanHost(row rowScanner) (Host, error) {
+	var host Host
+	var keyPath sql.NullString
+	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.Port, &keyPath, &host.AllowSudo); err != nil {
+		return Host{}, err
+	}
+	if keyPath.Valid {
+		value := keyPath.String
+		host.KeyPath = &value
+	}
+	return host, nil
 }
 
 func AddHost(address, username string, port int, keyPath *string) (Host, error) {
@@ -60,7 +335,7 @@ func AddHost(address, username string, port int, keyPath *string) (Host, error) 
 			return Host{}, fmt.Errorf("SSH private key file does not exist")
 		}
 	}
-	hosts, err := ListHosts()
+	db, err := database()
 	if err != nil {
 		return Host{}, err
 	}
@@ -69,47 +344,56 @@ func AddHost(address, username string, port int, keyPath *string) (Host, error) 
 		return Host{}, err
 	}
 	host := Host{ID: id, Address: address, Username: username, Port: port, KeyPath: keyPath}
-	hosts = append(hosts, host)
-	if err := writeJSONAtomic(filepath.Join(DataDir(), "hosts.json"), hosts); err != nil {
+	if _, err := db.Exec(`INSERT INTO hosts (id, address, username, port, key_path, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		host.ID, host.Address, host.Username, host.Port, host.KeyPath, nowText()); err != nil {
 		return Host{}, err
 	}
 	return host, nil
 }
 
 func GetHost(id string) (Host, error) {
-	hosts, err := ListHosts()
+	db, err := database()
 	if err != nil {
 		return Host{}, err
 	}
-	for _, host := range hosts {
-		if host.ID == id {
-			return host, nil
-		}
+	host, err := scanHost(db.QueryRow("SELECT id, address, username, port, key_path, allow_sudo FROM hosts WHERE id = ?", id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Host{}, fmt.Errorf("unknown host ID: %s", id)
 	}
-	return Host{}, fmt.Errorf("unknown host ID: %s", id)
+	return host, err
+}
+
+// SetAllowSudo records whether deeper checks may use sudo on a host.
+func SetAllowSudo(id string, allow bool) (Host, error) {
+	db, err := database()
+	if err != nil {
+		return Host{}, err
+	}
+	result, err := db.Exec("UPDATE hosts SET allow_sudo = ? WHERE id = ?", allow, id)
+	if err != nil {
+		return Host{}, err
+	}
+	if changed, err := result.RowsAffected(); err != nil {
+		return Host{}, err
+	} else if changed == 0 {
+		return Host{}, fmt.Errorf("unknown host ID: %s", id)
+	}
+	return GetHost(id)
 }
 
 func RemoveHost(id string) (Host, error) {
-	hosts, err := ListHosts()
+	host, err := GetHost(id)
 	if err != nil {
 		return Host{}, err
 	}
-	remaining := make([]Host, 0, len(hosts))
-	var removed Host
-	for _, host := range hosts {
-		if host.ID == id {
-			removed = host
-		} else {
-			remaining = append(remaining, host)
-		}
-	}
-	if removed.ID == "" {
-		return Host{}, fmt.Errorf("unknown host ID: %s", id)
-	}
-	if err := writeJSONAtomic(filepath.Join(DataDir(), "hosts.json"), remaining); err != nil {
+	db, err := database()
+	if err != nil {
 		return Host{}, err
 	}
-	return removed, nil
+	if _, err := db.Exec("DELETE FROM hosts WHERE id = ?", id); err != nil {
+		return Host{}, err
+	}
+	return host, nil
 }
 
 func TrustHostKey(host Host, knownHostsLine string) error {
@@ -157,47 +441,70 @@ func TrustHostKey(host Host, knownHostsLine string) error {
 	return file.Sync()
 }
 
+// SaveReport stores a completed CLI scan report and returns it with its report_id.
 func SaveReport(report map[string]any) (map[string]any, error) {
+	db, err := database()
+	if err != nil {
+		return nil, err
+	}
 	id, err := newID()
 	if err != nil {
 		return nil, err
 	}
-	directory := filepath.Join(DataDir(), "reports")
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	tx, err := db.Begin()
+	if err != nil {
 		return nil, err
 	}
-	if err := writeJSONAtomic(filepath.Join(directory, id+".json"), report); err != nil {
+	defer tx.Rollback()
+	if err := insertReport(tx, id, report); err != nil {
 		return nil, err
 	}
-	result := make(map[string]any, len(report)+1)
-	result["report_id"] = id
-	for key, value := range report {
-		result[key] = value
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
-	return result, nil
+	if hostID, _ := report["host_id"].(string); hostID != "" {
+		if _, err := PruneScans(hostID, KeepScansPerHost); err != nil {
+			return nil, err
+		}
+	}
+	return withReportID(report, id), nil
 }
 
 func GetReport(id string) (map[string]any, error) {
-	if len(id) != 32 {
+	if !validID(id) {
 		return nil, fmt.Errorf("invalid report ID")
 	}
-	if _, err := hex.DecodeString(id); err != nil {
-		return nil, fmt.Errorf("invalid report ID")
+	db, err := database()
+	if err != nil {
+		return nil, err
 	}
-	path := filepath.Join(DataDir(), "reports", id+".json")
-	contents, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	var status string
+	var contents sql.NullString
+	err = db.QueryRow("SELECT status, report_json FROM scans WHERE id = ?", id).Scan(&status, &contents)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("report not found")
 	}
 	if err != nil {
 		return nil, err
 	}
+	if status != ScanSucceeded || !contents.Valid {
+		return nil, fmt.Errorf("scan %s did not produce a report (status %s)", id, status)
+	}
 	var report map[string]any
-	if err := json.Unmarshal(contents, &report); err != nil {
+	if err := json.Unmarshal([]byte(contents.String), &report); err != nil {
 		return nil, fmt.Errorf("read scan report: %w", err)
 	}
 	report["report_id"] = id
 	return report, nil
+}
+
+func withReportID(report map[string]any, id string) map[string]any {
+	result := make(map[string]any, len(report)+1)
+	result["report_id"] = id
+	for key, value := range report {
+		result[key] = value
+	}
+	return result
 }
 
 func newID() (string, error) {
@@ -210,6 +517,16 @@ func newID() (string, error) {
 	return hex.EncodeToString(value), nil
 }
 
+func validID(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	_, err := hex.DecodeString(id)
+	return err == nil
+}
+
+func nowText() string { return time.Now().UTC().Format(time.RFC3339) }
+
 func expandHome(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
@@ -219,32 +536,4 @@ func expandHome(path string) string {
 		return path
 	}
 	return filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(path, "~"), "/"))
-}
-
-func writeJSONAtomic(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".opsarmor-*.tmp")
-	if err != nil {
-		return err
-	}
-	tempPath := file.Name()
-	defer os.Remove(tempPath)
-	if err := file.Chmod(0o600); err != nil {
-		file.Close()
-		return err
-	}
-	if err := json.NewEncoder(file).Encode(value); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tempPath, path)
 }
