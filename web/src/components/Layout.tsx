@@ -53,7 +53,7 @@ export function Layout() {
           ))}
         </nav>
         <p className="hidden px-5 pt-6 text-xs leading-relaxed text-slate-400 lg:block">
-          Local only · agentless package scanning over SSH using official distribution advisories.
+          Local only · scans this machine against official distribution advisories.
         </p>
         <VersionLabel />
       </aside>

@@ -17,23 +17,26 @@ import (
 )
 
 type Host struct {
-	ID       string  `json:"id"`
-	Address  string  `json:"address"`
-	Username string  `json:"username"`
-	Port     int     `json:"port"`
-	KeyPath  *string `json:"key_path"`
+	ID       string `json:"id"`
+	Address  string `json:"address"`
+	Username string `json:"username"`
 	// AllowSudo lets deeper checks run fixed read-only commands through sudo.
 	AllowSudo bool `json:"allow_sudo"`
-	// Transport is how OpsArmor reaches the host: TransportSSH or TransportLocal.
+	// Transport is how OpsArmor reaches the host.
 	Transport string `json:"transport"`
 }
 
 const (
-	TransportSSH = "ssh"
 	// TransportLocal is the machine OpsArmor runs on; Address holds its
 	// hostname and Username the account that runs the scans.
 	TransportLocal = "local"
+	// TransportSSH marks hosts registered before SSH scanning was removed in
+	// 0.2.0. They keep their scan history but can no longer be scanned.
+	TransportSSH = "ssh"
 )
+
+// Scannable reports whether OpsArmor can still scan the host.
+func (h Host) Scannable() bool { return h.Transport == TransportLocal }
 
 const databaseName = "opsarmor.db"
 
@@ -52,8 +55,6 @@ func DataDir() string {
 	}
 	return filepath.Join(home, ".local", "share", "opsarmor")
 }
-
-func KnownHostsPath() string { return filepath.Join(DataDir(), "known_hosts") }
 
 func DatabasePath() string { return filepath.Join(DataDir(), databaseName) }
 
@@ -231,7 +232,8 @@ const schemaV3 = `
 ALTER TABLE scans ADD COLUMN events_json TEXT;
 PRAGMA user_version = 3;`
 
-// schemaV4 records how each host is reached; existing hosts use SSH.
+// schemaV4 records how each host is reached; hosts from earlier versions were
+// all SSH hosts, which 0.2.0 keeps for their history but no longer scans.
 const schemaV4 = `
 ALTER TABLE hosts ADD COLUMN transport TEXT NOT NULL DEFAULT 'ssh';
 PRAGMA user_version = 4;`
@@ -257,7 +259,14 @@ func importLegacy(db *sql.DB) error {
 		return err
 	}
 	if err == nil {
-		var hosts []Host
+		// Profiles from before the database were all SSH hosts.
+		var hosts []struct {
+			ID       string  `json:"id"`
+			Address  string  `json:"address"`
+			Username string  `json:"username"`
+			Port     int     `json:"port"`
+			KeyPath  *string `json:"key_path"`
+		}
 		if err := json.Unmarshal(contents, &hosts); err != nil {
 			return fmt.Errorf("read host profiles: %w", err)
 		}
@@ -308,7 +317,7 @@ func ListHosts() ([]Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query("SELECT id, address, username, port, key_path, allow_sudo, transport FROM hosts ORDER BY created_at, rowid")
+	rows, err := db.Query("SELECT id, address, username, allow_sudo, transport FROM hosts ORDER BY created_at, rowid")
 	if err != nil {
 		return nil, err
 	}
@@ -330,40 +339,7 @@ type rowScanner interface {
 
 func scanHost(row rowScanner) (Host, error) {
 	var host Host
-	var keyPath sql.NullString
-	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.Port, &keyPath, &host.AllowSudo, &host.Transport); err != nil {
-		return Host{}, err
-	}
-	if keyPath.Valid {
-		value := keyPath.String
-		host.KeyPath = &value
-	}
-	return host, nil
-}
-
-func AddHost(address, username string, port int, keyPath *string) (Host, error) {
-	if strings.TrimSpace(address) == "" || strings.ContainsAny(address, " \t\r\n") ||
-		strings.TrimSpace(username) == "" || strings.ContainsAny(username, " \t\r\n") {
-		return Host{}, fmt.Errorf("a host address and SSH username without whitespace are required")
-	}
-	if port < 1 || port > 65535 {
-		return Host{}, fmt.Errorf("SSH port must be between 1 and 65535")
-	}
-	if keyPath != nil {
-		if _, err := os.Stat(expandHome(*keyPath)); err != nil {
-			return Host{}, fmt.Errorf("SSH private key file does not exist")
-		}
-	}
-	db, err := database()
-	if err != nil {
-		return Host{}, err
-	}
-	id, err := newID()
-	if err != nil {
-		return Host{}, err
-	}
-	host := Host{ID: id, Address: address, Username: username, Port: port, KeyPath: keyPath, Transport: TransportSSH}
-	if err := insertHost(db, host); err != nil {
+	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.AllowSudo, &host.Transport); err != nil {
 		return Host{}, err
 	}
 	return host, nil
@@ -398,8 +374,9 @@ func AddLocalHost(hostname, username string) (Host, error) {
 }
 
 func insertHost(db *sql.DB, host Host) error {
-	_, err := db.Exec(`INSERT INTO hosts (id, address, username, port, key_path, transport, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		host.ID, host.Address, host.Username, host.Port, host.KeyPath, host.Transport, nowText())
+	// port and key_path only described SSH hosts and are left empty.
+	_, err := db.Exec(`INSERT INTO hosts (id, address, username, port, transport, created_at) VALUES (?, ?, ?, 0, ?, ?)`,
+		host.ID, host.Address, host.Username, host.Transport, nowText())
 	return err
 }
 
@@ -408,7 +385,7 @@ func GetHost(id string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	host, err := scanHost(db.QueryRow("SELECT id, address, username, port, key_path, allow_sudo, transport FROM hosts WHERE id = ?", id))
+	host, err := scanHost(db.QueryRow("SELECT id, address, username, allow_sudo, transport FROM hosts WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Host{}, fmt.Errorf("unknown host ID: %s", id)
 	}
@@ -446,51 +423,6 @@ func RemoveHost(id string) (Host, error) {
 		return Host{}, err
 	}
 	return host, nil
-}
-
-func TrustHostKey(host Host, knownHostsLine string) error {
-	fields := strings.Fields(knownHostsLine)
-	if len(fields) < 3 {
-		return fmt.Errorf("invalid SSH known-host entry")
-	}
-	address := host.Address
-	if host.Port != 22 {
-		address = fmt.Sprintf("[%s]:%d", address, host.Port)
-	}
-	if fields[0] != address {
-		return fmt.Errorf("SSH known-host entry does not match %s", address)
-	}
-	path := KnownHostsPath()
-	contents, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	algorithmPinned := false
-	for _, existing := range strings.Split(string(contents), "\n") {
-		existingFields := strings.Fields(existing)
-		if len(existingFields) < 3 || existingFields[0] != address || existingFields[1] != fields[1] {
-			continue
-		}
-		algorithmPinned = true
-		if strings.Join(existingFields[:3], " ") == strings.Join(fields[:3], " ") {
-			return nil
-		}
-	}
-	if algorithmPinned {
-		return fmt.Errorf("a different SSH host key using %s is already trusted for %s", fields[1], address)
-	}
-	if err := os.MkdirAll(DataDir(), 0o700); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if _, err := fmt.Fprintln(file, strings.Join(fields[:3], " ")); err != nil {
-		return err
-	}
-	return file.Sync()
 }
 
 // SaveReport stores a completed CLI scan report and returns it with its report_id.
@@ -578,14 +510,3 @@ func validID(id string) bool {
 }
 
 func nowText() string { return time.Now().UTC().Format(time.RFC3339) }
-
-func expandHome(path string) string {
-	if path != "~" && !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(path, "~"), "/"))
-}

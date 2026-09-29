@@ -59,13 +59,13 @@ export function Dashboard() {
           <EmptyState
             icon={<ShieldCheck className="size-6" />}
             title="Welcome to OpsArmor"
-            description="Register a Linux host you are authorized to scan. OpsArmor connects over SSH, reads the installed package list, and checks it against the distribution's official security advisories."
+            description="Register the Linux machine OpsArmor runs on. OpsArmor reads its installed package list and checks it against the distribution's official security advisories."
             action={
               <Link
                 to="/hosts?add=1"
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
-                <Plus className="size-4" /> Add your first host
+                <Plus className="size-4" /> Add this machine
               </Link>
             }
           />

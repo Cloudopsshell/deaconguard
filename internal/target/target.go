@@ -1,7 +1,7 @@
 // Package target defines how OpsArmor runs commands on a machine it scans,
-// independent of how it reaches that machine: over SSH (internal/remote) or
-// on the machine OpsArmor runs on (internal/local). Every command is a fixed,
-// read-only string from OpsArmor's source.
+// independent of how it reaches that machine. Today that is the machine
+// OpsArmor runs on (internal/local); the planned agent will use the same
+// interface. Every command is a fixed, read-only string from OpsArmor's source.
 package target
 
 import (

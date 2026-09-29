@@ -104,23 +104,8 @@ const statusStyle: Record<ScanStatus, { label: string; className: string; icon: 
     className: "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/30",
     icon: <XCircle className="size-3.5" aria-hidden />,
   },
-  needs_passphrase: {
-    label: "Passphrase needed",
-    className: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/30",
-    icon: <KeyRound className="size-3.5" aria-hidden />,
-  },
-  needs_password: {
-    label: "Password needed",
-    className: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/30",
-    icon: <KeyRound className="size-3.5" aria-hidden />,
-  },
   needs_sudo: {
     label: "Sudo password needed",
-    className: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/30",
-    icon: <KeyRound className="size-3.5" aria-hidden />,
-  },
-  needs_trust: {
-    label: "Host key approval needed",
     className: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/30",
     icon: <KeyRound className="size-3.5" aria-hidden />,
   },

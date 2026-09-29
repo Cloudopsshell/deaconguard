@@ -1,5 +1,5 @@
-// Package local scans the machine OpsArmor itself runs on, by running the same
-// fixed, read-only commands the SSH transport sends to remote hosts.
+// Package local scans the machine OpsArmor itself runs on by running OpsArmor's
+// fixed, read-only commands directly.
 package local
 
 import (

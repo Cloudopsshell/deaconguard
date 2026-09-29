@@ -9,19 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"opsarmor/internal/remote"
 	"opsarmor/internal/scan"
 	"opsarmor/internal/store"
 )
 
 const promptTimeout = 10 * time.Minute
 
-const (
-	PromptHostKey    = "host_key"
-	PromptPassphrase = "passphrase"
-	PromptPassword   = "password"
-	PromptSudo       = "sudo"
-)
+// PromptSudo is the only question a scan asks: the sudo password, when the
+// host allows sudo and it needs one.
+const PromptSudo = "sudo"
 
 var (
 	errScanInProgress = errors.New("a scan is already running for this host")
@@ -34,17 +30,14 @@ type scanFunc func(store.Host, []string, scan.Options) (map[string]any, error)
 
 // Prompt is a question a paused scan is waiting for the user to answer.
 type Prompt struct {
-	ScanID      string `json:"scan_id"`
-	HostID      string `json:"host_id"`
-	Address     string `json:"address"`
-	Username    string `json:"username"`
-	Port        int    `json:"port"`
-	Kind        string `json:"kind"`
-	KeyPath     string `json:"key_path,omitempty"`
-	Fingerprint string `json:"fingerprint,omitempty"`
-	Retry       string `json:"retry,omitempty"`
-	CreatedAt   string `json:"created_at"`
-	reply       chan promptReply
+	ScanID    string `json:"scan_id"`
+	HostID    string `json:"host_id"`
+	Address   string `json:"address"`
+	Username  string `json:"username"`
+	Kind      string `json:"kind"`
+	Retry     string `json:"retry,omitempty"`
+	CreatedAt string `json:"created_at"`
+	reply     chan promptReply
 }
 
 type promptReply struct {
@@ -104,20 +97,6 @@ func (r *runner) run(host store.Host, scanID string, checks []string, log *event
 		r.mu.Unlock()
 	}()
 	options := scan.Options{
-		Remote: remote.Options{
-			ConfirmHostKey: func(key *remote.UnknownHostKey) (bool, error) {
-				if _, err := r.ask(host, scanID, Prompt{Kind: PromptHostKey, Fingerprint: key.Fingerprint}); err != nil {
-					return false, err
-				}
-				return true, nil
-			},
-			Passphrase: func(keyPath string, retry error) ([]byte, error) {
-				return r.ask(host, scanID, Prompt{Kind: PromptPassphrase, KeyPath: keyPath, Retry: errorText(retry)})
-			},
-			Password: func(retry error) ([]byte, error) {
-				return r.ask(host, scanID, Prompt{Kind: PromptPassword, Retry: errorText(retry)})
-			},
-		},
 		SudoPassword: func(retry error) ([]byte, error) {
 			return r.ask(host, scanID, Prompt{Kind: PromptSudo, Retry: errorText(retry)})
 		},
@@ -152,14 +131,10 @@ func (r *runner) run(host store.Host, scanID string, checks []string, log *event
 
 // ask pauses the scan until the user answers prompt in the browser.
 func (r *runner) ask(host store.Host, scanID string, prompt Prompt) ([]byte, error) {
-	statuses := map[string]string{
-		PromptHostKey: store.ScanNeedsTrust, PromptPassphrase: store.ScanNeedsPassphrase,
-		PromptPassword: store.ScanNeedsPassword, PromptSudo: store.ScanNeedsSudo,
-	}
-	if err := store.WaitForInput(scanID, statuses[prompt.Kind], prompt.Retry, prompt.Fingerprint); err != nil {
+	if err := store.WaitForInput(scanID, store.ScanNeedsSudo, prompt.Retry, ""); err != nil {
 		return nil, err
 	}
-	prompt.ScanID, prompt.HostID, prompt.Address, prompt.Username, prompt.Port = scanID, host.ID, host.Address, host.Username, host.Port
+	prompt.ScanID, prompt.HostID, prompt.Address, prompt.Username = scanID, host.ID, host.Address, host.Username
 	prompt.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	prompt.reply = make(chan promptReply, 1)
 	r.mu.Lock()
@@ -196,8 +171,7 @@ func (r *runner) ask(host store.Host, scanID string, prompt Prompt) ([]byte, err
 	}
 }
 
-// respond answers a waiting scan. A host key is only trusted when the
-// fingerprint the user confirmed matches the one the host presented.
+// respond answers a waiting scan's sudo prompt.
 func (r *runner) respond(scanID string, value []byte, cancel bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -205,13 +179,8 @@ func (r *runner) respond(scanID string, value []byte, cancel bool) error {
 	if !ok {
 		return errNoPrompt
 	}
-	if !cancel {
-		switch {
-		case prompt.Kind == PromptHostKey && string(value) != prompt.Fingerprint:
-			return errors.New("the confirmed fingerprint does not match the key presented by the host")
-		case prompt.Kind != PromptHostKey && len(value) == 0:
-			return fmt.Errorf("enter the %s, or cancel the scan", prompt.Kind)
-		}
+	if !cancel && len(value) == 0 {
+		return errors.New("enter the sudo password, or continue without sudo")
 	}
 	delete(r.prompts, scanID)
 	prompt.reply <- promptReply{value: value, cancel: cancel}
@@ -244,31 +213,9 @@ func (r *runner) close() {
 
 func (r *runner) wait() { r.wg.Wait() }
 
-func promptLabel(prompt Prompt) string {
-	switch prompt.Kind {
-	case PromptHostKey:
-		return "verify the SSH host key " + prompt.Fingerprint
-	case PromptPassphrase:
-		return "passphrase for " + prompt.KeyPath
-	case PromptSudo:
-		return "sudo password"
-	default:
-		return "SSH password"
-	}
-}
+func promptLabel(Prompt) string { return "sudo password" }
 
-func cancelReason(kind string) string {
-	switch kind {
-	case PromptHostKey:
-		return "the SSH host key was not trusted"
-	case PromptPassphrase:
-		return "the SSH key passphrase was not provided"
-	case PromptSudo:
-		return "the sudo password was not provided"
-	default:
-		return "the SSH password was not provided"
-	}
-}
+func cancelReason(string) string { return "the sudo password was not provided" }
 
 func errorText(err error) string {
 	if err == nil {

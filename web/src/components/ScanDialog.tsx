@@ -118,7 +118,7 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
                 <span className="mt-0.5 block text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                   {allowSudo
                     ? "Checks will read other users' processes, protected files, and firewall rules with OpsArmor's fixed read-only commands. If sudo needs a password you will be asked for it. Saved for this host."
-                    : "Off: the checks you picked will only see what the SSH user can read, and results will show partial coverage. Tick this to use sudo. Saved for this host."}
+                    : "Off: the checks you picked will only see what the user running OpsArmor can read, and results will show partial coverage. Tick this to use sudo. Saved for this host."}
                 </span>
               </span>
             </label>
