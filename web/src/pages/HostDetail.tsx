@@ -25,6 +25,7 @@ import {
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
+import { connectionLabel } from "../lib/hosts";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 
 export function HostDetail() {
@@ -55,8 +56,8 @@ export function HostDetail() {
         title={data.address}
         description={
           <>
-            {`${data.username}@${data.address}:${data.port}${data.key_path ? ` · key ${data.key_path}` : " · ssh-agent or default keys"}`}
-            <SudoToggle host={data} />
+            {connectionLabel(data)}
+            {data.transport === "local" && <SudoToggle host={data} />}
           </>
         }
         action={
@@ -64,13 +65,30 @@ export function HostDetail() {
             <Button variant="secondary" onClick={() => setRemoving(true)}>
               <Trash2 className="size-4" /> Remove
             </Button>
-            <Button loading={running} onClick={() => setScanning({})}>
+            <Button
+              loading={running}
+              disabled={data.transport !== "local"}
+              title={data.transport !== "local" ? "SSH scanning was removed in 0.2.0" : undefined}
+              onClick={() => setScanning({})}
+            >
               {!running && <Play className="size-4" />}
               {data.last_scan?.status.startsWith("needs_") ? "Waiting for input…" : running ? "Scanning…" : "Scan now"}
             </Button>
           </>
         }
       />
+
+      {data.transport !== "local" && (
+        <Card className="mb-6 border-l-4 border-slate-400">
+          <div className="p-5 text-sm">
+            <h2 className="font-semibold">This SSH host can no longer be scanned</h2>
+            <p className="mt-1 text-slate-600 dark:text-slate-300">
+              OpsArmor 0.2.0 removed SSH scanning. This host's earlier results and scan history stay available below. To scan it
+              again, install OpsArmor on it and scan it locally; you can remove this entry when you no longer need its history.
+            </p>
+          </div>
+        </Card>
+      )}
 
       {data.last_scan?.status === "failed" && (
         <Card className="mb-6 border-l-4 border-red-500">
