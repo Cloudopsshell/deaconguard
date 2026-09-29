@@ -15,6 +15,7 @@ import (
 
 	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
+	"opsarmor/internal/local"
 	"opsarmor/internal/store"
 )
 
@@ -45,6 +46,7 @@ func New(ui fs.FS, scan scanFunc) (*Server, error) {
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.removeHost)
 	mux.HandleFunc("GET /api/checks", s.listChecks)
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, buildinfo.Get()) })
+	mux.HandleFunc("GET /api/capabilities", s.capabilities)
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.startScan)
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
 	mux.HandleFunc("DELETE /api/scans/{id}", s.deleteScan)
@@ -224,6 +226,7 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 type addHostRequest struct {
+	Transport string `json:"transport"`
 	Address   string `json:"address"`
 	Username  string `json:"username"`
 	Port      int    `json:"port"`
@@ -231,19 +234,53 @@ type addHostRequest struct {
 	AllowSudo bool   `json:"allow_sudo"`
 }
 
+type capabilitiesResponse struct {
+	// LocalScanning reports whether this server can scan the machine it runs on.
+	LocalScanning bool   `json:"local_scanning"`
+	LocalReason   string `json:"local_reason,omitempty"`
+	Hostname      string `json:"hostname"`
+	Username      string `json:"username"`
+}
+
+func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
+	response := capabilitiesResponse{LocalScanning: true, Hostname: local.Hostname(), Username: local.Username()}
+	if _, err := local.New(); err != nil {
+		response.LocalScanning, response.LocalReason = false, err.Error()
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (s *Server) addHost(w http.ResponseWriter, r *http.Request) {
 	var request addHostRequest
 	if !readJSON(w, r, &request) {
 		return
 	}
-	if request.Port == 0 {
-		request.Port = 22
+	var host store.Host
+	var err error
+	switch request.Transport {
+	case store.TransportLocal:
+		if _, err := local.New(); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		host, err = store.AddLocalHost(local.Hostname(), local.Username())
+		if errors.Is(err, store.ErrLocalHostExists) {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+	case "", store.TransportSSH:
+		if request.Port == 0 {
+			request.Port = 22
+		}
+		var keyPath *string
+		if trimmed := strings.TrimSpace(request.KeyPath); trimmed != "" {
+			keyPath = &trimmed
+		}
+		host, err = store.AddHost(strings.TrimSpace(request.Address), strings.TrimSpace(request.Username), request.Port, keyPath)
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Errorf("unknown transport %q", request.Transport))
+		return
 	}
-	var keyPath *string
-	if trimmed := strings.TrimSpace(request.KeyPath); trimmed != "" {
-		keyPath = &trimmed
-	}
-	host, err := store.AddHost(strings.TrimSpace(request.Address), strings.TrimSpace(request.Username), request.Port, keyPath)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

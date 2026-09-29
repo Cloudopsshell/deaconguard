@@ -486,3 +486,30 @@ func TestScanIsFinalBeforeDoneIsPublished(t *testing.T) {
 	}
 	t.Fatal("the scan never published done")
 }
+
+func TestLocalHostRegistration(t *testing.T) {
+	s := newTestServer(t, nil)
+	capabilities := decode[capabilitiesResponse](t, request(t, s, http.MethodGet, "/api/capabilities", nil))
+	response := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"})
+	if !capabilities.LocalScanning {
+		// Off Linux the server must refuse, with the reason the UI shows.
+		if response.Code != http.StatusBadRequest || capabilities.LocalReason == "" {
+			t.Fatalf("non-Linux local host: %d %s, reason %q", response.Code, response.Body.String(), capabilities.LocalReason)
+		}
+		return
+	}
+	host := decode[store.Host](t, response)
+	if response.Code != http.StatusCreated || host.Transport != store.TransportLocal || host.Address != capabilities.Hostname {
+		t.Fatalf("local host = %d %+v", response.Code, host)
+	}
+	if again := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}); again.Code != http.StatusConflict {
+		t.Fatalf("a second local host was accepted: %d", again.Code)
+	}
+}
+
+func TestUnknownTransportIsRejected(t *testing.T) {
+	s := newTestServer(t, nil)
+	if response := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "telnet", "address": "x", "username": "y"}); response.Code != http.StatusBadRequest {
+		t.Fatalf("unknown transport = %d", response.Code)
+	}
+}
