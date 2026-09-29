@@ -80,6 +80,16 @@ jobs:
           # may pick the candidate's tag and upload to the wrong release.
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
+      - name: Check the release notes were published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          length=$(gh release view "$GITHUB_REF_NAME" --json body --jq '.body | length')
+          if [ "$length" -lt 20 ]; then
+            echo "::error::The GitHub release for $GITHUB_REF_NAME has no release notes"
+            exit 1
+          fi
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
