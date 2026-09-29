@@ -4,83 +4,59 @@
 [![CI](https://github.com/Cloudopsshell/OpsArmor/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/OpsArmor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/Cloudopsshell/OpsArmor)](LICENSE)
 
-OpsArmor is an agentless Linux security scanner written in Go. It connects only to hosts you register, runs fixed read-only commands over SSH, and by default evaluates the installed packages against the distribution's own security data without `sudo`. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are OpsArmor code; OpsArmor never installs software on a host, and the only third-party engine it runs is a ClamAV that is already installed there, when you choose the antivirus check.
+OpsArmor is a Linux security scanner written in Go. Install it on a Linux machine and it scans that machine: it runs fixed, read-only commands locally and, by default without `sudo`, evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are OpsArmor code; OpsArmor never installs software, and the only third-party engine it runs is a ClamAV that is already installed, when you choose the antivirus check.
+
+> **SSH scanning was removed in 0.2.0.** OpsArmor no longer connects to other machines. To scan a server, install OpsArmor on it. An agent that enrolls with the OpsArmor server using a one-time token, so one dashboard covers many servers, is planned. Hosts registered for SSH scanning by earlier versions keep their results but can no longer be scanned; see [Update](#update).
 
 - [Install](#install) · [Getting started](#getting-started) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
 - [Checks](#checks) · [Web UI](#web-ui) · [Supported distributions](#supported-distributions) · [Versioning](#versioning) · [Development](#development) · [Security](#security)
 
 ## Requirements
 
-- **Where OpsArmor runs:** Linux or macOS on amd64 or arm64. It is a single self-contained binary; nothing else is needed.
-- **Scanned hosts:** reachable over SSH, or the Linux machine OpsArmor runs on, running a [supported distribution](#supported-distributions). A normal account that can read `/etc/os-release` and the package database is enough; the optional checks see more when [sudo is allowed](#checks) for the host.
-- **Network:** HTTPS access from the machine running OpsArmor to the distribution's advisory feed.
+- **Where OpsArmor runs:** the Linux machine you want to scan, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary; nothing else is needed. macOS builds are published for viewing results from earlier versions; they cannot scan.
+- **Account:** a normal user account is enough; the optional checks see more when [sudo is allowed](#checks).
+- **Network:** HTTPS access to the distribution's advisory feed.
 
 ## Install
 
-Releases are published on the [Releases page](https://github.com/Cloudopsshell/OpsArmor/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, a `checksums.txt` file, a container image, and a Helm chart. Replace `0.1.0` below with the version you want.
+Releases are published on the [Releases page](https://github.com/Cloudopsshell/OpsArmor/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Replace `0.2.0` below with the version you want.
 
-Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.1.0 -R Cloudopsshell/OpsArmor -p 'FILE'`.
+Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.2.0 -R Cloudopsshell/OpsArmor -p 'FILE'`.
 
 ### Debian and Ubuntu
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/opsarmor_0.1.0_linux_amd64.deb
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/opsarmor_0.2.0_linux_amd64.deb
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-sudo apt install ./opsarmor_0.1.0_linux_amd64.deb
+sudo apt install ./opsarmor_0.2.0_linux_amd64.deb
 opsarmor version
 ```
 
 ### RHEL, Fedora, and Amazon Linux
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/opsarmor_0.1.0_linux_amd64.rpm
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/opsarmor_0.2.0_linux_amd64.rpm
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-sudo dnf install ./opsarmor_0.1.0_linux_amd64.rpm
+sudo dnf install ./opsarmor_0.2.0_linux_amd64.rpm
 opsarmor version
 ```
 
 Use `arm64` instead of `amd64` on ARM machines such as AWS Graviton.
 
-### macOS and other Linux systems
+### Other Linux systems and macOS
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/opsarmor_0.1.0_darwin_arm64.tar.gz
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/checksums.txt
-shasum -a 256 --check --ignore-missing checksums.txt
-tar -xzf opsarmor_0.1.0_darwin_arm64.tar.gz opsarmor
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/opsarmor_0.2.0_linux_amd64.tar.gz
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/checksums.txt
+sha256sum --check --ignore-missing checksums.txt
+tar -xzf opsarmor_0.2.0_linux_amd64.tar.gz opsarmor
 sudo install -m 0755 opsarmor /usr/local/bin/opsarmor
 opsarmor version
 ```
 
-Pick the archive for your system: `darwin_arm64` (Apple silicon), `darwin_amd64` (Intel Mac), `linux_amd64`, or `linux_arm64`. Release binaries are not yet signed by Apple; if you downloaded the archive in a browser, macOS may block the first run. Allow it with `xattr -d com.apple.quarantine /usr/local/bin/opsarmor`.
-
-### Container
-
-```sh
-docker pull ghcr.io/cloudopsshell/opsarmor:v0.1.0
-docker volume create opsarmor-data
-docker run --rm -it \
-	-v opsarmor-data:/data \
-	-v "$HOME/.ssh:/ssh-keys:ro" \
-	-v "$HOME/.ssh:/home/nonroot/.ssh:ro" \
-	ghcr.io/cloudopsshell/opsarmor:v0.1.0 \
-	host add ubuntu.example.com --username ubuntu --key-path /ssh-keys/id_ed25519
-```
-
-The image keeps host profiles, scan history, feed cache, and host-key pins in the `/data` volume and runs as a non-root user. It is meant for the CLI and scheduled scans: the web UI only listens on the loopback address, so run `opsarmor serve` on your own machine instead. Tags: `v0.1.0` (exact release), `v0.1` (latest patch of that minor version), and `latest` (newest stable release; pre-releases never move it). If the image is not yet public, sign in first with `docker login ghcr.io` using a token that can read packages.
-
-### Kubernetes (Helm)
-
-The Helm chart runs scheduled scans as CronJobs, one per configured host; it is not a dashboard service. Download the chart from the release and install it with your values:
-
-```sh
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/opsarmor-0.1.0.tgz
-helm upgrade --install opsarmor ./opsarmor-0.1.0.tgz -n opsarmor --create-namespace -f my-values.yaml
-```
-
-Supply host profiles, a pre-created Secret containing the private key files, and independently verified host keys; private keys are never stored in Helm values or ConfigMaps. See [the chart README](charts/opsarmor/README.md) and [example values](charts/opsarmor/values.example.yaml).
+Pick the archive for your system: `linux_amd64`, `linux_arm64`, `darwin_arm64` (Apple silicon), or `darwin_amd64` (Intel Mac); on macOS, check with `shasum -a 256` instead of `sha256sum`. macOS builds can open results from earlier versions but cannot scan. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/opsarmor`.
 
 ### From source
 
@@ -94,14 +70,14 @@ make build          # builds the web UI and the opsarmor binary
 
 ## Getting started
 
-Register a host you own or are authorized to scan, then scan it from the web UI or the terminal:
+On the Linux machine you want to scan, register it once and open the dashboard:
 
 ```sh
-opsarmor host add ubuntu.example.com --username ubuntu --key-path ~/.ssh/id_ed25519
+opsarmor host add                               # add --allow-sudo to let the deeper checks use sudo
 opsarmor serve                                  # then open http://127.0.0.1:7480
 ```
 
-or, in the terminal:
+or work in the terminal:
 
 ```sh
 opsarmor host list
@@ -109,16 +85,13 @@ opsarmor scan HOST_ID --checks packages,malware,config
 opsarmor report REPORT_ID --json
 ```
 
-To scan the Linux machine OpsArmor is installed on, no SSH is needed. Register it once with `opsarmor host add --local` (or **Add host → This machine** in the web UI), or run a one-off scan:
+For a one-off scan without registering the machine:
 
 ```sh
-opsarmor scan --local --checks packages,malware,config
-sudo opsarmor scan --local --checks integrity,malware   # or add --allow-sudo to use sudo for the deeper checks
+opsarmor scan --local --checks packages,integrity,malware,config --allow-sudo
 ```
 
-Local scans run the same fixed, read-only commands directly as the user running OpsArmor, and are available on Linux only.
-
-The first connection to a host shows its SSH host-key fingerprint and asks you to trust it. Compare it with your cloud console or another trusted source first: this is trust-on-first-use, and once a key is trusted any change to it is refused. Encrypted keys and password logins are asked for when needed, in the browser or the terminal; for unattended use, load keys into `ssh-agent`.
+The dashboard is served on the machine's loopback address only. To use it from your own computer, forward the port over your usual remote-access tool, for example `ssh -L 7480:127.0.0.1:7480 you@server`, and open <http://127.0.0.1:7480> locally.
 
 ## Update
 
@@ -129,14 +102,14 @@ Check your version with `opsarmor version` and read [CHANGELOG.md](CHANGELOG.md)
 | `.deb` | Download the new `.deb` and `sudo apt install ./opsarmor_NEW_linux_ARCH.deb` |
 | `.rpm` | Download the new `.rpm` and `sudo dnf install ./opsarmor_NEW_linux_ARCH.rpm` |
 | Archive | Download the new archive and replace `/usr/local/bin/opsarmor` with the binary inside |
-| Container | `docker pull ghcr.io/cloudopsshell/opsarmor:vNEW` and use the new tag with the same `/data` volume |
-| Helm | `helm upgrade opsarmor ./opsarmor-NEW.tgz -n opsarmor -f my-values.yaml` |
 
 Stop `opsarmor serve` before replacing the binary and start it again afterwards. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
 
+**Upgrading to 0.2.0:** SSH scanning is removed. Hosts you registered for SSH scanning stay in the list with their full scan history, marked as no longer scannable; remove them when you no longer need their results. To keep scanning such a server, install OpsArmor on it and run `opsarmor host add` there. The `known_hosts` file in the data directory is no longer used and can be deleted. The container image and Helm chart are no longer published, as they only ran SSH scans.
+
 ## Back up and restore
 
-All data lives in one directory: `~/.local/share/opsarmor/` by default, or the path in `OPSARMOR_HOME` (`/data` in the container). It holds `opsarmor.db` (hosts, scan results, and activity logs), `known_hosts` (trusted host keys), and `feeds/` (a cache that is downloaded again if missing). Files are readable only by their owner, and no private keys or passwords are stored there.
+All data lives in one directory: `~/.local/share/opsarmor/` by default, or the path in `OPSARMOR_HOME`. It holds `opsarmor.db` (hosts, scan results, and activity logs) and `feeds/` (a cache that is downloaded again if missing). Files are readable only by their owner, and no passwords are stored there.
 
 To back up, stop `opsarmor serve` and copy the directory:
 
@@ -152,10 +125,9 @@ To restore, stop OpsArmor and copy the backup back into place.
 sudo apt remove opsarmor                 # Debian and Ubuntu
 sudo dnf remove opsarmor                 # RHEL, Fedora, Amazon Linux
 sudo rm /usr/local/bin/opsarmor          # archive install
-helm uninstall opsarmor -n opsarmor      # Helm
 ```
 
-Uninstalling keeps your data. To delete it as well, remove `~/.local/share/opsarmor/` (or your `OPSARMOR_HOME`), or the `opsarmor-data` volume for containers.
+Uninstalling keeps your data. To delete it as well, remove `~/.local/share/opsarmor/` (or your `OPSARMOR_HOME`).
 
 ## Checks
 
@@ -171,15 +143,15 @@ Each scan runs the checks you choose, in the web UI's scan dialog or with `opsar
 
 Every command is a fixed string in OpsArmor's source; nothing from the user or the host is inserted into it.
 
-By default checks run as the SSH user, which cannot see other users' processes, protected files, or firewall rules; results then say they have partial coverage. Allow sudo for a host (`--allow-sudo` when adding it, `opsarmor host sudo HOST_ID on`, or the switch on the host page) to run the same read-only commands through `sudo`. If sudo needs a password, the UI or terminal asks for it once per scan and keeps it in memory only; declining continues the scan without sudo. A skipped or failed check is never shown as clean.
+By default checks run as the user running OpsArmor, which cannot see other users' processes, protected files, or firewall rules; results then say they have partial coverage. Allow sudo (`--allow-sudo` when adding the machine or scanning it once, `opsarmor host sudo HOST_ID on`, or the switch on the host page) to run the same read-only commands through `sudo`. If sudo needs a password, the UI or terminal asks for it once per scan and keeps it in memory only; declining continues the scan without sudo. A skipped or failed check is never shown as clean.
 
 ## Web UI
 
-`opsarmor serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`). It shows every registered host, a severity overview, per-check results, full scan reports with search and filters, scan history, and which hosts are affected by each CVE. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
+`opsarmor serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`). It shows the machine's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. The machine can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
 
-The server only listens on a loopback address and rejects requests addressed to other host names or sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command OpsArmor runs on the host (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
+The server only listens on a loopback address and rejects requests addressed to other host names or sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command OpsArmor runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
 
-When a scan needs something from you, it pauses and the browser asks: to approve a new host's SSH key fingerprint, for the passphrase of an encrypted key that `ssh-agent` does not already hold, for the SSH password when the server rejects the keys and accepts passwords, or for the sudo password. Answers go to that one scan, are kept in memory only, and are never saved or logged. A wrong answer can be retried up to three times; closing the dialog cancels the scan, and an unanswered question stops the scan after 10 minutes.
+When sudo needs a password, the scan pauses and the browser asks for it. The answer goes to that one scan, is kept in memory only, and is never saved or logged. A wrong password can be retried up to three times; closing the dialog continues the scan without sudo, and an unanswered question stops the scan after 10 minutes.
 
 ## Supported distributions
 
@@ -212,4 +184,4 @@ Please report vulnerabilities in OpsArmor privately, as described in [SECURITY.m
 
 ## License
 
-OpsArmor is available under the MIT license. Advisory data remains the property and responsibility of its publishing distribution. Only register systems you own or are authorized to scan.
+OpsArmor is available under the MIT license. Advisory data remains the property and responsibility of its publishing distribution. Only scan systems you own or are authorized to scan.

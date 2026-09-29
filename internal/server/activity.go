@@ -38,7 +38,6 @@ type Activity struct {
 	HostID     string   `json:"host_id"`
 	Address    string   `json:"address"`
 	Username   string   `json:"username"`
-	Port       int      `json:"port"`
 	Checks     []string `json:"checks"`
 	StartedAt  string   `json:"started_at"`
 	FinishedAt string   `json:"finished_at,omitempty"`
@@ -47,7 +46,7 @@ type Activity struct {
 
 func newEventLog(host store.Host, record store.Scan, checks []string) *eventLog {
 	return &eventLog{changed: make(chan struct{}), activity: Activity{
-		ScanID: record.ID, HostID: host.ID, Address: host.Address, Username: host.Username, Port: host.Port,
+		ScanID: record.ID, HostID: host.ID, Address: host.Address, Username: host.Username,
 		Checks: checks, StartedAt: record.StartedAt, Status: record.Status,
 	}}
 }
