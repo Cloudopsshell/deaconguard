@@ -16,19 +16,22 @@ import (
 	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
 	"opsarmor/internal/local"
+	scanpkg "opsarmor/internal/scan"
 	"opsarmor/internal/store"
 )
 
 const maxRequestBytes = 64 << 10
 
 type Server struct {
-	runner  *runner
-	ui      fs.FS
-	handler http.Handler
+	runner *runner
+	// localAvailable reports why this machine cannot be scanned, if it cannot.
+	localAvailable func() error
+	ui             fs.FS
+	handler        http.Handler
 }
 
 // New builds the handler. ui holds the built web app; scan may be nil to use
-// the real SSH scanner.
+// the real local scanner.
 func New(ui fs.FS, scan scanFunc) (*Server, error) {
 	if err := store.InterruptRunningScans(); err != nil {
 		return nil, err
@@ -36,7 +39,7 @@ func New(ui fs.FS, scan scanFunc) (*Server, error) {
 	if err := store.PruneAllScans(store.KeepScansPerHost); err != nil {
 		return nil, err
 	}
-	s := &Server{runner: newRunner(scan), ui: ui}
+	s := &Server{runner: newRunner(scan), ui: ui, localAvailable: func() error { _, err := local.New(); return err }}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/summary", s.summary)
 	mux.HandleFunc("GET /api/hosts", s.listHosts)
@@ -226,11 +229,8 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 type addHostRequest struct {
+	// Transport must be "local"; SSH hosts can no longer be added.
 	Transport string `json:"transport"`
-	Address   string `json:"address"`
-	Username  string `json:"username"`
-	Port      int    `json:"port"`
-	KeyPath   string `json:"key_path"`
 	AllowSudo bool   `json:"allow_sudo"`
 }
 
@@ -244,7 +244,7 @@ type capabilitiesResponse struct {
 
 func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 	response := capabilitiesResponse{LocalScanning: true, Hostname: local.Hostname(), Username: local.Username()}
-	if _, err := local.New(); err != nil {
+	if err := s.localAvailable(); err != nil {
 		response.LocalScanning, response.LocalReason = false, err.Error()
 	}
 	writeJSON(w, http.StatusOK, response)
@@ -255,34 +255,21 @@ func (s *Server) addHost(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &request) {
 		return
 	}
-	var host store.Host
-	var err error
-	switch request.Transport {
-	case store.TransportLocal:
-		if _, err := local.New(); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		host, err = store.AddLocalHost(local.Hostname(), local.Username())
-		if errors.Is(err, store.ErrLocalHostExists) {
-			writeError(w, http.StatusConflict, err)
-			return
-		}
-	case "", store.TransportSSH:
-		if request.Port == 0 {
-			request.Port = 22
-		}
-		var keyPath *string
-		if trimmed := strings.TrimSpace(request.KeyPath); trimmed != "" {
-			keyPath = &trimmed
-		}
-		host, err = store.AddHost(strings.TrimSpace(request.Address), strings.TrimSpace(request.Username), request.Port, keyPath)
-	default:
-		writeError(w, http.StatusBadRequest, fmt.Errorf("unknown transport %q", request.Transport))
+	if request.Transport != "" && request.Transport != store.TransportLocal {
+		writeError(w, http.StatusBadRequest, errors.New("only this machine can be added: SSH scanning was removed in OpsArmor 0.2.0"))
+		return
+	}
+	if err := s.localAvailable(); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	host, err := store.AddLocalHost(local.Hostname(), local.Username())
+	if errors.Is(err, store.ErrLocalHostExists) {
+		writeError(w, http.StatusConflict, err)
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	if request.AllowSudo {
@@ -371,6 +358,10 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	selected, err := checks.Normalize(request.Checks)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if !host.Scannable() {
+		writeError(w, http.StatusConflict, scanpkg.ErrSSHRemoved)
 		return
 	}
 	scan, err := s.runner.start(host, selected)

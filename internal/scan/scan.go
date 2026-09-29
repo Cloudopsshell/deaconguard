@@ -1,10 +1,11 @@
 // Package scan runs the checks a user chose against one host and assembles
-// the report. It reaches the host through a target.Target: an SSH session or
-// this machine. The CLI and the web UI share it.
+// the report. It reaches the host through a target.Target; today that is the
+// machine OpsArmor runs on. The CLI and the web UI share it.
 package scan
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"opsarmor/internal/checks"
 	"opsarmor/internal/local"
 	"opsarmor/internal/platform"
-	"opsarmor/internal/remote"
 	"opsarmor/internal/scanner"
 	"opsarmor/internal/store"
 	"opsarmor/internal/target"
@@ -24,8 +24,11 @@ const maxConcurrentEvaluations = 2
 
 var evaluationSlots = make(chan struct{}, maxConcurrentEvaluations)
 
+// ErrSSHRemoved is returned for hosts registered for SSH scanning, which was
+// removed in 0.2.0. Their earlier results stay available.
+var ErrSSHRemoved = errors.New("SSH scanning was removed in OpsArmor 0.2.0; this host's earlier results remain available, but to scan it, install OpsArmor on it and run a local scan")
+
 type Options struct {
-	Remote remote.Options
 	// SudoPassword is asked for when the host allows sudo but it needs a
 	// password. Returning an error continues the scan without sudo.
 	SudoPassword func(retry error) ([]byte, error)
@@ -43,16 +46,13 @@ func Run(host store.Host, checkIDs []string, options Options) (map[string]any, e
 	}
 	progress := &reporter{emit: options.Progress}
 	started := time.Now()
-	var machine target.Target
-	if host.Transport == store.TransportLocal {
-		progress.startPhase(PhaseConnect, fmt.Sprintf("Scanning this machine (%s) as %s", host.Address, local.Username()))
-		machine, err = local.New()
-	} else {
-		progress.startPhase(PhaseConnect, fmt.Sprintf("Connecting to %s@%s:%d", host.Username, host.Address, host.Port))
-		machine, err = remote.Connect(host, options.Remote)
-		if err == nil {
-			progress.send(Event{Kind: "success", Message: fmt.Sprintf("SSH session established in %s", formatDuration(time.Since(started)))})
-		}
+	if !host.Scannable() {
+		return nil, ErrSSHRemoved
+	}
+	progress.startPhase(PhaseConnect, fmt.Sprintf("Scanning this machine (%s) as %s", host.Address, local.Username()))
+	machine, err := local.New()
+	if err == nil {
+		progress.send(Event{Kind: "success", Message: fmt.Sprintf("Ready in %s", formatDuration(time.Since(started)))})
 	}
 	if err != nil {
 		progress.endPhase(checks.StatusFailed, err.Error())

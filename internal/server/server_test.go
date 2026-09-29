@@ -4,16 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"opsarmor/internal/checks"
-	"opsarmor/internal/remote"
 	"opsarmor/internal/scan"
 	"opsarmor/internal/store"
 )
@@ -29,6 +29,7 @@ func newTestServer(t *testing.T, scan scanFunc) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.localAvailable = func() error { return nil }
 	return s
 }
 
@@ -72,13 +73,13 @@ func TestScanFlowStoresReportAndAggregates(t *testing.T) {
 			}},
 		}, nil
 	})
-	created := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "web.example", "username": "scanner"})
+	created := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"})
 	if created.Code != http.StatusCreated {
 		t.Fatalf("add host: %d %s", created.Code, created.Body.String())
 	}
 	host := decode[store.Host](t, created)
-	if host.Port != 22 {
-		t.Fatalf("port should default to 22, got %d", host.Port)
+	if host.Transport != store.TransportLocal {
+		t.Fatalf("host transport = %q", host.Transport)
 	}
 	response := request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{})
 	if response.Code != http.StatusAccepted {
@@ -105,7 +106,7 @@ func TestFailedScanIsNeverReportedClean(t *testing.T) {
 	s := newTestServer(t, func(store.Host, []string, scan.Options) (map[string]any, error) {
 		return nil, errors.New("advisory feed unavailable")
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "db.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{}))
 	s.runner.wait()
 	detail := decode[scanDetail](t, request(t, s, http.MethodGet, "/api/scans/"+started.ID, nil))
@@ -134,84 +135,21 @@ func waitForPrompt(t *testing.T, s *Server, kind string) Prompt {
 	return Prompt{}
 }
 
-func TestScanPausesForHostKeyPassphraseAndPassword(t *testing.T) {
-	var received []string
-	s := newTestServer(t, func(host store.Host, _ []string, options scan.Options) (map[string]any, error) {
-		trusted, err := options.Remote.ConfirmHostKey(&remote.UnknownHostKey{Fingerprint: "SHA256:presented"})
-		if err != nil || !trusted {
-			return nil, fmt.Errorf("host key: %v %v", trusted, err)
-		}
-		passphrase, err := options.Remote.Passphrase("~/.ssh/id_ed25519", nil)
-		if err != nil {
-			return nil, err
-		}
-		password, err := options.Remote.Password(errors.New("the server rejected that password"))
-		if err != nil {
-			return nil, err
-		}
-		received = append(received, string(passphrase), string(password))
-		return map[string]any{"host_id": host.ID, "findings": []any{}}, nil
-	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "new.example", "username": "scanner"}))
-	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{}))
-
-	hostKey := waitForPrompt(t, s, PromptHostKey)
-	if hostKey.ScanID != started.ID || hostKey.Address != "new.example" {
-		t.Fatalf("host key prompt = %+v", hostKey)
-	}
-	if waiting := decode[scanDetail](t, request(t, s, http.MethodGet, "/api/scans/"+started.ID, nil)); waiting.Scan.Status != store.ScanNeedsTrust {
-		t.Fatalf("scan should be waiting for trust: %+v", waiting.Scan)
-	}
-	respond := func(value string) *httptest.ResponseRecorder {
-		return request(t, s, http.MethodPost, "/api/scans/"+started.ID+"/respond", map[string]any{"value": value})
-	}
-	if response := respond("SHA256:other"); response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("mismatched fingerprint was accepted: %d %s", response.Code, response.Body.String())
-	}
-	if response := respond("SHA256:presented"); response.Code != http.StatusOK {
-		t.Fatalf("trust: %d %s", response.Code, response.Body.String())
-	}
-
-	passphrase := waitForPrompt(t, s, PromptPassphrase)
-	if passphrase.KeyPath != "~/.ssh/id_ed25519" || passphrase.Retry != "" {
-		t.Fatalf("passphrase prompt = %+v", passphrase)
-	}
-	if response := respond(""); response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("an empty passphrase was accepted: %d", response.Code)
-	}
-	respond("key-secret")
-
-	password := waitForPrompt(t, s, PromptPassword)
-	if password.Retry == "" {
-		t.Fatalf("password prompt should explain the retry: %+v", password)
-	}
-	respond("login-secret")
-	s.runner.wait()
-
-	done := decode[scanDetail](t, request(t, s, http.MethodGet, "/api/scans/"+started.ID, nil))
-	if done.Scan.Status != store.ScanSucceeded || strings.Join(received, ",") != "key-secret,login-secret" {
-		t.Fatalf("scan = %+v, received = %v", done.Scan, received)
-	}
-	if strings.Contains(done.Scan.Error, "secret") {
-		t.Fatalf("a credential leaked into the scan record: %+v", done.Scan)
-	}
-}
-
 func TestCancellingAPromptFailsTheScan(t *testing.T) {
 	s := newTestServer(t, func(host store.Host, _ []string, options scan.Options) (map[string]any, error) {
-		_, err := options.Remote.Passphrase("~/.ssh/id_ed25519", nil)
+		_, err := options.SudoPassword(nil)
 		return nil, err
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "db.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{}))
-	waitForPrompt(t, s, PromptPassphrase)
+	waitForPrompt(t, s, PromptSudo)
 	if response := request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{}); response.Code != http.StatusConflict {
 		t.Fatalf("a second scan started while the first waits for input: %d", response.Code)
 	}
 	request(t, s, http.MethodPost, "/api/scans/"+started.ID+"/respond", map[string]any{"cancel": true})
 	s.runner.wait()
 	detail := decode[scanDetail](t, request(t, s, http.MethodGet, "/api/scans/"+started.ID, nil))
-	if detail.Scan.Status != store.ScanFailed || !strings.Contains(detail.Scan.Error, "passphrase was not provided") {
+	if detail.Scan.Status != store.ScanFailed || !strings.Contains(detail.Scan.Error, "sudo password was not provided") {
 		t.Fatalf("cancelled scan = %+v", detail.Scan)
 	}
 	if response := request(t, s, http.MethodPost, "/api/scans/"+started.ID+"/respond", map[string]any{"value": "late"}); response.Code != http.StatusNotFound {
@@ -221,12 +159,12 @@ func TestCancellingAPromptFailsTheScan(t *testing.T) {
 
 func TestClosingServerStopsWaitingScans(t *testing.T) {
 	s := newTestServer(t, func(host store.Host, _ []string, options scan.Options) (map[string]any, error) {
-		_, err := options.Remote.Password(nil)
+		_, err := options.SudoPassword(nil)
 		return nil, err
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "app.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{}))
-	waitForPrompt(t, s, PromptPassword)
+	waitForPrompt(t, s, PromptSudo)
 	s.Close()
 	if detail := decode[scanDetail](t, request(t, s, http.MethodGet, "/api/scans/"+started.ID, nil)); detail.Scan.Status != store.ScanFailed {
 		t.Fatalf("scan after shutdown = %+v", detail.Scan)
@@ -311,7 +249,7 @@ func TestChosenChecksAndSudoPrompt(t *testing.T) {
 	if len(checkList) != 5 || checkList[0].ID != checks.Packages || !checkList[0].Default {
 		t.Fatalf("checks = %+v", checkList)
 	}
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "m.example", "username": "scanner", "allow_sudo": true}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local", "allow_sudo": true}))
 	if !host.AllowSudo {
 		t.Fatalf("allow_sudo was not saved: %+v", host)
 	}
@@ -348,7 +286,7 @@ func TestDecliningSudoContinuesTheScan(t *testing.T) {
 		}
 		return map[string]any{"host_id": host.ID, "checks_run": []string{checks.Config}}, nil
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "d.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{"checks": []string{checks.Config}}))
 	waitForPrompt(t, s, PromptSudo)
 	request(t, s, http.MethodPost, "/api/scans/"+started.ID+"/respond", map[string]any{"cancel": true})
@@ -365,7 +303,7 @@ func TestSkippedCheckIsNotCountedAsClean(t *testing.T) {
 			"check_results": map[string]any{checks.Antivirus: map[string]any{"status": "skipped", "findings": []any{}}},
 		}, nil
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "av.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{"checks": []string{checks.Antivirus}})
 	s.runner.wait()
 	totals := decode[summary](t, request(t, s, http.MethodGet, "/api/summary", nil)).Checks[checks.Antivirus]
@@ -382,7 +320,7 @@ func TestLiveEventsStreamAndActivity(t *testing.T) {
 		options.Progress(scan.Event{Kind: "command", Phase: "malware", Message: "ps -eo pid=,user=,args=", Sudo: true})
 		return map[string]any{"host_id": host.ID, "checks_run": selected}, nil
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "live.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{"checks": []string{checks.Malware}}))
 
 	activity := decode[[]Activity](t, request(t, s, http.MethodGet, "/api/activity", nil))
@@ -414,7 +352,7 @@ func TestSavedLogIsReplayedAfterRestart(t *testing.T) {
 		options.Progress(scan.Event{Kind: "command", Phase: "config", Message: "ss -H -tuln"})
 		return map[string]any{"host_id": host.ID, "checks_run": selected}, nil
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "saved.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{"checks": []string{checks.Config}}))
 	s.runner.wait()
 
@@ -442,7 +380,7 @@ func TestDeleteScanEndpoint(t *testing.T) {
 		<-release
 		return map[string]any{"host_id": host.ID, "checks_run": selected}, nil
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "del.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{"checks": []string{checks.Config}}))
 	if response := request(t, s, http.MethodDelete, "/api/scans/"+started.ID, nil); response.Code != http.StatusConflict {
 		t.Fatalf("deleting a running scan = %d", response.Code)
@@ -465,7 +403,7 @@ func TestScanIsFinalBeforeDoneIsPublished(t *testing.T) {
 		options.Progress(scan.Event{Kind: "phase", Phase: "config", Message: "Security configuration"})
 		return map[string]any{"host_id": host.ID, "checks_run": selected}, nil
 	})
-	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"address": "final.example", "username": "scanner"}))
+	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}))
 	started := decode[store.Scan](t, request(t, s, http.MethodPost, "/api/hosts/"+host.ID+"/scans", map[string]any{"checks": []string{checks.Config}}))
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -491,25 +429,49 @@ func TestLocalHostRegistration(t *testing.T) {
 	s := newTestServer(t, nil)
 	capabilities := decode[capabilitiesResponse](t, request(t, s, http.MethodGet, "/api/capabilities", nil))
 	response := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"})
-	if !capabilities.LocalScanning {
-		// Off Linux the server must refuse, with the reason the UI shows.
-		if response.Code != http.StatusBadRequest || capabilities.LocalReason == "" {
-			t.Fatalf("non-Linux local host: %d %s, reason %q", response.Code, response.Body.String(), capabilities.LocalReason)
-		}
-		return
-	}
 	host := decode[store.Host](t, response)
-	if response.Code != http.StatusCreated || host.Transport != store.TransportLocal || host.Address != capabilities.Hostname {
-		t.Fatalf("local host = %d %+v", response.Code, host)
+	if !capabilities.LocalScanning || response.Code != http.StatusCreated || host.Transport != store.TransportLocal || host.Address != capabilities.Hostname {
+		t.Fatalf("local host = %d %+v, capabilities %+v", response.Code, host, capabilities)
 	}
 	if again := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}); again.Code != http.StatusConflict {
 		t.Fatalf("a second local host was accepted: %d", again.Code)
 	}
 }
 
-func TestUnknownTransportIsRejected(t *testing.T) {
+func TestLocalHostRefusedWhereLocalScanningIsUnavailable(t *testing.T) {
 	s := newTestServer(t, nil)
-	if response := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "telnet", "address": "x", "username": "y"}); response.Code != http.StatusBadRequest {
-		t.Fatalf("unknown transport = %d", response.Code)
+	s.localAvailable = func() error { return errors.New("local scanning is supported on Linux only; this machine runs darwin") }
+	capabilities := decode[capabilitiesResponse](t, request(t, s, http.MethodGet, "/api/capabilities", nil))
+	if capabilities.LocalScanning || !strings.Contains(capabilities.LocalReason, "Linux only") {
+		t.Fatalf("capabilities = %+v", capabilities)
+	}
+	if response := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local"}); response.Code != http.StatusBadRequest {
+		t.Fatalf("local host on an unsupported system = %d", response.Code)
+	}
+}
+
+func TestSSHHostsCanNoLongerBeAddedOrScanned(t *testing.T) {
+	directory := t.TempDir()
+	// A profile file from an earlier release is imported as a legacy SSH host.
+	legacy := `[{"id":"0123456789abcdef0123456789abcdef","address":"old.example","username":"ubuntu","port":22,"key_path":null}]`
+	if err := os.WriteFile(filepath.Join(directory, "hosts.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPSARMOR_HOME", directory)
+	s, err := New(fstest.MapFS{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.localAvailable = func() error { return nil }
+	if response := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "ssh"}); response.Code != http.StatusBadRequest {
+		t.Fatalf("an SSH host was accepted: %d", response.Code)
+	}
+	hosts := decode[[]store.HostSummary](t, request(t, s, http.MethodGet, "/api/hosts", nil))
+	if len(hosts) != 1 || hosts[0].Transport != store.TransportSSH {
+		t.Fatalf("legacy hosts = %+v", hosts)
+	}
+	response := request(t, s, http.MethodPost, "/api/hosts/"+hosts[0].ID+"/scans", map[string]any{"checks": []string{checks.Config}})
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "SSH scanning was removed") {
+		t.Fatalf("scanning a legacy SSH host = %d %s", response.Code, response.Body.String())
 	}
 }

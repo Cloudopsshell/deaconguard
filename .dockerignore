@@ -2,7 +2,6 @@
 .github
 .gitignore
 .goreleaser.yaml
-charts
 /dist
 tests
 README.md

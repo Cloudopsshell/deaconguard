@@ -45,14 +45,8 @@ func TestLegacyJSONStoreIsImportedOnce(t *testing.T) {
 
 func TestScanLifecycleAndVulnerabilityQueries(t *testing.T) {
 	withTempDataDir(t)
-	first, err := AddHost("a.example", "scanner", 22, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := AddHost("b.example", "scanner", 22, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	first := addTestHost(t, "a.example", TransportSSH)
+	second := addTestHost(t, "b.example", TransportSSH)
 	finding := func(cve, pkg, severity string) map[string]any {
 		return map[string]any{"id": cve, "package": pkg, "installed_version": "1", "fixed_version": "2", "severity": severity}
 	}
@@ -120,11 +114,9 @@ func TestScanLifecycleAndVulnerabilityQueries(t *testing.T) {
 
 func TestCheckResultsAreSummarizedPerCheck(t *testing.T) {
 	withTempDataDir(t)
-	host, err := AddHost("c.example", "scanner", 22, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if host, err = SetAllowSudo(host.ID, true); err != nil || !host.AllowSudo {
+	host := addTestHost(t, "c.example", TransportLocal)
+	host, err := SetAllowSudo(host.ID, true)
+	if err != nil || !host.AllowSudo {
 		t.Fatalf("SetAllowSudo() = %+v, %v", host, err)
 	}
 	full, err := CreateScan(host, []string{CheckPackages, "integrity"})
@@ -203,10 +195,7 @@ func TestVersionOneDatabaseIsUpgraded(t *testing.T) {
 
 func TestPruneKeepsNewestAndEachChecksLatestResult(t *testing.T) {
 	withTempDataDir(t)
-	host, err := AddHost("prune.example", "scanner", 22, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	host := addTestHost(t, "prune.example", TransportSSH)
 	complete := func(checks []string) Scan {
 		scan, err := CreateScan(host, checks)
 		if err != nil {

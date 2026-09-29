@@ -8,14 +8,22 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+This release removes SSH scanning: OpsArmor now scans the Linux machine it is installed on. An agent that enrolls with a one-time token, so one OpsArmor server covers many machines, is planned to follow.
+
+### Removed
+
+- **SSH scanning** (breaking): adding and scanning hosts over SSH, SSH host-key trust, key passphrase and SSH password prompts, and the `golang.org/x/crypto` dependency. `opsarmor host add ADDRESS --username ...` now fails with an explanation.
+- The container image and the Helm chart, which only ran SSH scans, are no longer published.
+
 ### Added
 
-- **Local scanning**: scan the Linux machine OpsArmor runs on without SSH, with `opsarmor scan --local` for a one-off scan or `opsarmor host add --local` (**Add host → This machine** in the web UI) to register it. Local scans run the same fixed, read-only commands and support every check, including sudo.
+- **Local scanning** of the machine OpsArmor runs on: `opsarmor host add [--allow-sudo]` (**Add this machine** in the web UI) registers it, and `opsarmor scan --local [--allow-sudo]` scans it once without registering it. All checks are supported, including sudo, and the sudo password prompt remains.
 - The CI workflow runs a real local scan with every check on an Ubuntu runner.
 
 ### Changed
 
-- Scanning no longer depends on SSH internally: the SSH connection is one of several ways to reach a host, preparing for an enrollment-based agent.
+- **Upgrade notes:** hosts registered for SSH scanning stay listed with their full scan history, marked as no longer scannable; remove them when you no longer need their results. To keep scanning such a server, install OpsArmor on it and run `opsarmor host add` there. The `known_hosts` file in the data directory is no longer used and can be deleted.
+- Scanning runs through a transport-neutral interface, ready for the planned agent.
 
 ## [0.1.1] - 2026-09-29
 

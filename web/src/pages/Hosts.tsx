@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Play, Plus, Server, Trash2 } from "lucide-react";
@@ -10,7 +10,6 @@ import {
   Dialog,
   EmptyState,
   ErrorMessage,
-  Field,
   Loading,
   PageHeader,
   SeverityCountsInline,
@@ -42,10 +41,10 @@ export function Hosts() {
     <>
       <PageHeader
         title="Hosts"
-        description="Linux machines registered for agentless scanning. Only add systems you own or are authorized to scan."
+        description="The machine OpsArmor runs on, plus SSH hosts from earlier versions, kept for their results."
         action={
           <Button onClick={() => setAdding(true)}>
-            <Plus className="size-4" /> Add host
+            <Plus className="size-4" /> Add this machine
           </Button>
         }
       />
@@ -60,10 +59,10 @@ export function Hosts() {
           <EmptyState
             icon={<Server className="size-6" />}
             title="No hosts yet"
-            description="Add a host with its SSH address and username. No agent or root access is needed."
+            description="Register the Linux machine OpsArmor runs on to scan it. No SSH, agent, or root access is needed."
             action={
               <Button onClick={() => setAdding(true)}>
-                <Plus className="size-4" /> Add host
+                <Plus className="size-4" /> Add this machine
               </Button>
             }
           />
@@ -88,7 +87,11 @@ export function Hosts() {
           </Table>
         )}
       </Card>
-      <AddHostDialog open={adding} onClose={() => setAdding(false)} />
+      <AddHostDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        registered={data?.some((host) => host.transport === "local") ?? false}
+      />
     </>
   );
 }
@@ -135,6 +138,8 @@ function HostRow({ host }: { host: HostSummary }) {
           <Button
             variant="secondary"
             loading={running}
+            disabled={host.transport !== "local"}
+            title={host.transport !== "local" ? "SSH scanning was removed in 0.2.0" : undefined}
             onClick={(event) => {
               event.stopPropagation();
               setScanning(true);
@@ -200,130 +205,71 @@ function CheckChips({ host }: { host: HostSummary }) {
   );
 }
 
-function AddHostDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddHostDialog({ open, onClose, registered }: { open: boolean; onClose: () => void; registered: boolean }) {
   const navigate = useNavigate();
   const refresh = useRefreshAll();
   const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
-  const [transport, setTransport] = useState<"ssh" | "local">("ssh");
-  const [form, setForm] = useState({ address: "", username: "", port: "22", key_path: "" });
   const [allowSudo, setAllowSudo] = useState(false);
   const addHost = useMutation({
     mutationFn: api.addHost,
     onSuccess: (host) => {
       refresh();
-      setForm({ address: "", username: "", port: "22", key_path: "" });
       setAllowSudo(false);
       navigate(`/hosts/${host.id}`);
     },
   });
+  const unavailable = capabilities.data?.local_scanning === false;
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    addHost.mutate({
-      transport,
-      address: form.address.trim(),
-      username: form.username.trim(),
-      port: Number(form.port) || 22,
-      key_path: form.key_path.trim(),
-      allow_sudo: allowSudo,
-    });
+    addHost.mutate({ transport: "local", allow_sudo: allowSudo });
   }
 
-  const update = (key: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) =>
-    setForm((current) => ({ ...current, [key]: event.target.value }));
-
   return (
-    <Dialog open={open} onClose={onClose} title="Add host">
+    <Dialog open={open} onClose={onClose} title="Add this machine">
       <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="How to reach the host">
-          {(
-            [
-              ["ssh", "Remote host", "Scan over SSH"],
-              ["local", "This machine", "Scan where OpsArmor runs"],
-            ] as const
-          ).map(([value, title, hint]) => {
-            const disabled = value === "local" && capabilities.data?.local_scanning === false;
-            return (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={transport === value}
-                disabled={disabled}
-                onClick={() => setTransport(value)}
-                title={disabled ? capabilities.data?.local_reason : undefined}
-                className={cx(
-                  "rounded-lg p-3 text-left ring-1 ring-inset transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-                  transport === value
-                    ? "bg-indigo-50/60 ring-indigo-600/40 dark:bg-indigo-500/10 dark:ring-indigo-400/40"
-                    : "ring-slate-200 hover:bg-slate-50 dark:ring-slate-800 dark:hover:bg-slate-800/50",
-                )}
-              >
-                <span className="block text-sm font-semibold">{title}</span>
-                <span className="block text-xs text-slate-500 dark:text-slate-400">{hint}</span>
-              </button>
-            );
-          })}
-        </div>
-        {capabilities.data?.local_scanning === false && (
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            This machine cannot be scanned locally: {capabilities.data.local_reason}.
-          </p>
-        )}
-        {transport === "local" ? (
-          <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
-            Registers <span className="font-semibold">{capabilities.data?.hostname ?? "this machine"}</span>. Scans run the same fixed,
-            read-only commands directly on it as <span className="font-semibold">{capabilities.data?.username}</span>, with no SSH
-            connection.
-          </p>
+        {unavailable ? (
+          <ErrorMessage error={`This machine cannot be scanned: ${capabilities.data?.local_reason}.`} />
+        ) : registered ? (
+          <p className="text-sm text-slate-600 dark:text-slate-300">This machine is already registered. Open it from the hosts list to scan it.</p>
         ) : (
-          <>
-            <Field
-              label="Address"
-              placeholder="ubuntu.example.com or 10.0.0.12"
-              value={form.address}
-              onChange={update("address")}
-              required
-              autoFocus
-            />
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <Field label="SSH username" placeholder="ubuntu" value={form.username} onChange={update("username")} required />
-              </div>
-              <Field label="Port" type="number" min={1} max={65535} value={form.port} onChange={update("port")} required />
-            </div>
-            <Field
-              label="Private key path (optional)"
-              placeholder="~/.ssh/id_ed25519"
-              value={form.key_path}
-              onChange={update("key_path")}
-              hint="Leave empty to use ssh-agent or your default keys. Encrypted keys are asked for when a scan needs them."
-            />
-          </>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Registers <span className="font-semibold">{capabilities.data?.hostname ?? "this machine"}</span>, the Linux machine
+            OpsArmor runs on. Scans run fixed, read-only commands directly on it as{" "}
+            <span className="font-semibold">{capabilities.data?.username}</span>.
+          </p>
         )}
-        <label className="flex cursor-pointer gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={allowSudo}
-            onChange={(event) => setAllowSudo(event.target.checked)}
-            className="mt-0.5 size-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-          />
-          <span>
-            <span className="font-medium">Allow sudo for deeper checks</span>
-            <span className="block text-xs text-slate-500 dark:text-slate-400">
-              Integrity, malware, configuration, and antivirus checks can read protected files and processes using fixed read-only
-              commands. You can change this later.
+        <p className="rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+          SSH scanning of other machines was removed in OpsArmor 0.2.0. To scan another server, install OpsArmor on it. An agent
+          that enrolls with a token is planned.
+        </p>
+        {!unavailable && !registered && (
+          <label className="flex cursor-pointer gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={allowSudo}
+              onChange={(event) => setAllowSudo(event.target.checked)}
+              className="mt-0.5 size-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+            />
+            <span>
+              <span className="font-medium">Allow sudo for deeper checks</span>
+              <span className="block text-xs text-slate-500 dark:text-slate-400">
+                Integrity, malware, configuration, and antivirus checks can read protected files and processes using fixed read-only
+                commands. You can change this later.
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        )}
         <ErrorMessage error={addHost.error} />
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
+            {unavailable || registered ? "Close" : "Cancel"}
           </Button>
-          <Button type="submit" loading={addHost.isPending}>
-            Add host
-          </Button>
+          {!unavailable && !registered && (
+            <Button type="submit" loading={addHost.isPending}>
+              Add this machine
+            </Button>
+          )}
         </div>
       </form>
     </Dialog>
