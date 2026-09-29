@@ -74,6 +74,9 @@ jobs:
           args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A release and its candidate share a commit; without this GoReleaser
+          # may pick the candidate's tag and upload to the wrong release.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
