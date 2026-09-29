@@ -24,6 +24,7 @@ import { useRefreshAll } from "../lib/hooks";
 import { isActive, severityStyle, timeAgo } from "../lib/format";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { ScanDialog } from "../components/ScanDialog";
+import { shortConnectionLabel } from "../lib/hosts";
 import { RemoveHostDialog } from "./HostDetail";
 
 export function Hosts() {
@@ -104,7 +105,7 @@ function HostRow({ host }: { host: HostSummary }) {
           {host.address}
         </Link>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          {host.username}@{host.address}:{host.port}
+          {shortConnectionLabel(host)}
         </p>
       </Td>
       <Td className="text-slate-600 dark:text-slate-300">{host.last_report?.os || "—"}</Td>
@@ -202,6 +203,8 @@ function CheckChips({ host }: { host: HostSummary }) {
 function AddHostDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const refresh = useRefreshAll();
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
+  const [transport, setTransport] = useState<"ssh" | "local">("ssh");
   const [form, setForm] = useState({ address: "", username: "", port: "22", key_path: "" });
   const [allowSudo, setAllowSudo] = useState(false);
   const addHost = useMutation({
@@ -217,6 +220,7 @@ function AddHostDialog({ open, onClose }: { open: boolean; onClose: () => void }
   function submit(event: FormEvent) {
     event.preventDefault();
     addHost.mutate({
+      transport,
       address: form.address.trim(),
       username: form.username.trim(),
       port: Number(form.port) || 22,
@@ -231,27 +235,72 @@ function AddHostDialog({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <Dialog open={open} onClose={onClose} title="Add host">
       <form onSubmit={submit} className="space-y-4">
-        <Field
-          label="Address"
-          placeholder="ubuntu.example.com or 10.0.0.12"
-          value={form.address}
-          onChange={update("address")}
-          required
-          autoFocus
-        />
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
-            <Field label="SSH username" placeholder="ubuntu" value={form.username} onChange={update("username")} required />
-          </div>
-          <Field label="Port" type="number" min={1} max={65535} value={form.port} onChange={update("port")} required />
+        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="How to reach the host">
+          {(
+            [
+              ["ssh", "Remote host", "Scan over SSH"],
+              ["local", "This machine", "Scan where OpsArmor runs"],
+            ] as const
+          ).map(([value, title, hint]) => {
+            const disabled = value === "local" && capabilities.data?.local_scanning === false;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={transport === value}
+                disabled={disabled}
+                onClick={() => setTransport(value)}
+                title={disabled ? capabilities.data?.local_reason : undefined}
+                className={cx(
+                  "rounded-lg p-3 text-left ring-1 ring-inset transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  transport === value
+                    ? "bg-indigo-50/60 ring-indigo-600/40 dark:bg-indigo-500/10 dark:ring-indigo-400/40"
+                    : "ring-slate-200 hover:bg-slate-50 dark:ring-slate-800 dark:hover:bg-slate-800/50",
+                )}
+              >
+                <span className="block text-sm font-semibold">{title}</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">{hint}</span>
+              </button>
+            );
+          })}
         </div>
-        <Field
-          label="Private key path (optional)"
-          placeholder="~/.ssh/id_ed25519"
-          value={form.key_path}
-          onChange={update("key_path")}
-          hint="Leave empty to use ssh-agent or your default keys. Encrypted keys must be loaded with ssh-add."
-        />
+        {capabilities.data?.local_scanning === false && (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            This machine cannot be scanned locally: {capabilities.data.local_reason}.
+          </p>
+        )}
+        {transport === "local" ? (
+          <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
+            Registers <span className="font-semibold">{capabilities.data?.hostname ?? "this machine"}</span>. Scans run the same fixed,
+            read-only commands directly on it as <span className="font-semibold">{capabilities.data?.username}</span>, with no SSH
+            connection.
+          </p>
+        ) : (
+          <>
+            <Field
+              label="Address"
+              placeholder="ubuntu.example.com or 10.0.0.12"
+              value={form.address}
+              onChange={update("address")}
+              required
+              autoFocus
+            />
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <Field label="SSH username" placeholder="ubuntu" value={form.username} onChange={update("username")} required />
+              </div>
+              <Field label="Port" type="number" min={1} max={65535} value={form.port} onChange={update("port")} required />
+            </div>
+            <Field
+              label="Private key path (optional)"
+              placeholder="~/.ssh/id_ed25519"
+              value={form.key_path}
+              onChange={update("key_path")}
+              hint="Leave empty to use ssh-agent or your default keys. Encrypted keys are asked for when a scan needs them."
+            />
+          </>
+        )}
         <label className="flex cursor-pointer gap-2 text-sm">
           <input
             type="checkbox"

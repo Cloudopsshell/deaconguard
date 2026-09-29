@@ -28,6 +28,15 @@ export interface Host {
   port: number;
   key_path: string | null;
   allow_sudo: boolean;
+  /** "ssh" for a remote host, "local" for the machine OpsArmor runs on. */
+  transport: "ssh" | "local";
+}
+
+export interface Capabilities {
+  local_scanning: boolean;
+  local_reason?: string;
+  hostname: string;
+  username: string;
 }
 
 export interface Scan {
@@ -227,6 +236,7 @@ export interface ScanEvent {
 }
 
 export interface NewHost {
+  transport: "ssh" | "local";
   address: string;
   username: string;
   port: number;
@@ -264,6 +274,7 @@ export const api = {
   addHost: (host: NewHost) => request<Host>("POST", "/api/hosts", host),
   removeHost: (id: string) => request<Host>("DELETE", `/api/hosts/${id}`),
   checks: () => request<CheckDefinition[]>("GET", "/api/checks"),
+  capabilities: () => request<Capabilities>("GET", "/api/capabilities"),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),

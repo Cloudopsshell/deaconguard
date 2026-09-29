@@ -8,6 +8,15 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Local scanning**: scan the Linux machine OpsArmor runs on without SSH, with `opsarmor scan --local` for a one-off scan or `opsarmor host add --local` (**Add host → This machine** in the web UI) to register it. Local scans run the same fixed, read-only commands and support every check, including sudo.
+- The CI workflow runs a real local scan with every check on an Ubuntu runner.
+
+### Changed
+
+- Scanning no longer depends on SSH internally: the SSH connection is one of several ways to reach a host, preparing for an enrollment-based agent.
+
 ## [0.1.1] - 2026-09-29
 
 ### Security

@@ -1,12 +1,12 @@
 package scan
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"opsarmor/internal/checks"
+	"opsarmor/internal/target"
 )
 
 // Event is one line of live scan progress. Events describe what OpsArmor is
@@ -70,7 +70,7 @@ func (r *reporter) warn(format string, arguments ...any) {
 	r.send(Event{Kind: "warning", Message: fmt.Sprintf(format, arguments...)})
 }
 
-// CommandStarted and CommandFinished implement remote.CommandObserver.
+// CommandStarted and CommandFinished implement target.CommandObserver.
 func (r *reporter) CommandStarted(command string) {
 	display, sudo := displayCommand(command)
 	r.send(Event{Kind: "command", Message: display, Sudo: sudo})
@@ -80,10 +80,9 @@ func (r *reporter) CommandFinished(_ string, outputBytes int, elapsed time.Durat
 	message := fmt.Sprintf("%s in %s", formatBytes(outputBytes), formatDuration(elapsed))
 	kind := "result"
 	if err != nil {
-		var exit interface{ ExitStatus() int }
-		if errors.As(err, &exit) {
+		if status, ok := target.ExitStatus(err); ok {
 			// Verification tools exit non-zero to report differences.
-			message = fmt.Sprintf("exit %d · %s", exit.ExitStatus(), message)
+			message = fmt.Sprintf("exit %d · %s", status, message)
 		} else {
 			kind = "error"
 			message = truncate(err.Error(), 200)

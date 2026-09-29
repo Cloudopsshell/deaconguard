@@ -36,7 +36,7 @@ A pull request can be merged when:
 
 OpsArmor runs on other people's servers, so these rules are not negotiable:
 
-- Commands run on a scanned host are **fixed, read-only strings** defined in `internal/remote` or `internal/checks`. Never insert user input or data from the host into a command.
+- Commands run on a scanned host are **fixed, read-only strings** defined in `internal/target` or `internal/checks`, and must behave the same over every transport (`internal/remote` for SSH, `internal/local` for this machine). Never insert user input or data from the host into a command.
 - Keep SSH host-key verification strict: never skip or loosen it.
 - Never store or log private keys, passphrases, or passwords.
 - A scan that fails or cannot evaluate something must never be reported as clean.

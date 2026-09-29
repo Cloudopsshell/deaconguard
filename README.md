@@ -12,7 +12,7 @@ OpsArmor is an agentless Linux security scanner written in Go. It connects only 
 ## Requirements
 
 - **Where OpsArmor runs:** Linux or macOS on amd64 or arm64. It is a single self-contained binary; nothing else is needed.
-- **Scanned hosts:** reachable over SSH, running a [supported distribution](#supported-distributions). A normal account that can read `/etc/os-release` and the package database is enough; the optional checks see more when [sudo is allowed](#checks) for the host.
+- **Scanned hosts:** reachable over SSH, or the Linux machine OpsArmor runs on, running a [supported distribution](#supported-distributions). A normal account that can read `/etc/os-release` and the package database is enough; the optional checks see more when [sudo is allowed](#checks) for the host.
 - **Network:** HTTPS access from the machine running OpsArmor to the distribution's advisory feed.
 
 ## Install
@@ -108,6 +108,15 @@ opsarmor host list
 opsarmor scan HOST_ID --checks packages,malware,config
 opsarmor report REPORT_ID --json
 ```
+
+To scan the Linux machine OpsArmor is installed on, no SSH is needed. Register it once with `opsarmor host add --local` (or **Add host → This machine** in the web UI), or run a one-off scan:
+
+```sh
+opsarmor scan --local --checks packages,malware,config
+sudo opsarmor scan --local --checks integrity,malware   # or add --allow-sudo to use sudo for the deeper checks
+```
+
+Local scans run the same fixed, read-only commands directly as the user running OpsArmor, and are available on Linux only.
 
 The first connection to a host shows its SSH host-key fingerprint and asks you to trust it. Compare it with your cloud console or another trusted source first: this is trust-on-first-use, and once a key is trusted any change to it is refused. Encrypted keys and password logins are asked for when needed, in the browser or the terminal; for unattended use, load keys into `ssh-agent`.
 
