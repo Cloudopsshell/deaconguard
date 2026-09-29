@@ -1,0 +1,52 @@
+name: Bug report
+description: Something in OpsArmor does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not report security vulnerabilities here; follow SECURITY.md instead.
+  - type: input
+    id: version
+    attributes:
+      label: OpsArmor version
+      description: Output of `opsarmor version`
+      placeholder: opsarmor 0.1.1 (commit ..., built ...)
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Scanned host's distribution
+      placeholder: Ubuntu 24.04 LTS
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it happen?
+      options:
+        - Web UI
+        - CLI
+        - Container
+        - Helm chart
+        - Installation or upgrade
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. opsarmor host add ...
+        2. opsarmor scan ... --checks ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error messages or scan log
+      description: Remove hostnames, IP addresses, or anything else you do not want to share publicly.
+      render: text

@@ -8,6 +8,16 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-29
+
+### Security
+
+- Updated `golang.org/x/crypto` to v0.57.0 and `golang.org/x/net` to v0.59.0. OpsArmor 0.1.0 reached 17 known vulnerabilities in them: a malicious or faulty SSH server, such as a compromised scanned host, could crash or hang a scan, `@revoked` entries in `known_hosts` files were not enforced, and malformed Amazon Linux bulletin pages could crash or slow the scanner. All users should upgrade.
+
+### Added
+
+- `SECURITY.md` with how to report vulnerabilities privately, and `CONTRIBUTING.md` with the pull request process.
+
 ## [0.1.0] - 2026-09-29
 
 The first release of OpsArmor.
@@ -29,5 +39,6 @@ The first release of OpsArmor.
 - `opsarmor version`, and the version in the web UI, in every report, and in requests to advisory feeds.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, `.deb` and `.rpm` packages, a multi-architecture container image on GHCR, and a Helm chart for scheduled scans.
 
-[Unreleased]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Cloudopsshell/OpsArmor/releases/tag/v0.1.0

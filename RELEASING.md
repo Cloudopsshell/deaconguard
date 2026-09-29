@@ -17,7 +17,7 @@ Follow [Semantic Versioning](https://semver.org):
 ## Steps
 
 1. **Update `CHANGELOG.md`** on a branch: move the entries under `[Unreleased]` into a new section `## [X.Y.Z] - YYYY-MM-DD`, grouped as Added, Changed, Deprecated, Removed, Fixed, and Security, and update the comparison links at the bottom. List any upgrade steps under **Changed**.
-2. **Merge** the branch into `main` through a pull request.
+2. **Merge** the branch into `main` through a pull request once the CI checks pass and it is approved.
 3. **Tag a release candidate** from `main` to test the pipeline without affecting users:
 
    ```sh
