@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
 	"opsarmor/internal/platform"
 	"opsarmor/internal/remote"
@@ -64,6 +65,7 @@ func Run(host store.Host, checkIDs []string, options Options) (map[string]any, e
 	report := map[string]any{
 		"host_id": host.ID, "address": host.Address, "os": scanner.PlatformName(target),
 		"scanned_at": now.Format(time.RFC3339), "checks_run": checkIDs,
+		"opsarmor_version": buildinfo.Version,
 	}
 	results := make(map[string]checks.Result)
 	executor := checks.NewExecutor(session, host.AllowSudo, options.SudoPassword)

@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/term"
 
+	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
 	"opsarmor/internal/remote"
 	"opsarmor/internal/scan"
@@ -49,6 +50,9 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runReport(arguments[1:], output)
 	case "serve":
 		err = runServe(arguments[1:], output)
+	case "version", "--version", "-v":
+		fmt.Fprintln(output, buildinfo.String())
+		return 0
 	case "help", "--help", "-h":
 		usage(output)
 		return 0
@@ -347,7 +351,7 @@ func runServe(arguments []string, output io.Writer) error {
 		defer cancel()
 		httpServer.Shutdown(shutdown)
 	}()
-	fmt.Fprintf(output, "OpsArmor web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", listener.Addr(), store.DatabasePath())
+	fmt.Fprintf(output, "OpsArmor %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
 	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -399,5 +403,6 @@ Commands:
   opsarmor host remove HOST_ID
   opsarmor scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
   opsarmor report REPORT_ID [--json]
-  opsarmor serve [--listen 127.0.0.1:PORT]   web UI, default http://127.0.0.1:7480`)
+  opsarmor serve [--listen 127.0.0.1:PORT]   web UI, default http://127.0.0.1:7480
+  opsarmor version`)
 }

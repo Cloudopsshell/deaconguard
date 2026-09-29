@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 
+	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
 	"opsarmor/internal/store"
 )
@@ -43,6 +44,7 @@ func New(ui fs.FS, scan scanFunc) (*Server, error) {
 	mux.HandleFunc("PATCH /api/hosts/{id}", s.updateHost)
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.removeHost)
 	mux.HandleFunc("GET /api/checks", s.listChecks)
+	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, buildinfo.Get()) })
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.startScan)
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
 	mux.HandleFunc("DELETE /api/scans/{id}", s.deleteScan)

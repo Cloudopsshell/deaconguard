@@ -10,6 +10,9 @@ FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=
+ARG DATE=
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -19,7 +22,9 @@ COPY internal ./internal
 COPY web ./web
 COPY --from=ui /web/dist ./web/dist
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
-    go build -trimpath -ldflags="-s -w" -o /out/opsarmor ./cmd/opsarmor \
+    go build -trimpath \
+      -ldflags="-s -w -X opsarmor/internal/buildinfo.Version=${VERSION} -X opsarmor/internal/buildinfo.Commit=${COMMIT} -X opsarmor/internal/buildinfo.Date=${DATE}" \
+      -o /out/opsarmor ./cmd/opsarmor \
     && mkdir -p /out/rootfs/data /out/rootfs/home/nonroot/.ssh /out/rootfs/ssh-keys /out/rootfs/tmp \
     && chown -R 65532:65532 /out/rootfs \
     && chmod 1777 /out/rootfs/tmp
