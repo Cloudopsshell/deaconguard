@@ -2,9 +2,7 @@
 
 Releases are built by the [release workflow](.github/workflows/release.yml) when a `v*` tag is pushed. It checks that the tag is a semantic version, runs the tests, and publishes:
 
-- Linux and macOS archives, `.deb` and `.rpm` packages, and `checksums.txt` on the GitHub release, with the notes from the matching `CHANGELOG.md` section;
-- the container image `ghcr.io/cloudopsshell/opsarmor` for `linux/amd64` and `linux/arm64`;
-- the Helm chart, versioned to match, attached to the release.
+- Linux and macOS archives, `.deb` and `.rpm` packages, and `checksums.txt` on the GitHub release, with the notes from the matching `CHANGELOG.md` section.
 
 ## Choose the version
 
@@ -26,7 +24,7 @@ Follow [Semantic Versioning](https://semver.org):
    git push origin vX.Y.Z-rc.1
    ```
 
-   The GitHub release is marked as a pre-release, and the container gets only its exact tag; `latest` does not move. Install it, check `opsarmor version`, and scan a test host.
+   The GitHub release is marked as a pre-release. Install it, check `opsarmor version`, and scan a test machine.
 4. **Tag the release** from the same commit once the candidate works:
 
    ```sh
@@ -34,10 +32,10 @@ Follow [Semantic Versioning](https://semver.org):
    git push origin vX.Y.Z
    ```
 
-5. **Check the release** on GitHub: the notes, the assets, and the container tags `vX.Y.Z`, `vX.Y`, and `latest`.
+5. **Check the release** on GitHub: the notes and the assets.
 
 A tag that fails the workflow can be deleted with `git push --delete origin TAG` and `git tag -d TAG` before retrying; delete the draft or failed release on GitHub first. Never reuse a version number that users may already have installed; publish the next patch version instead.
 
 ## Test the packaging locally
 
-`make release-snapshot` builds all archives and packages into `dist/` without publishing (requires [GoReleaser](https://goreleaser.com)), `make docker-build` builds the container image, and `make helm-lint` checks the chart.
+`make release-snapshot` builds all archives and packages into `dist/` without publishing (requires [GoReleaser](https://goreleaser.com)).

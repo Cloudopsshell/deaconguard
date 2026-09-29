@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/ssh"
+	"opsarmor/internal/target"
 )
 
 const maxSudoAttempts = 3
@@ -41,14 +41,14 @@ func NewExecutor(commander Commander, allowSudo bool, askPassword func(retry err
 	return &Executor{commander: commander, allowSudo: allowSudo, askPassword: askPassword}
 }
 
-// Run executes command as the SSH user. Output is returned even when the
+// Run executes command as the scanning account. Output is returned even when the
 // command exits non-zero, because verification tools report findings that way.
 func (e *Executor) Run(command string, limit int, timeout time.Duration) ([]byte, int, error) {
 	return exitCode(e.commander.Run(command, nil, limit, timeout))
 }
 
 // RunPrivileged executes command through sudo when it is available, and as
-// the SSH user otherwise. privileged reports which one happened.
+// the scanning account otherwise. privileged reports which one happened.
 func (e *Executor) RunPrivileged(command string, limit int, timeout time.Duration) (output []byte, code int, privileged bool, err error) {
 	if !e.sudo() {
 		output, code, err = e.Run(command, limit, timeout)
@@ -83,7 +83,7 @@ func (e *Executor) sudo() bool {
 	}
 	e.mode = sudoUnavailable
 	if !e.allowSudo {
-		e.note = "OpsArmor's \"use sudo\" setting is off for this host, so only what the SSH user can read was checked. Turn it on for full coverage."
+		e.note = "OpsArmor's \"use sudo\" setting is off for this host, so only what the scanning account can read was checked. Turn it on for full coverage."
 		return false
 	}
 	output, _, err := exitCode(e.commander.Run("sudo -n true", nil, 4096, 30*time.Second))
@@ -93,7 +93,7 @@ func (e *Executor) sudo() bool {
 	}
 	message := strings.ToLower(err.Error() + " " + string(output))
 	if !strings.Contains(message, "password is required") {
-		e.note = "Sudo is allowed for this host but is not available to the SSH user (" + truncate(err.Error(), 160) + "); checks ran without it."
+		e.note = "Sudo is allowed for this host but is not available to the scanning account (" + truncate(err.Error(), 160) + "); checks ran without it."
 		return false
 	}
 	if e.askPassword == nil {
@@ -123,9 +123,8 @@ func (e *Executor) sudo() bool {
 
 // exitCode separates a non-zero exit status from other failures.
 func exitCode(output []byte, err error) ([]byte, int, error) {
-	var exitError *ssh.ExitError
-	if errors.As(err, &exitError) {
-		return output, exitError.ExitStatus(), err
+	if status, ok := target.ExitStatus(err); ok {
+		return output, status, err
 	}
 	if err != nil {
 		return output, -1, err

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,7 +18,7 @@ import (
 
 	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
-	"opsarmor/internal/remote"
+	"opsarmor/internal/local"
 	"opsarmor/internal/scan"
 	"opsarmor/internal/server"
 	"opsarmor/internal/store"
@@ -72,20 +71,21 @@ func runHost(arguments []string, output io.Writer) error {
 	}
 	switch arguments[0] {
 	case "add":
+		// Registers this machine; --local is accepted for scripts written for 0.2 previews.
 		allowSudo := false
-		addArguments := make([]string, 0, len(arguments))
 		for _, argument := range arguments[1:] {
-			if argument == "--allow-sudo" {
+			switch argument {
+			case "--allow-sudo":
 				allowSudo = true
-				continue
+			case "--local":
+			default:
+				return fmt.Errorf("opsarmor host add registers this machine and takes no address: %w", scan.ErrSSHRemoved)
 			}
-			addArguments = append(addArguments, argument)
 		}
-		address, username, port, keyPath, err := parseHostAdd(addArguments)
-		if err != nil {
+		if _, err := local.New(); err != nil {
 			return err
 		}
-		host, err := store.AddHost(address, username, port, keyPath)
+		host, err := store.AddLocalHost(local.Hostname(), local.Username())
 		if err != nil {
 			return err
 		}
@@ -118,7 +118,11 @@ func runHost(arguments []string, output io.Writer) error {
 			if host.AllowSudo {
 				sudo = "  (sudo allowed)"
 			}
-			fmt.Fprintf(output, "%s  %s@%s:%d%s\n", host.ID, host.Username, host.Address, host.Port, sudo)
+			if !host.Scannable() {
+				fmt.Fprintf(output, "%s  %s  (SSH host; scanning removed in 0.2.0, earlier results kept)\n", host.ID, host.Address)
+				continue
+			}
+			fmt.Fprintf(output, "%s  this machine (%s, as %s)%s\n", host.ID, host.Address, host.Username, sudo)
 		}
 	case "remove":
 		if len(arguments) != 2 {
@@ -135,50 +139,19 @@ func runHost(arguments []string, output io.Writer) error {
 	return nil
 }
 
-func parseHostAdd(arguments []string) (string, string, int, *string, error) {
-	address, username, keyPath := "", "", ""
-	port := 22
-	for index := 0; index < len(arguments); index++ {
-		argument := arguments[index]
-		if argument == "--username" || argument == "--port" || argument == "--key-path" {
-			if index+1 >= len(arguments) {
-				return "", "", 0, nil, fmt.Errorf("%s requires a value", argument)
-			}
-			index++
-			switch argument {
-			case "--username":
-				username = arguments[index]
-			case "--key-path":
-				keyPath = arguments[index]
-			case "--port":
-				if _, err := fmt.Sscan(arguments[index], &port); err != nil {
-					return "", "", 0, nil, fmt.Errorf("invalid SSH port %q", arguments[index])
-				}
-			}
-			continue
-		}
-		if strings.HasPrefix(argument, "-") {
-			return "", "", 0, nil, fmt.Errorf("unknown host add option %q", argument)
-		}
-		if address != "" {
-			return "", "", 0, nil, fmt.Errorf("host add accepts one address")
-		}
-		address = argument
-	}
-	if address == "" || username == "" {
-		return "", "", 0, nil, fmt.Errorf("usage: opsarmor host add ADDRESS --username USER [--port PORT] [--key-path PATH]")
-	}
-	var keyPointer *string
-	if keyPath != "" {
-		keyPointer = &keyPath
-	}
-	return address, username, port, keyPointer, nil
-}
-
 func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer) error {
 	selected := []string{checks.Packages}
 	remaining := make([]string, 0, len(arguments))
+	scanLocal, allowSudo := false, false
 	for index := 0; index < len(arguments); index++ {
+		switch arguments[index] {
+		case "--local":
+			scanLocal = true
+			continue
+		case "--allow-sudo":
+			allowSudo = true
+			continue
+		}
 		if arguments[index] != "--checks" {
 			remaining = append(remaining, arguments[index])
 			continue
@@ -193,31 +166,31 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 	if err != nil {
 		return err
 	}
-	hostID, asJSON, err := parseIDAndJSON(remaining, "scan")
-	if err != nil {
-		return err
-	}
-	host, err := store.GetHost(hostID)
-	if err != nil {
-		return err
-	}
-	confirm := func(unknownKey *remote.UnknownHostKey) (bool, error) {
-		if !term.IsTerminal(int(os.Stdin.Fd())) {
-			return false, fmt.Errorf("%s; compare this fingerprint with AWS or another trusted source, then rerun in a terminal", unknownKey)
+	var host store.Host
+	var asJSON bool
+	if scanLocal {
+		// A one-off scan of this machine; it is saved but not tied to a registered host.
+		for _, argument := range remaining {
+			if argument != "--json" {
+				return fmt.Errorf("usage: opsarmor scan --local [--allow-sudo] [--checks LIST] [--json]")
+			}
+			asJSON = true
 		}
-		fmt.Fprintf(diagnostics,
-			"\nFirst connection to %s presents an untrusted SSH host key.\nFingerprint: %s\nCompare this with AWS or another trusted source before accepting it.\n",
-			host.Address, unknownKey.Fingerprint)
-		fmt.Fprint(diagnostics, "Type 'trust' to save this key and retry the scan: ")
-		answer, readErr := bufio.NewReader(input).ReadString('\n')
-		if readErr != nil && readErr != io.EOF {
-			return false, fmt.Errorf("read host-key confirmation: %w", readErr)
+		host = store.Host{Address: local.Hostname(), Username: local.Username(), Transport: store.TransportLocal, AllowSudo: allowSudo}
+	} else {
+		if allowSudo {
+			return fmt.Errorf("--allow-sudo applies to --local scans; for a registered host use: opsarmor host sudo HOST_ID on")
 		}
-		return strings.TrimSpace(answer) == "trust", nil
+		var hostID string
+		if hostID, asJSON, err = parseIDAndJSON(remaining, "scan"); err != nil {
+			return err
+		}
+		if host, err = store.GetHost(hostID); err != nil {
+			return err
+		}
 	}
 	report, err := scan.Run(host, selected, scan.Options{
-		Remote:       remote.TerminalOptions(host, confirm),
-		SudoPassword: remote.TerminalSecret(fmt.Sprintf("[sudo] password for %s on %s: ", host.Username, host.Address)),
+		SudoPassword: terminalSecret(fmt.Sprintf("[sudo] password for %s on %s: ", host.Username, host.Address), diagnostics),
 	})
 	if err != nil {
 		return err
@@ -394,15 +367,35 @@ func showCheckResults(report map[string]any, output io.Writer) {
 }
 
 func usage(output io.Writer) {
-	fmt.Fprintln(output, `OpsArmor scans registered Linux hosts over SSH using Go.
+	fmt.Fprintln(output, `OpsArmor scans the Linux machine it runs on against official security advisories.
 
 Commands:
-  opsarmor host add ADDRESS --username USER [--port PORT] [--key-path PATH] [--allow-sudo]
+  opsarmor host add [--allow-sudo]    register this machine (Linux)
   opsarmor host list
   opsarmor host sudo HOST_ID on|off
   opsarmor host remove HOST_ID
   opsarmor scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
+  opsarmor scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   opsarmor report REPORT_ID [--json]
   opsarmor serve [--listen 127.0.0.1:PORT]   web UI, default http://127.0.0.1:7480
   opsarmor version`)
+}
+
+// terminalSecret asks for a secret on the terminal without echoing it.
+func terminalSecret(prompt string, diagnostics io.Writer) func(retry error) ([]byte, error) {
+	return func(retry error) ([]byte, error) {
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return nil, fmt.Errorf("a sudo password is required; run the scan in a terminal or allow passwordless sudo")
+		}
+		if retry != nil {
+			fmt.Fprintf(diagnostics, "%s. ", retry)
+		}
+		fmt.Fprint(diagnostics, prompt)
+		secret, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(diagnostics)
+		if err != nil {
+			return nil, fmt.Errorf("read password: %w", err)
+		}
+		return secret, nil
+	}
 }

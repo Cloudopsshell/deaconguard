@@ -20,13 +20,12 @@ Include the OpsArmor version, how to reproduce the problem, and what an attacker
 
 ## Scope
 
-In scope: OpsArmor itself, including the SSH client and host-key handling, the commands it runs on scanned hosts, the local web server and its API, credential prompts, the stored data directory, and the release artifacts.
+In scope: OpsArmor itself, including the commands it runs on the scanned machine, its use of sudo, the local web server and its API, the sudo password prompt, the stored data directory, and the release artifacts.
 
 Out of scope: vulnerabilities that OpsArmor reports on your hosts (those belong to the affected software), and problems in the distributions' advisory data (report those to the distribution).
 
 ## How OpsArmor limits risk
 
-- Commands run on scanned hosts are fixed strings in the source; nothing from the user or the host is inserted into them, and they only read.
-- SSH host keys are pinned on first use and changes are refused.
-- Passphrases and passwords are held in memory for one scan and never written to disk or logs.
+- Commands run on the scanned machine are fixed strings in the source; nothing from the user or the machine is inserted into them, and they only read.
+- Sudo is used only when allowed for the host; a sudo password is held in memory for one scan and never written to disk or logs.
 - The web UI listens only on a loopback address and rejects requests from other sites and host names.

@@ -8,7 +8,7 @@ COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X opsarmor/internal/buildinfo.Version=$(VERSION) -X opsarmor/internal/buildinfo.Commit=$(COMMIT) -X opsarmor/internal/buildinfo.Date=$(DATE)
 
-.PHONY: ui ui-dev build test vet release-snapshot docker-build helm-lint helm-template clean
+.PHONY: ui ui-dev build test vet release-snapshot docker-build clean
 
 ui:
 	cd web && npm ci && npm run build
@@ -31,12 +31,6 @@ release-snapshot:
 
 docker-build:
 	docker buildx build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t $(IMAGE) --load .
-
-helm-lint:
-	helm lint charts/opsarmor -f charts/opsarmor/values.example.yaml
-
-helm-template:
-	helm template opsarmor charts/opsarmor -f charts/opsarmor/values.example.yaml
 
 clean:
 	rm -f opsarmor
