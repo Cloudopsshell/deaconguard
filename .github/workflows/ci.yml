@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          # The newest 1.26 patch release, so builds include Go security fixes;
+          # go.mod only states the minimum version.
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l cmd internal web)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::Run gofmt -w on these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Check for known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  web:
+    name: Web UI build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type-check and build
+        working-directory: web
+        run: npm run build
+
+  release-config:
+    name: Release config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Check the GoReleaser configuration
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check

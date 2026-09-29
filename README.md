@@ -1,9 +1,13 @@
 # OpsArmor
 
+[![Release](https://img.shields.io/github/v/release/Cloudopsshell/OpsArmor)](https://github.com/Cloudopsshell/OpsArmor/releases/latest)
+[![CI](https://github.com/Cloudopsshell/OpsArmor/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/OpsArmor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Cloudopsshell/OpsArmor)](LICENSE)
+
 OpsArmor is an agentless Linux security scanner written in Go. It connects only to hosts you register, runs fixed read-only commands over SSH, and by default evaluates the installed packages against the distribution's own security data without `sudo`. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are OpsArmor code; OpsArmor never installs software on a host, and the only third-party engine it runs is a ClamAV that is already installed there, when you choose the antivirus check.
 
 - [Install](#install) · [Getting started](#getting-started) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
-- [Checks](#checks) · [Web UI](#web-ui) · [Supported distributions](#supported-distributions) · [Versioning](#versioning) · [Development](#development)
+- [Checks](#checks) · [Web UI](#web-ui) · [Supported distributions](#supported-distributions) · [Versioning](#versioning) · [Development](#development) · [Security](#security)
 
 ## Requirements
 
@@ -191,7 +195,11 @@ make test vet     # Go tests and vet
 make ui-dev       # web UI with hot reload on http://localhost:5173; run ./opsarmor serve alongside it
 ```
 
-A plain `go build ./cmd/opsarmor` works without Node.js; the binary then explains that the web UI was not built. The UI source is in [web/](web/) and uses React, TypeScript, Vite, Tailwind CSS, TanStack Query, and React Router. Maintainers publish releases as described in [RELEASING.md](RELEASING.md).
+A plain `go build ./cmd/opsarmor` works without Node.js; the binary then explains that the web UI was not built. The UI source is in [web/](web/) and uses React, TypeScript, Vite, Tailwind CSS, TanStack Query, and React Router. Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request process. Maintainers publish releases as described in [RELEASING.md](RELEASING.md).
+
+## Security
+
+Please report vulnerabilities in OpsArmor privately, as described in [SECURITY.md](SECURITY.md), not in public issues.
 
 ## License
 
