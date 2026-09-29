@@ -5,9 +5,6 @@ export type ScanStatus =
   | "running"
   | "succeeded"
   | "failed"
-  | "needs_trust"
-  | "needs_passphrase"
-  | "needs_password"
   | "needs_sudo";
 
 export type CheckId = "packages" | "integrity" | "malware" | "config" | "antivirus";
@@ -25,9 +22,17 @@ export interface Host {
   id: string;
   address: string;
   username: string;
-  port: number;
-  key_path: string | null;
   allow_sudo: boolean;
+  /** "local" is the machine OpsArmor runs on. "ssh" hosts were registered before
+   * SSH scanning was removed in 0.2.0; their results remain but they cannot be scanned. */
+  transport: "local" | "ssh";
+}
+
+export interface Capabilities {
+  local_scanning: boolean;
+  local_reason?: string;
+  hostname: string;
+  username: string;
 }
 
 export interface Scan {
@@ -36,7 +41,6 @@ export interface Scan {
   address: string;
   status: ScanStatus;
   error?: string;
-  host_key_fingerprint?: string;
   started_at: string;
   finished_at: string | null;
   os: string;
@@ -193,10 +197,7 @@ export interface Prompt {
   host_id: string;
   address: string;
   username: string;
-  port: number;
-  kind: "host_key" | "passphrase" | "password" | "sudo";
-  key_path?: string;
-  fingerprint?: string;
+  kind: "sudo";
   retry?: string;
   created_at: string;
 }
@@ -207,7 +208,6 @@ export interface Activity {
   host_id: string;
   address: string;
   username: string;
-  port: number;
   checks: CheckId[];
   started_at: string;
   finished_at?: string;
@@ -227,10 +227,7 @@ export interface ScanEvent {
 }
 
 export interface NewHost {
-  address: string;
-  username: string;
-  port: number;
-  key_path: string;
+  transport: "local";
   allow_sudo: boolean;
 }
 
@@ -264,6 +261,7 @@ export const api = {
   addHost: (host: NewHost) => request<Host>("POST", "/api/hosts", host),
   removeHost: (id: string) => request<Host>("DELETE", `/api/hosts/${id}`),
   checks: () => request<CheckDefinition[]>("GET", "/api/checks"),
+  capabilities: () => request<Capabilities>("GET", "/api/capabilities"),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),

@@ -121,7 +121,6 @@ function activityFromScan(scan: Scan, host: Host): Activity {
     host_id: host.id,
     address: host.address,
     username: host.username,
-    port: host.port,
     checks: scan.checks,
     started_at: scan.started_at,
     finished_at: scan.finished_at ?? undefined,
