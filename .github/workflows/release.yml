@@ -18,6 +18,36 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check the tag is a semantic version
+        id: version
+        run: |
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not a semantic version such as v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          notes="$RUNNER_TEMP/release-notes.md"
+          # A pre-release such as 0.2.0-rc.1 uses the notes for the version it previews.
+          for wanted in "$version" "${version%%-*}"; do
+            awk -v wanted="[$wanted]" 'index($0, "## ") == 1 { found = index($0, wanted) > 0; next } /^\[[^]]+\]: / { found = 0 } found' CHANGELOG.md > "$notes"
+            [ -s "$notes" ] && break
+          done
+          if [ ! -s "$notes" ]; then
+            echo "::error::CHANGELOG.md has no section for $version; add one before tagging"
+            exit 1
+          fi
+          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then
+            { printf '> Pre-release of %s for testing. Do not use in production.\n\n' "${version%%-*}"; cat "$notes"; } > "$notes.tmp" && mv "$notes.tmp" "$notes"
+          fi
+          cat "$notes"
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -37,11 +67,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Release Linux binaries, DEB, and RPM packages
+      - name: Release binaries, DEB, and RPM packages
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
-          args: release --clean
+          version: "~> v2"
+          args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -63,9 +93,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/cloudopsshell/opsarmor
+          # Pre-releases get only their exact tag; stable releases also move
+          # the minor-version tag and latest.
           tags: |
-            type=ref,event=tag
-            type=raw,value=latest
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}},enable=${{ steps.version.outputs.prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ steps.version.outputs.prerelease == 'false' }}
 
       - name: Build and publish multi-architecture container
         uses: docker/build-push-action@v6
@@ -75,6 +108,10 @@ jobs:
           push: true
           tags: ${{ steps.image.outputs.tags }}
           labels: ${{ steps.image.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.version.outputs.date }}
 
       - name: Set up Helm
         uses: azure/setup-helm@v4

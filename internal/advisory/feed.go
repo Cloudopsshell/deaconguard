@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/platform"
 	"opsarmor/internal/store"
 )
@@ -98,7 +99,7 @@ func LoadFeed(source, cacheName string, client HTTPClient, now time.Time) (Feed,
 	if err != nil {
 		return staleOrError(cached, cachedErr, fmt.Errorf("create advisory request: %w", err), now)
 	}
-	request.Header.Set("User-Agent", "OpsArmor/0.1 (+https://github.com/Cloudopsshell/OpsArmor)")
+	request.Header.Set("User-Agent", buildinfo.UserAgent())
 	response, err := client.Do(request)
 	if err != nil {
 		return staleOrError(cached, cachedErr, fmt.Errorf("fetch advisory feed: %w", err), now)
