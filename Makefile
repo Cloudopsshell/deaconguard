@@ -1,4 +1,12 @@
 IMAGE ?= opsarmor:dev
+# The version comes from the nearest v* tag, such as v0.1.0 -> 0.1.0; untagged builds are "dev".
+VERSION ?= $(shell git describe --tags --match 'v*' --dirty 2>/dev/null | sed 's/^v//' || true)
+ifeq ($(VERSION),)
+VERSION := dev
+endif
+COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
+DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X opsarmor/internal/buildinfo.Version=$(VERSION) -X opsarmor/internal/buildinfo.Commit=$(COMMIT) -X opsarmor/internal/buildinfo.Date=$(DATE)
 
 .PHONY: ui ui-dev build test vet release-snapshot docker-build helm-lint helm-template clean
 
@@ -10,7 +18,7 @@ ui-dev:
 	cd web && npm run dev
 
 build: ui
-	go build -trimpath -ldflags="-s -w" -o opsarmor ./cmd/opsarmor
+	go build -trimpath -ldflags="$(LDFLAGS)" -o opsarmor ./cmd/opsarmor
 
 test:
 	go test ./...
@@ -22,7 +30,7 @@ release-snapshot:
 	goreleaser release --snapshot --clean
 
 docker-build:
-	docker buildx build -t $(IMAGE) --load .
+	docker buildx build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t $(IMAGE) --load .
 
 helm-lint:
 	helm lint charts/opsarmor -f charts/opsarmor/values.example.yaml
