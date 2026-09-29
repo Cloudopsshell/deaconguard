@@ -79,9 +79,9 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
-# Release notes come from the matching CHANGELOG.md section (see the release workflow).
-changelog:
-  disable: true
+# Release notes come from the matching CHANGELOG.md section, passed with
+# --release-notes by the release workflow. Do not set changelog.disable: it
+# also discards those notes and publishes an empty release body.
 
 release:
   github:
