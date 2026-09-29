@@ -8,6 +8,8 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-29
+
 This release removes SSH scanning: OpsArmor now scans the Linux machine it is installed on. An agent that enrolls with a one-time token, so one OpsArmor server covers many machines, is planned to follow.
 
 ### Removed
@@ -56,6 +58,7 @@ The first release of OpsArmor.
 - `opsarmor version`, and the version in the web UI, in every report, and in requests to advisory feeds.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, `.deb` and `.rpm` packages, a multi-architecture container image on GHCR, and a Helm chart for scheduled scans.
 
-[Unreleased]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Cloudopsshell/OpsArmor/releases/tag/v0.1.0
