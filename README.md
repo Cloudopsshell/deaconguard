@@ -15,12 +15,13 @@ OpsArmor is an agentless Linux security scanner written in Go. It connects only 
 
 Releases are published on the [Releases page](https://github.com/Cloudopsshell/OpsArmor/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, a `checksums.txt` file, a container image, and a Helm chart. Replace `0.1.0` below with the version you want.
 
-> While the repository is private, download with the GitHub CLI after `gh auth login`, as shown below. Once it is public, the same files can also be fetched with `curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/FILE`.
+Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.1.0 -R Cloudopsshell/OpsArmor -p 'FILE'`.
 
 ### Debian and Ubuntu
 
 ```sh
-gh release download v0.1.0 -R Cloudopsshell/OpsArmor -p 'opsarmor_0.1.0_linux_amd64.deb' -p checksums.txt
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/opsarmor_0.1.0_linux_amd64.deb
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
 sudo apt install ./opsarmor_0.1.0_linux_amd64.deb
 opsarmor version
@@ -29,7 +30,8 @@ opsarmor version
 ### RHEL, Fedora, and Amazon Linux
 
 ```sh
-gh release download v0.1.0 -R Cloudopsshell/OpsArmor -p 'opsarmor_0.1.0_linux_amd64.rpm' -p checksums.txt
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/opsarmor_0.1.0_linux_amd64.rpm
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
 sudo dnf install ./opsarmor_0.1.0_linux_amd64.rpm
 opsarmor version
@@ -40,7 +42,8 @@ Use `arm64` instead of `amd64` on ARM machines such as AWS Graviton.
 ### macOS and other Linux systems
 
 ```sh
-gh release download v0.1.0 -R Cloudopsshell/OpsArmor -p 'opsarmor_0.1.0_darwin_arm64.tar.gz' -p checksums.txt
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/opsarmor_0.1.0_darwin_arm64.tar.gz
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/checksums.txt
 shasum -a 256 --check --ignore-missing checksums.txt
 tar -xzf opsarmor_0.1.0_darwin_arm64.tar.gz opsarmor
 sudo install -m 0755 opsarmor /usr/local/bin/opsarmor
@@ -62,14 +65,14 @@ docker run --rm -it \
 	host add ubuntu.example.com --username ubuntu --key-path /ssh-keys/id_ed25519
 ```
 
-The image keeps host profiles, scan history, feed cache, and host-key pins in the `/data` volume and runs as a non-root user. It is meant for the CLI and scheduled scans: the web UI only listens on the loopback address, so run `opsarmor serve` on your own machine instead. Tags: `v0.1.0` (exact release), `v0.1` (latest patch of that minor version), and `latest` (newest stable release; pre-releases never move it). Private images need `docker login ghcr.io` with a token that can read packages.
+The image keeps host profiles, scan history, feed cache, and host-key pins in the `/data` volume and runs as a non-root user. It is meant for the CLI and scheduled scans: the web UI only listens on the loopback address, so run `opsarmor serve` on your own machine instead. Tags: `v0.1.0` (exact release), `v0.1` (latest patch of that minor version), and `latest` (newest stable release; pre-releases never move it). If the image is not yet public, sign in first with `docker login ghcr.io` using a token that can read packages.
 
 ### Kubernetes (Helm)
 
 The Helm chart runs scheduled scans as CronJobs, one per configured host; it is not a dashboard service. Download the chart from the release and install it with your values:
 
 ```sh
-gh release download v0.1.0 -R Cloudopsshell/OpsArmor -p 'opsarmor-0.1.0.tgz'
+curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.1.0/opsarmor-0.1.0.tgz
 helm upgrade --install opsarmor ./opsarmor-0.1.0.tgz -n opsarmor --create-namespace -f my-values.yaml
 ```
 
@@ -80,7 +83,7 @@ Supply host profiles, a pre-created Secret containing the private key files, and
 Requires Go 1.26 or later and, for the web UI, Node.js 24 with npm.
 
 ```sh
-git clone git@github.com:Cloudopsshell/OpsArmor.git && cd OpsArmor
+git clone https://github.com/Cloudopsshell/OpsArmor.git && cd OpsArmor
 make build          # builds the web UI and the opsarmor binary
 ./opsarmor version
 ```
