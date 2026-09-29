@@ -13,6 +13,7 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
+      - darwin
     goarch:
       - amd64
       - arm64
@@ -20,9 +21,12 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
+      - -X opsarmor/internal/buildinfo.Version={{ .Version }}
+      - -X opsarmor/internal/buildinfo.Commit={{ .FullCommit }}
+      - -X opsarmor/internal/buildinfo.Date={{ .Date }}
 
 archives:
-  - id: linux
+  - id: default
     ids:
       - opsarmor
     formats:
@@ -31,8 +35,10 @@ archives:
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     files:
       - README.md
+      - CHANGELOG.md
       - LICENSE
 
+# GoReleaser packages only the Linux builds as .deb and .rpm.
 nfpms:
   - id: linux-packages
     package_name: opsarmor
@@ -41,7 +47,10 @@ nfpms:
     vendor: CloudOpsShell
     homepage: https://github.com/Cloudopsshell/OpsArmor
     maintainer: CloudOpsShell <opensource@cloudopsshell.com>
-    description: Agentless Linux package vulnerability scanner
+    description: >-
+      Agentless Linux security scanner: package vulnerabilities from official
+      distribution advisories, file integrity, malware indicators, security
+      configuration, and ClamAV, over SSH, with a local web UI.
     license: MIT
     formats:
       - deb
@@ -51,6 +60,9 @@ nfpms:
       - src: README.md
         dst: /usr/share/doc/opsarmor/README.md
         type: doc
+      - src: CHANGELOG.md
+        dst: /usr/share/doc/opsarmor/CHANGELOG.md
+        type: doc
       - src: LICENSE
         dst: /usr/share/doc/opsarmor/copyright
         type: doc
@@ -58,7 +70,7 @@ nfpms:
       lintian_overrides:
         - statically-linked-binary
     rpm:
-      summary: Agentless Linux package vulnerability scanner
+      summary: Agentless Linux security scanner
 
 checksum:
   name_template: checksums.txt
@@ -67,6 +79,7 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+# Release notes come from the matching CHANGELOG.md section (see the release workflow).
 changelog:
   disable: true
 
@@ -74,3 +87,6 @@ release:
   github:
     owner: Cloudopsshell
     name: OpsArmor
+  name_template: "OpsArmor v{{ .Version }}"
+  # Tags with a suffix, such as v0.2.0-rc.1, are published as pre-releases.
+  prerelease: auto
