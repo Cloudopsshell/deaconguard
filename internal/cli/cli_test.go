@@ -61,3 +61,12 @@ func TestReportCommandPrintsStoredJSON(t *testing.T) {
 		t.Fatalf("unexpected report JSON: %+v", decoded)
 	}
 }
+
+func TestVersionCommand(t *testing.T) {
+	for _, argument := range []string{"version", "--version", "-v"} {
+		var output bytes.Buffer
+		if code := Run([]string{argument}, nil, &output, &output); code != 0 || !strings.HasPrefix(output.String(), "opsarmor ") {
+			t.Fatalf("%s: code %d, output %q", argument, code, output.String())
+		}
+	}
+}

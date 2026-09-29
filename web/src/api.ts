@@ -264,6 +264,7 @@ export const api = {
   addHost: (host: NewHost) => request<Host>("POST", "/api/hosts", host),
   removeHost: (id: string) => request<Host>("DELETE", `/api/hosts/${id}`),
   checks: () => request<CheckDefinition[]>("GET", "/api/checks"),
+  version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
   prompts: () => request<Prompt[]>("GET", "/api/prompts"),
