@@ -1,5 +1,6 @@
-// Package scan runs the checks a user chose against one host over a single
-// SSH connection and assembles the report. The CLI and the web UI share it.
+// Package scan runs the checks a user chose against one host and assembles
+// the report. It reaches the host through a target.Target: an SSH session or
+// this machine. The CLI and the web UI share it.
 package scan
 
 import (
@@ -9,10 +10,12 @@ import (
 
 	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
+	"opsarmor/internal/local"
 	"opsarmor/internal/platform"
 	"opsarmor/internal/remote"
 	"opsarmor/internal/scanner"
 	"opsarmor/internal/store"
+	"opsarmor/internal/target"
 )
 
 // maxConcurrentEvaluations bounds the memory-heavy advisory evaluation when
@@ -30,26 +33,49 @@ type Options struct {
 	Progress func(Event)
 }
 
-// Run scans host with the given check IDs. A failure of the package check
-// fails the whole scan so it can never be mistaken for a clean result; other
-// checks record their own failures in the report.
+// Run scans host with the given check IDs, reaching it the way its transport
+// says. A failure of the package check fails the whole scan so it can never be
+// mistaken for a clean result; other checks record their own failures.
 func Run(host store.Host, checkIDs []string, options Options) (map[string]any, error) {
 	checkIDs, err := checks.Normalize(checkIDs)
 	if err != nil {
 		return nil, err
 	}
 	progress := &reporter{emit: options.Progress}
-	progress.startPhase(PhaseConnect, fmt.Sprintf("Connecting to %s@%s:%d", host.Username, host.Address, host.Port))
 	started := time.Now()
-	session, err := remote.Connect(host, options.Remote)
+	var machine target.Target
+	if host.Transport == store.TransportLocal {
+		progress.startPhase(PhaseConnect, fmt.Sprintf("Scanning this machine (%s) as %s", host.Address, local.Username()))
+		machine, err = local.New()
+	} else {
+		progress.startPhase(PhaseConnect, fmt.Sprintf("Connecting to %s@%s:%d", host.Username, host.Address, host.Port))
+		machine, err = remote.Connect(host, options.Remote)
+		if err == nil {
+			progress.send(Event{Kind: "success", Message: fmt.Sprintf("SSH session established in %s", formatDuration(time.Since(started)))})
+		}
+	}
 	if err != nil {
 		progress.endPhase(checks.StatusFailed, err.Error())
 		return nil, err
 	}
-	defer session.Close()
-	session.Observe(progress)
-	progress.send(Event{Kind: "success", Message: fmt.Sprintf("SSH session established in %s", formatDuration(time.Since(started)))})
-	osRelease, err := session.OSRelease()
+	defer machine.Close()
+	return runTarget(machine, host, checkIDs, options, progress)
+}
+
+// RunTarget scans a target that is already connected, such as a test double.
+func RunTarget(machine target.Target, host store.Host, checkIDs []string, options Options) (map[string]any, error) {
+	checkIDs, err := checks.Normalize(checkIDs)
+	if err != nil {
+		return nil, err
+	}
+	progress := &reporter{emit: options.Progress}
+	progress.startPhase(PhaseConnect, "Using "+host.Address)
+	return runTarget(machine, host, checkIDs, options, progress)
+}
+
+func runTarget(machine target.Target, host store.Host, checkIDs []string, options Options, progress *reporter) (map[string]any, error) {
+	machine.Observe(progress)
+	osRelease, err := target.OSRelease(machine)
 	if err != nil {
 		progress.endPhase(checks.StatusFailed, err.Error())
 		return nil, err
@@ -68,14 +94,14 @@ func Run(host store.Host, checkIDs []string, options Options) (map[string]any, e
 		"opsarmor_version": buildinfo.Version,
 	}
 	results := make(map[string]checks.Result)
-	executor := checks.NewExecutor(session, host.AllowSudo, options.SudoPassword)
+	executor := checks.NewExecutor(machine, host.AllowSudo, options.SudoPassword)
 	defer executor.Close()
 	sudoNoted := false
 	for _, id := range checkIDs {
 		progress.startPhase(id, checkName(id))
 		phaseStarted := time.Now()
 		if id == checks.Packages {
-			if err := addPackageReport(report, session, progress); err != nil {
+			if err := addPackageReport(report, machine, progress); err != nil {
 				progress.endPhase(checks.StatusFailed, err.Error())
 				return nil, err
 			}
@@ -100,9 +126,9 @@ func Run(host store.Host, checkIDs []string, options Options) (map[string]any, e
 	return report, nil
 }
 
-func addPackageReport(report map[string]any, session *remote.Session, progress *reporter) error {
+func addPackageReport(report map[string]any, machine target.Target, progress *reporter) error {
 	started := time.Now()
-	inventory, err := session.Inventory()
+	inventory, err := target.CollectInventory(machine)
 	if err != nil {
 		return err
 	}

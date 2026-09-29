@@ -15,6 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"opsarmor/internal/store"
+	"opsarmor/internal/target"
 )
 
 const maxCredentialAttempts = 3
@@ -63,7 +64,7 @@ func CollectWithOptions(host store.Host, options Options) (Inventory, error) {
 		return Inventory{}, err
 	}
 	defer session.Close()
-	return session.Inventory()
+	return target.CollectInventory(session)
 }
 
 // Connect authenticates to host, asking through options for a host-key

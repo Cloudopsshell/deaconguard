@@ -25,6 +25,7 @@ import {
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
+import { connectionLabel } from "../lib/hosts";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 
 export function HostDetail() {
@@ -55,7 +56,7 @@ export function HostDetail() {
         title={data.address}
         description={
           <>
-            {`${data.username}@${data.address}:${data.port}${data.key_path ? ` · key ${data.key_path}` : " · ssh-agent or default keys"}`}
+            {connectionLabel(data)}
             <SudoToggle host={data} />
           </>
         }

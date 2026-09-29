@@ -15,24 +15,18 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
-	"opsarmor/internal/platform"
 	"opsarmor/internal/store"
+	"opsarmor/internal/target"
 )
 
 const (
-	maxOSReleaseBytes = 16 * 1024
-	maxPackageBytes   = 32 << 20
-	maxStderrBytes    = 4 * 1024
-	connectTimeout    = 45 * time.Second
-	commandTimeout    = 60 * time.Second
+	maxStderrBytes = 4 * 1024
+	connectTimeout = 45 * time.Second
+	commandTimeout = 60 * time.Second
 )
 
-type Inventory struct {
-	OSRelease  string
-	DPKGStatus string
-	RPMQuery   string
-	Kernel     string
-}
+// Inventory is kept as an alias for callers of CollectWithOptions.
+type Inventory = target.Inventory
 
 type UnknownHostKey struct {
 	Fingerprint    string
@@ -64,18 +58,13 @@ func (buffer *limitedBuffer) Write(value []byte) (int, error) {
 type Session struct {
 	client   *ssh.Client
 	host     store.Host
-	observer CommandObserver
+	observer target.CommandObserver
 }
 
-// CommandObserver is told about every command a session runs, for live
-// progress. It never receives command input, which can hold a sudo password.
-type CommandObserver interface {
-	CommandStarted(command string)
-	CommandFinished(command string, outputBytes int, elapsed time.Duration, err error)
-}
+var _ target.Target = (*Session)(nil)
 
 // Observe reports every later command on this session to observer.
-func (s *Session) Observe(observer CommandObserver) { s.observer = observer }
+func (s *Session) Observe(observer target.CommandObserver) { s.observer = observer }
 
 func (s *Session) Host() store.Host { return s.host }
 
@@ -93,55 +82,6 @@ func (s *Session) Run(command string, stdin []byte, limit int, timeout time.Dura
 	output, err := run(s.client, command, stdin, limit, timeout)
 	s.observer.CommandFinished(command, len(output), time.Since(started), err)
 	return output, err
-}
-
-// OSRelease reads /etc/os-release.
-func (s *Session) OSRelease() (string, error) {
-	osRelease, err := s.Run("cat /etc/os-release", nil, maxOSReleaseBytes, commandTimeout)
-	if err != nil {
-		return "", fmt.Errorf("read /etc/os-release on %s: %w", s.host.Address, err)
-	}
-	return string(osRelease), nil
-}
-
-// Inventory collects the OS release, installed packages, and running kernel.
-func (s *Session) Inventory() (Inventory, error) {
-	host := s.host
-	osRelease, err := s.OSRelease()
-	if err != nil {
-		return Inventory{}, err
-	}
-	if err != nil {
-		return Inventory{}, fmt.Errorf("read /etc/os-release on %s: %w", host.Address, err)
-	}
-	target, err := platform.Detect(osRelease)
-	if err != nil {
-		return Inventory{}, err
-	}
-	inventory := Inventory{OSRelease: osRelease}
-	if target.Family == platform.Ubuntu || target.Family == platform.Debian {
-		packages, err := s.Run("head -c 33554433 /var/lib/dpkg/status", nil, maxPackageBytes, commandTimeout)
-		if err != nil {
-			return Inventory{}, fmt.Errorf("read /var/lib/dpkg/status on %s: %w", host.Address, err)
-		}
-		inventory.DPKGStatus = string(packages)
-	} else {
-		query := "rpm -qa --qf '%{NAME}\\t%{EPOCHNUM}\\t%{VERSION}\\t%{RELEASE}\\t%{SOURCERPM}\\t%{ARCH}\\n'"
-		packages, err := s.Run(query, nil, maxPackageBytes, commandTimeout)
-		if err != nil {
-			return Inventory{}, fmt.Errorf("collect installed RPM inventory on %s: %w", host.Address, err)
-		}
-		inventory.RPMQuery = string(packages)
-	}
-	kernel, err := s.Run("uname -r", nil, 256, commandTimeout)
-	if err != nil {
-		return Inventory{}, fmt.Errorf("read running kernel on %s: %w", host.Address, err)
-	}
-	inventory.Kernel = strings.TrimSpace(string(kernel))
-	if inventory.Kernel == "" || len(inventory.Kernel) > 256 {
-		return Inventory{}, fmt.Errorf("running kernel release is missing or invalid")
-	}
-	return inventory, nil
 }
 
 func connect(host store.Host, methods []ssh.AuthMethod) (*ssh.Client, error) {

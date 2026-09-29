@@ -24,7 +24,16 @@ type Host struct {
 	KeyPath  *string `json:"key_path"`
 	// AllowSudo lets deeper checks run fixed read-only commands through sudo.
 	AllowSudo bool `json:"allow_sudo"`
+	// Transport is how OpsArmor reaches the host: TransportSSH or TransportLocal.
+	Transport string `json:"transport"`
 }
+
+const (
+	TransportSSH = "ssh"
+	// TransportLocal is the machine OpsArmor runs on; Address holds its
+	// hostname and Username the account that runs the scans.
+	TransportLocal = "local"
+)
 
 const databaseName = "opsarmor.db"
 
@@ -107,6 +116,11 @@ func migrate(db *sql.DB) error {
 	}
 	if version < 3 {
 		if err := execInTx(db, schemaV3); err != nil {
+			return err
+		}
+	}
+	if version < 4 {
+		if err := execInTx(db, schemaV4); err != nil {
 			return err
 		}
 	}
@@ -217,6 +231,11 @@ const schemaV3 = `
 ALTER TABLE scans ADD COLUMN events_json TEXT;
 PRAGMA user_version = 3;`
 
+// schemaV4 records how each host is reached; existing hosts use SSH.
+const schemaV4 = `
+ALTER TABLE hosts ADD COLUMN transport TEXT NOT NULL DEFAULT 'ssh';
+PRAGMA user_version = 4;`
+
 // importLegacy copies hosts.json and reports/*.json from the file-based store
 // into the database once. The original files are left untouched.
 func importLegacy(db *sql.DB) error {
@@ -289,7 +308,7 @@ func ListHosts() ([]Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query("SELECT id, address, username, port, key_path, allow_sudo FROM hosts ORDER BY created_at, rowid")
+	rows, err := db.Query("SELECT id, address, username, port, key_path, allow_sudo, transport FROM hosts ORDER BY created_at, rowid")
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +331,7 @@ type rowScanner interface {
 func scanHost(row rowScanner) (Host, error) {
 	var host Host
 	var keyPath sql.NullString
-	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.Port, &keyPath, &host.AllowSudo); err != nil {
+	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.Port, &keyPath, &host.AllowSudo, &host.Transport); err != nil {
 		return Host{}, err
 	}
 	if keyPath.Valid {
@@ -343,12 +362,45 @@ func AddHost(address, username string, port int, keyPath *string) (Host, error) 
 	if err != nil {
 		return Host{}, err
 	}
-	host := Host{ID: id, Address: address, Username: username, Port: port, KeyPath: keyPath}
-	if _, err := db.Exec(`INSERT INTO hosts (id, address, username, port, key_path, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		host.ID, host.Address, host.Username, host.Port, host.KeyPath, nowText()); err != nil {
+	host := Host{ID: id, Address: address, Username: username, Port: port, KeyPath: keyPath, Transport: TransportSSH}
+	if err := insertHost(db, host); err != nil {
 		return Host{}, err
 	}
 	return host, nil
+}
+
+// ErrLocalHostExists is returned when this machine is already registered.
+var ErrLocalHostExists = errors.New("this machine is already registered as a host")
+
+// AddLocalHost registers the machine OpsArmor runs on. hostname and username
+// describe it; scans run as the user running OpsArmor.
+func AddLocalHost(hostname, username string) (Host, error) {
+	db, err := database()
+	if err != nil {
+		return Host{}, err
+	}
+	var existing int
+	if err := db.QueryRow("SELECT COUNT(*) FROM hosts WHERE transport = ?", TransportLocal).Scan(&existing); err != nil {
+		return Host{}, err
+	}
+	if existing > 0 {
+		return Host{}, ErrLocalHostExists
+	}
+	id, err := newID()
+	if err != nil {
+		return Host{}, err
+	}
+	host := Host{ID: id, Address: hostname, Username: username, Transport: TransportLocal}
+	if err := insertHost(db, host); err != nil {
+		return Host{}, err
+	}
+	return host, nil
+}
+
+func insertHost(db *sql.DB, host Host) error {
+	_, err := db.Exec(`INSERT INTO hosts (id, address, username, port, key_path, transport, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		host.ID, host.Address, host.Username, host.Port, host.KeyPath, host.Transport, nowText())
+	return err
 }
 
 func GetHost(id string) (Host, error) {
@@ -356,7 +408,7 @@ func GetHost(id string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	host, err := scanHost(db.QueryRow("SELECT id, address, username, port, key_path, allow_sudo FROM hosts WHERE id = ?", id))
+	host, err := scanHost(db.QueryRow("SELECT id, address, username, port, key_path, allow_sudo, transport FROM hosts WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Host{}, fmt.Errorf("unknown host ID: %s", id)
 	}

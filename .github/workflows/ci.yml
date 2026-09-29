@@ -81,3 +81,61 @@ jobs:
         with:
           version: "~> v2"
           args: check
+
+  local-scan:
+    name: Local scan (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Build
+        run: go build -o opsarmor ./cmd/opsarmor
+
+      # A real scan of this Ubuntu runner with every check, through sudo, which
+      # GitHub runners allow without a password.
+      - name: Scan this machine
+        env:
+          OPSARMOR_HOME: ${{ runner.temp }}/opsarmor
+        run: ./opsarmor scan --local --allow-sudo --checks packages,integrity,malware,config,antivirus --json > report.json
+
+      - name: Check the report
+        run: |
+          jq -e '.os | startswith("Ubuntu")' report.json
+          jq -e '.package_count > 100' report.json
+          jq -e '.advisory_database.feed_stale == false' report.json
+          for check in integrity malware config; do
+            jq -e --arg c "$check" '.check_results[$c].status as $s | ($s == "completed" or $s == "partial")' report.json
+            jq -e --arg c "$check" '.check_results[$c].privileged == true' report.json
+          done
+          jq -e '.check_results.antivirus.status | IN("completed", "partial", "skipped")' report.json
+          {
+            echo "### Local scan of the CI runner"
+            echo
+            jq -r '"\(.os) · \(.package_count) packages · \(.finding_count) package findings · \(.unsupported_count) rules not evaluated"' report.json
+            echo
+            echo "| Check | Status | Sudo | Findings | Summary |"
+            echo "| --- | --- | --- | --- | --- |"
+            jq -r '.check_results | to_entries[] | "| \(.key) | \(.value.status) | \(.value.privileged) | \(.value.findings | length) | \(.value.summary) |"' report.json
+            echo
+            echo "<details><summary>Check findings</summary>"
+            echo
+            jq -r '.check_results | to_entries[] | .key as $c | .value.findings[] | "- **\($c)** \(.severity): \(.title) — `\(.evidence)`"' report.json
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-scan-report
+          path: report.json
+          if-no-files-found: ignore

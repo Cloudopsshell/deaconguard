@@ -19,6 +19,7 @@ import (
 
 	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
+	"opsarmor/internal/local"
 	"opsarmor/internal/remote"
 	"opsarmor/internal/scan"
 	"opsarmor/internal/server"
@@ -72,20 +73,37 @@ func runHost(arguments []string, output io.Writer) error {
 	}
 	switch arguments[0] {
 	case "add":
-		allowSudo := false
+		allowSudo, isLocal := false, false
 		addArguments := make([]string, 0, len(arguments))
 		for _, argument := range arguments[1:] {
-			if argument == "--allow-sudo" {
+			switch argument {
+			case "--allow-sudo":
 				allowSudo = true
-				continue
+			case "--local":
+				isLocal = true
+			default:
+				addArguments = append(addArguments, argument)
 			}
-			addArguments = append(addArguments, argument)
 		}
-		address, username, port, keyPath, err := parseHostAdd(addArguments)
-		if err != nil {
-			return err
+		var host store.Host
+		var err error
+		if isLocal {
+			if len(addArguments) > 0 {
+				return fmt.Errorf("usage: opsarmor host add --local [--allow-sudo]")
+			}
+			if _, err := local.New(); err != nil {
+				return err
+			}
+			host, err = store.AddLocalHost(local.Hostname(), local.Username())
+		} else {
+			var address, username string
+			var port int
+			var keyPath *string
+			if address, username, port, keyPath, err = parseHostAdd(addArguments); err != nil {
+				return err
+			}
+			host, err = store.AddHost(address, username, port, keyPath)
 		}
-		host, err := store.AddHost(address, username, port, keyPath)
 		if err != nil {
 			return err
 		}
@@ -117,6 +135,10 @@ func runHost(arguments []string, output io.Writer) error {
 			sudo := ""
 			if host.AllowSudo {
 				sudo = "  (sudo allowed)"
+			}
+			if host.Transport == store.TransportLocal {
+				fmt.Fprintf(output, "%s  this machine (%s, as %s)%s\n", host.ID, host.Address, host.Username, sudo)
+				continue
 			}
 			fmt.Fprintf(output, "%s  %s@%s:%d%s\n", host.ID, host.Username, host.Address, host.Port, sudo)
 		}
@@ -178,7 +200,16 @@ func parseHostAdd(arguments []string) (string, string, int, *string, error) {
 func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer) error {
 	selected := []string{checks.Packages}
 	remaining := make([]string, 0, len(arguments))
+	scanLocal, allowSudo := false, false
 	for index := 0; index < len(arguments); index++ {
+		switch arguments[index] {
+		case "--local":
+			scanLocal = true
+			continue
+		case "--allow-sudo":
+			allowSudo = true
+			continue
+		}
 		if arguments[index] != "--checks" {
 			remaining = append(remaining, arguments[index])
 			continue
@@ -193,13 +224,28 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 	if err != nil {
 		return err
 	}
-	hostID, asJSON, err := parseIDAndJSON(remaining, "scan")
-	if err != nil {
-		return err
-	}
-	host, err := store.GetHost(hostID)
-	if err != nil {
-		return err
+	var host store.Host
+	var asJSON bool
+	if scanLocal {
+		// A one-off scan of this machine; it is saved but not tied to a registered host.
+		for _, argument := range remaining {
+			if argument != "--json" {
+				return fmt.Errorf("usage: opsarmor scan --local [--allow-sudo] [--checks LIST] [--json]")
+			}
+			asJSON = true
+		}
+		host = store.Host{Address: local.Hostname(), Username: local.Username(), Transport: store.TransportLocal, AllowSudo: allowSudo}
+	} else {
+		if allowSudo {
+			return fmt.Errorf("--allow-sudo applies to --local scans; for a registered host use: opsarmor host sudo HOST_ID on")
+		}
+		var hostID string
+		if hostID, asJSON, err = parseIDAndJSON(remaining, "scan"); err != nil {
+			return err
+		}
+		if host, err = store.GetHost(hostID); err != nil {
+			return err
+		}
 	}
 	confirm := func(unknownKey *remote.UnknownHostKey) (bool, error) {
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -398,10 +444,12 @@ func usage(output io.Writer) {
 
 Commands:
   opsarmor host add ADDRESS --username USER [--port PORT] [--key-path PATH] [--allow-sudo]
+  opsarmor host add --local [--allow-sudo]    register this machine (Linux)
   opsarmor host list
   opsarmor host sudo HOST_ID on|off
   opsarmor host remove HOST_ID
   opsarmor scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
+  opsarmor scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine once
   opsarmor report REPORT_ID [--json]
   opsarmor serve [--listen 127.0.0.1:PORT]   web UI, default http://127.0.0.1:7480
   opsarmor version`)
