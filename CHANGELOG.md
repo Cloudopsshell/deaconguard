@@ -8,12 +8,15 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-30
+
 ### Fixed
 
 - On minimal RHEL-family systems without `shadow-utils`, the `.rpm` installed without creating the `deaconguard` user, so the server service could not start. The packages now depend on `shadow-utils` (`.rpm`) and `passwd` (`.deb`).
 
 ### Changed
 
+- The README's Getting started section begins with a table comparing server mode (port 8443) and local mode (port 7480).
 - The README's install steps download into `/tmp`, detect the architecture, and stop on a failed download, so the same commands work on every machine and apt shows no "unsandboxed" notice.
 
 ## [0.1.0] - 2026-09-30
@@ -47,5 +50,6 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Cloudopsshell/deaconguard/releases/tag/v0.1.0
