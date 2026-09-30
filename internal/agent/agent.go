@@ -1,4 +1,4 @@
-// Package agent is `opsarmor agent`: it enrolls this machine with an OpsArmor
+// Package agent is `deaconguard agent`: it enrolls this machine with an DeaconGuard
 // server using a one-time token, then waits for the server to ask for scans,
 // runs them here, and sends back the results. It only makes outbound HTTPS
 // requests to the server; it opens no port.
@@ -19,14 +19,14 @@ import (
 	"sync"
 	"time"
 
-	"opsarmor/internal/agentapi"
-	"opsarmor/internal/buildinfo"
-	"opsarmor/internal/local"
-	"opsarmor/internal/platform"
-	"opsarmor/internal/scan"
-	"opsarmor/internal/scanner"
-	"opsarmor/internal/store"
-	"opsarmor/internal/target"
+	"deaconguard/internal/agentapi"
+	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/local"
+	"deaconguard/internal/platform"
+	"deaconguard/internal/scan"
+	"deaconguard/internal/scanner"
+	"deaconguard/internal/store"
+	"deaconguard/internal/target"
 )
 
 // Config is what enrollment gives the agent. It holds a credential, so it is
@@ -39,19 +39,19 @@ type Config struct {
 }
 
 // SystemConfigPath is where the agent service keeps its configuration.
-const SystemConfigPath = "/etc/opsarmor/agent.json"
+const SystemConfigPath = "/etc/deaconguard/agent.json"
 
-// ConfigPath is $OPSARMOR_AGENT_CONFIG, SystemConfigPath for root, or a file
+// ConfigPath is $DEACONGUARD_AGENT_CONFIG, SystemConfigPath for root, or a file
 // in the user's configuration directory.
 func ConfigPath() string {
-	if configured := os.Getenv("OPSARMOR_AGENT_CONFIG"); configured != "" {
+	if configured := os.Getenv("DEACONGUARD_AGENT_CONFIG"); configured != "" {
 		return configured
 	}
 	if os.Geteuid() == 0 {
 		return SystemConfigPath
 	}
 	if directory, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(directory, "opsarmor", "agent.json")
+		return filepath.Join(directory, "deaconguard", "agent.json")
 	}
 	return SystemConfigPath
 }
@@ -59,7 +59,7 @@ func ConfigPath() string {
 func LoadConfig(path string) (Config, error) {
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Config{}, fmt.Errorf("this machine is not enrolled (%s does not exist); run: sudo opsarmor agent enroll TOKEN", path)
+		return Config{}, fmt.Errorf("this machine is not enrolled (%s does not exist); run: sudo deaconguard agent enroll TOKEN", path)
 	}
 	if err != nil {
 		return Config{}, err
@@ -133,7 +133,7 @@ func Run(ctx context.Context, config Config, logf func(format string, arguments 
 	if err != nil {
 		return err
 	}
-	logf("OpsArmor agent %s for %s, host %s", buildinfo.Version, config.ServerURL, config.HostID)
+	logf("DeaconGuard agent %s for %s, host %s", buildinfo.Version, config.ServerURL, config.HostID)
 	backoff := time.Duration(0)
 	connected := false
 	for ctx.Err() == nil {

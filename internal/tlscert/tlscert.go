@@ -1,5 +1,5 @@
 // Package tlscert provides the server's HTTPS certificate: one the
-// administrator supplies, or one OpsArmor creates on first start and keeps in
+// administrator supplies, or one DeaconGuard creates on first start and keeps in
 // its data directory. Agents pin its public key, so it is created once and
 // reused rather than renewed.
 package tlscert
@@ -63,7 +63,7 @@ func Ensure(directory, hostname string) (tls.Certificate, bool, error) {
 	now := time.Now().UTC()
 	template := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: hostname, Organization: []string{"OpsArmor"}},
+		Subject:               pkix.Name{CommonName: hostname, Organization: []string{"DeaconGuard"}},
 		NotBefore:             now.Add(-time.Hour),
 		NotAfter:              now.Add(validity),
 		KeyUsage:              x509.KeyUsageDigitalSignature,

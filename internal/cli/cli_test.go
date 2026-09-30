@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"opsarmor/internal/store"
+	"deaconguard/internal/store"
 )
 
 func TestHostCommandsWithLegacySSHHost(t *testing.T) {
 	directory := t.TempDir()
-	t.Setenv("OPSARMOR_HOME", directory)
+	t.Setenv("DEACONGUARD_HOME", directory)
 	// A profile file from an earlier release is imported as a legacy SSH host.
 	legacy := `[{"id":"0123456789abcdef0123456789abcdef","address":"old.example","username":"ubuntu","port":22,"key_path":null}]`
 	if err := os.WriteFile(filepath.Join(directory, "hosts.json"), []byte(legacy), 0o600); err != nil {
@@ -45,7 +45,7 @@ func TestHostCommandsWithLegacySSHHost(t *testing.T) {
 }
 
 func TestHostAddRegistersThisMachine(t *testing.T) {
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	var output, diagnostics bytes.Buffer
 	code := Run([]string{"host", "add"}, nil, &output, &diagnostics)
 	if runtime.GOOS != "linux" {
@@ -61,7 +61,7 @@ func TestHostAddRegistersThisMachine(t *testing.T) {
 }
 
 func TestReportCommandPrintsStoredJSON(t *testing.T) {
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	report, err := store.SaveReport(map[string]any{
 		"host_id": "host-id", "address": "debian.example", "os": "Debian 13 (trixie)",
 		"finding_count": 1, "findings": []any{},
@@ -86,7 +86,7 @@ func TestReportCommandPrintsStoredJSON(t *testing.T) {
 func TestVersionCommand(t *testing.T) {
 	for _, argument := range []string{"version", "--version", "-v"} {
 		var output bytes.Buffer
-		if code := Run([]string{argument}, nil, &output, &output); code != 0 || !strings.HasPrefix(output.String(), "opsarmor ") {
+		if code := Run([]string{argument}, nil, &output, &output); code != 0 || !strings.HasPrefix(output.String(), "deaconguard ") {
 			t.Fatalf("%s: code %d, output %q", argument, code, output.String())
 		}
 	}

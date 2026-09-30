@@ -41,7 +41,7 @@ var (
 // dummyHash is compared against when the username is unknown, so a failed
 // sign-in takes as long whether or not the account exists.
 var dummyHash = sync.OnceValue(func() string {
-	return hashPasswordWith([]byte("opsarmor-no-such-user"), make([]byte, 16), passwordIterations)
+	return hashPasswordWith([]byte("deaconguard-no-such-user"), make([]byte, 16), passwordIterations)
 })
 
 func ValidateUsername(username string) error {

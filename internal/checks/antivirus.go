@@ -33,7 +33,7 @@ func runAntivirus(executor *Executor, now time.Time) Result {
 	if strings.TrimSpace(string(output)) == "" {
 		return Result{
 			Status: StatusSkipped, Summary: "ClamAV is not installed on this host",
-			Notes:    []string{"OpsArmor runs ClamAV only when it is already installed; it never installs software. Install the clamav package and update its signatures with freshclam to enable this check."},
+			Notes:    []string{"DeaconGuard runs ClamAV only when it is already installed; it never installs software. Install the clamav package and update its signatures with freshclam to enable this check."},
 			Findings: []Finding{},
 		}
 	}

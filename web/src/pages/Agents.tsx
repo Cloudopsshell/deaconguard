@@ -35,8 +35,8 @@ export function Agents() {
         <Card>
           <EmptyState
             icon={<RadioTower className="size-6" />}
-            title="Agents need the OpsArmor server"
-            description="This OpsArmor only serves this machine at localhost. To scan other machines, run it as a server on the network, where agents can reach it: sudo systemctl enable --now opsarmor-server (or opsarmor serve --listen 0.0.0.0:8443)."
+            title="Agents need the DeaconGuard server"
+            description="This DeaconGuard only serves this machine at localhost. To scan other machines, run it as a server on the network, where agents can reach it: sudo systemctl enable --now deaconguard-server (or deaconguard serve --listen 0.0.0.0:8443)."
           />
         </Card>
       </>
@@ -47,7 +47,7 @@ export function Agents() {
     <>
       <PageHeader
         title="Agents"
-        description="Machines running the OpsArmor agent. Each enrolls once with a one-time token, then waits for scans from this server."
+        description="Machines running the DeaconGuard agent. Each enrolls once with a one-time token, then waits for scans from this server."
         action={
           <Button onClick={() => setEnrolling(true)}>
             <Plus className="size-4" /> Enroll a machine
@@ -273,9 +273,9 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
       {created ? (
         <div className="space-y-4 text-sm">
           <p className="text-slate-600 dark:text-slate-300">
-            On the Linux machine to scan, install OpsArmor (the same .deb or .rpm as this server), then run:
+            On the Linux machine to scan, install DeaconGuard (the same .deb or .rpm as this server), then run:
           </p>
-          <CopyBlock text={`${created.command}\nsudo systemctl enable --now opsarmor-agent`} />
+          <CopyBlock text={`${created.command}\nsudo systemctl enable --now deaconguard-agent`} />
           <p className="flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200">
             <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>

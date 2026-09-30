@@ -62,7 +62,7 @@ function PromptForm({ prompt }: { prompt: Prompt }) {
             className="block w-full rounded-lg border-0 bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-300 ring-inset placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-600 focus:outline-none dark:bg-slate-950 dark:ring-slate-700"
           />
           <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-            Used for this scan only. OpsArmor keeps it in memory and never saves it.
+            Used for this scan only. DeaconGuard keeps it in memory and never saves it.
           </p>
         </div>
 

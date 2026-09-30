@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in OpsArmor does not work as expected
+description: Something in DeaconGuard does not work as expected
 labels: ["bug"]
 body:
   - type: markdown
@@ -8,9 +8,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: OpsArmor version
-      description: Output of `opsarmor version`
-      placeholder: opsarmor 0.1.1 (commit ..., built ...)
+      label: DeaconGuard version
+      description: Output of `deaconguard version`
+      placeholder: deaconguard 0.1.1 (commit ..., built ...)
     validations:
       required: true
   - type: input
@@ -37,8 +37,8 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. opsarmor host add ...
-        2. opsarmor scan ... --checks ...
+        1. deaconguard host add ...
+        2. deaconguard scan ... --checks ...
         3. ...
     validations:
       required: true

@@ -1,5 +1,5 @@
-// Package buildinfo identifies the running OpsArmor build. Release builds set
-// the variables with -ldflags "-X opsarmor/internal/buildinfo.Version=...".
+// Package buildinfo identifies the running DeaconGuard build. Release builds set
+// the variables with -ldflags "-X deaconguard/internal/buildinfo.Version=...".
 package buildinfo
 
 import (
@@ -57,7 +57,7 @@ func Get() Info {
 	return Info{Version: Version, Commit: Commit, Date: Date, Go: runtime.Version()}
 }
 
-// String is the one-line description printed by `opsarmor version`.
+// String is the one-line description printed by `deaconguard version`.
 func String() string {
 	commit, dirty := strings.CutSuffix(Commit, "-dirty")
 	if len(commit) > 12 {
@@ -73,10 +73,10 @@ func String() string {
 	if date == "" {
 		date = "unknown"
 	}
-	return fmt.Sprintf("opsarmor %s (commit %s, built %s, %s %s/%s)", Version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	return fmt.Sprintf("deaconguard %s (commit %s, built %s, %s %s/%s)", Version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
 
-// UserAgent identifies OpsArmor to advisory feed servers.
+// UserAgent identifies DeaconGuard to advisory feed servers.
 func UserAgent() string {
-	return "OpsArmor/" + Version + " (+https://github.com/Cloudopsshell/OpsArmor)"
+	return "DeaconGuard/" + Version + " (+https://github.com/Cloudopsshell/DeaconGuard)"
 }

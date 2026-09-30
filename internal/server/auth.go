@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"opsarmor/internal/local"
-	"opsarmor/internal/store"
+	"deaconguard/internal/local"
+	"deaconguard/internal/store"
 )
 
 // sessionCookie uses the __Host- prefix, so browsers only accept it over
 // HTTPS, for this exact host, on every path.
-const sessionCookie = "__Host-opsarmor_session"
+const sessionCookie = "__Host-deaconguard_session"
 
 type userContextKey struct{}
 
@@ -32,7 +32,7 @@ func (s *Server) signedIn(next http.Handler) http.Handler {
 		}
 		user, err := sessionUser(r)
 		if errors.Is(err, store.ErrNoSession) {
-			writeError(w, http.StatusUnauthorized, errors.New("sign in to OpsArmor"))
+			writeError(w, http.StatusUnauthorized, errors.New("sign in to DeaconGuard"))
 			return
 		}
 		if err != nil {
@@ -93,7 +93,7 @@ type loginRequest struct {
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !s.network {
-		writeError(w, http.StatusConflict, errors.New("sign-in is only used when OpsArmor serves on the network"))
+		writeError(w, http.StatusConflict, errors.New("sign-in is only used when DeaconGuard serves on the network"))
 		return
 	}
 	remote := remoteIP(r)
