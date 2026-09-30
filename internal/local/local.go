@@ -1,4 +1,4 @@
-// Package local scans the machine OpsArmor itself runs on by running OpsArmor's
+// Package local scans the machine DeaconGuard itself runs on by running DeaconGuard's
 // fixed, read-only commands directly.
 package local
 
@@ -15,15 +15,15 @@ import (
 	"syscall"
 	"time"
 
-	"opsarmor/internal/target"
+	"deaconguard/internal/target"
 )
 
 const maxStderrBytes = 4 * 1024
 
-// ErrUnsupportedOS is returned when OpsArmor runs on a system it cannot scan.
+// ErrUnsupportedOS is returned when DeaconGuard runs on a system it cannot scan.
 var ErrUnsupportedOS = errors.New("local scanning is supported on Linux only")
 
-// Target runs commands on this machine as the user running OpsArmor.
+// Target runs commands on this machine as the user running DeaconGuard.
 type Target struct {
 	observer target.CommandObserver
 }

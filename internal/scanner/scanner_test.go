@@ -19,7 +19,7 @@ func response(body string) *http.Response {
 }
 
 func TestScanDebianBookwormUsesOfficialTrackerAndDPKGInventory(t *testing.T) {
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Host != "security-tracker.debian.org" {
 			t.Fatalf("unexpected feed host: %s", request.URL.Host)
@@ -40,7 +40,7 @@ func TestScanDebianBookwormUsesOfficialTrackerAndDPKGInventory(t *testing.T) {
 }
 
 func TestScanAmazonLinux2023UsesALASAndRPMInventory(t *testing.T) {
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	const advisoryURL = "https://alas.aws.amazon.com/AL2023/ALAS2023-2026-100.html"
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		switch request.URL.String() {

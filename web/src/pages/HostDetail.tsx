@@ -25,7 +25,8 @@ import {
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
-import { connectionLabel } from "../lib/hosts";
+import { agentOnline, connectionLabel, scannable } from "../lib/hosts";
+import { AgentStatus } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 
 export function HostDetail() {
@@ -58,6 +59,11 @@ export function HostDetail() {
           <>
             {connectionLabel(data)}
             {data.transport === "local" && <SudoToggle host={data} />}
+            {data.transport === "agent" && (
+              <span className="mt-1 block">
+                <AgentStatus online={agentOnline(data)} lastSeen={data.agent?.last_seen_at} />
+              </span>
+            )}
           </>
         }
         action={
@@ -67,24 +73,43 @@ export function HostDetail() {
             </Button>
             <Button
               loading={running}
-              disabled={data.transport !== "local"}
-              title={data.transport !== "local" ? "SSH scanning was removed in 0.2.0" : undefined}
+              disabled={!scannable(data)}
+              title={!scannable(data) ? "SSH hosts cannot be scanned" : undefined}
               onClick={() => setScanning({})}
             >
               {!running && <Play className="size-4" />}
-              {data.last_scan?.status.startsWith("needs_") ? "Waiting for input…" : running ? "Scanning…" : "Scan now"}
+              {data.last_scan?.status.startsWith("needs_")
+                ? "Waiting for input…"
+                : data.last_scan?.status === "queued"
+                  ? "Waiting for agent…"
+                  : running
+                    ? "Scanning…"
+                    : "Scan now"}
             </Button>
           </>
         }
       />
 
-      {data.transport !== "local" && (
+      {data.transport === "agent" && !agentOnline(data) && (
+        <Card className="mb-6 border-l-4 border-amber-500">
+          <div className="p-5 text-sm">
+            <h2 className="font-semibold">The agent is offline</h2>
+            <p className="mt-1 text-slate-600 dark:text-slate-300">
+              It last checked in {data.agent ? timeAgo(data.agent.last_seen_at) : "never"}. Scans you start wait up to an hour for it to
+              reconnect. On the machine, check it with: sudo systemctl status deaconguard-agent
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {data.transport === "ssh" && (
         <Card className="mb-6 border-l-4 border-slate-400">
           <div className="p-5 text-sm">
             <h2 className="font-semibold">This SSH host can no longer be scanned</h2>
             <p className="mt-1 text-slate-600 dark:text-slate-300">
-              OpsArmor 0.2.0 removed SSH scanning. This host's earlier results and scan history stay available below. To scan it
-              again, install OpsArmor on it and scan it locally; you can remove this entry when you no longer need its history.
+              DeaconGuard does not scan over SSH. This host's earlier results and scan history stay available below. To scan it
+              again, install DeaconGuard on it and enroll it as an agent from the Agents page; you can remove this entry when you no longer
+              need its history.
             </p>
           </div>
         </Card>
@@ -184,8 +209,14 @@ export function HostDetail() {
                     <Button
                       variant="ghost"
                       className="px-2"
-                      disabled={isActive(scan.status)}
-                      title={isActive(scan.status) ? "A running scan cannot be deleted" : "Delete this scan"}
+                      disabled={isActive(scan.status) && scan.status !== "queued"}
+                      title={
+                        scan.status === "queued"
+                          ? "Cancel this scan"
+                          : isActive(scan.status)
+                            ? "A running scan cannot be deleted"
+                            : "Delete this scan"
+                      }
                       aria-label={`Delete the scan from ${dateTime(scan.started_at)}`}
                       onClick={() => setDeleting(scan)}
                     >
@@ -235,7 +266,7 @@ function SudoToggle({ host }: { host: Host }) {
       <ShieldCheck className="size-4" aria-hidden />
       <span>
         {host.allow_sudo
-          ? "OpsArmor may use sudo on this host for deeper checks"
+          ? "DeaconGuard may use sudo on this host for deeper checks"
           : "Use sudo for deeper checks: off · turn on to let checks read protected files and all processes"}
       </span>
       {update.error && <span className="text-red-600">{update.error.message}</span>}
@@ -428,8 +459,10 @@ export function RemoveHostDialog({ host, open, onClose }: { host: Host; open: bo
   return (
     <Dialog open={open} onClose={onClose} title="Remove host">
       <p className="text-sm text-slate-600 dark:text-slate-300">
-        Remove <span className="font-semibold">{host.address}</span> from OpsArmor? It will no longer appear on the dashboard. Earlier
+        Remove <span className="font-semibold">{host.address}</span> from DeaconGuard? It will no longer appear on the dashboard. Earlier
         reports stay stored and can still be opened with the CLI.
+        {host.transport === "agent" &&
+          " Its agent is disconnected at once and cannot reconnect; to scan the machine again, enroll it with a new token."}
       </p>
       <div className="mt-4">
         <ErrorMessage error={remove.error} />

@@ -1,4 +1,4 @@
-module opsarmor
+module deaconguard
 
 go 1.26.0
 

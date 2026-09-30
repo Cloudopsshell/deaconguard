@@ -23,23 +23,23 @@ COPY web ./web
 COPY --from=ui /web/dist ./web/dist
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build -trimpath \
-      -ldflags="-s -w -X opsarmor/internal/buildinfo.Version=${VERSION} -X opsarmor/internal/buildinfo.Commit=${COMMIT} -X opsarmor/internal/buildinfo.Date=${DATE}" \
-      -o /out/opsarmor ./cmd/opsarmor \
+      -ldflags="-s -w -X deaconguard/internal/buildinfo.Version=${VERSION} -X deaconguard/internal/buildinfo.Commit=${COMMIT} -X deaconguard/internal/buildinfo.Date=${DATE}" \
+      -o /out/deaconguard ./cmd/deaconguard \
     && mkdir -p /out/rootfs/data /out/rootfs/home/nonroot/.ssh /out/rootfs/ssh-keys /out/rootfs/tmp \
     && chown -R 65532:65532 /out/rootfs \
     && chmod 1777 /out/rootfs/tmp
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
-COPY --from=builder --chown=65532:65532 /out/opsarmor /usr/local/bin/opsarmor
+COPY --from=builder --chown=65532:65532 /out/deaconguard /usr/local/bin/deaconguard
 COPY --from=builder --chown=65532:65532 /out/rootfs/data /data
 COPY --from=builder --chown=65532:65532 /out/rootfs/home/nonroot/.ssh /home/nonroot/.ssh
 COPY --from=builder --chown=65532:65532 /out/rootfs/ssh-keys /ssh-keys
 COPY --from=builder --chown=65532:65532 /out/rootfs/tmp /tmp
 
 ENV HOME=/home/nonroot \
-    OPSARMOR_HOME=/data
+    DEACONGUARD_HOME=/data
 
 VOLUME ["/data"]
 USER 65532:65532
-ENTRYPOINT ["/usr/local/bin/opsarmor"]
+ENTRYPOINT ["/usr/local/bin/deaconguard"]

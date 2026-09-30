@@ -70,5 +70,5 @@ export function dateTime(iso: string | null | undefined): string {
 
 /** True while a scan is running or paused waiting for the user. */
 export function isActive(status: ScanStatus | undefined): boolean {
-  return status === "running" || (status?.startsWith("needs_") ?? false);
+  return status === "queued" || status === "running" || (status?.startsWith("needs_") ?? false);
 }

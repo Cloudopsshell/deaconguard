@@ -58,8 +58,8 @@ export function Dashboard() {
         <Card>
           <EmptyState
             icon={<ShieldCheck className="size-6" />}
-            title="Welcome to OpsArmor"
-            description="Register the Linux machine OpsArmor runs on. OpsArmor reads its installed package list and checks it against the distribution's official security advisories."
+            title="Welcome to DeaconGuard"
+            description="Register the Linux machine DeaconGuard runs on. DeaconGuard reads its installed package list and checks it against the distribution's official security advisories."
             action={
               <Link
                 to="/hosts?add=1"

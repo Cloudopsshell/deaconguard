@@ -2,6 +2,7 @@
 
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
 export type ScanStatus =
+  | "queued"
   | "running"
   | "succeeded"
   | "failed"
@@ -23,9 +24,18 @@ export interface Host {
   address: string;
   username: string;
   allow_sudo: boolean;
-  /** "local" is the machine OpsArmor runs on. "ssh" hosts were registered before
-   * SSH scanning was removed in 0.2.0; their results remain but they cannot be scanned. */
-  transport: "local" | "ssh";
+  /** "local" is the machine DeaconGuard runs on; "agent" machines run the DeaconGuard agent and
+   * enrolled with this server. "ssh" hosts come from older databases;
+   * their results remain but they cannot be scanned. */
+  transport: "local" | "agent" | "ssh";
+}
+
+export interface AgentInfo {
+  enrolled_at: string;
+  last_seen_at: string;
+  version: string;
+  os: string;
+  remote: string;
 }
 
 export interface Capabilities {
@@ -33,6 +43,43 @@ export interface Capabilities {
   local_reason?: string;
   hostname: string;
   username: string;
+  /** Agents can enroll: the server runs on the network. */
+  agents: boolean;
+}
+
+export interface Session {
+  /** False when DeaconGuard serves only this machine at localhost, without accounts. */
+  login_required: boolean;
+  authenticated: boolean;
+  username?: string;
+}
+
+export interface EnrollmentToken {
+  id: string;
+  server_url: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+  host_id: string | null;
+  revoked_at: string | null;
+  status: "active" | "used" | "expired" | "revoked";
+}
+
+/** Returned once, when a token is created: the only copy of the token. */
+export interface NewEnrollmentToken extends EnrollmentToken {
+  token: string;
+  command: string;
+}
+
+export interface AuditEntry {
+  id: number;
+  at: string;
+  actor: string;
+  action: string;
+  target: string;
+  detail: string;
+  remote: string;
 }
 
 export interface Scan {
@@ -69,6 +116,8 @@ export interface HostSummary extends Host {
   last_report: Scan | null;
   /** Newest successful result of each check run on this host. */
   checks: Partial<Record<CheckId, CheckSummary>> | null;
+  /** Set for agent hosts. */
+  agent?: AgentInfo;
 }
 
 export interface HostDetail extends HostSummary {
@@ -248,6 +297,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   const response = await fetch(path, init);
   const payload = await response.json().catch(() => null);
+  if (response.status === 401 && path !== "/api/login" && window.location.pathname !== "/login") {
+    // The session expired or was signed out elsewhere.
+    const next = window.location.pathname + window.location.search;
+    window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+  }
   if (!response.ok) {
     throw new ApiError(payload?.error ?? `Request failed with HTTP ${response.status}`, response.status);
   }
@@ -255,6 +309,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
+  session: () => request<Session>("GET", "/api/session"),
+  login: (username: string, password: string) => request<Session>("POST", "/api/login", { username, password }),
+  logout: () => request<{ ok: boolean }>("POST", "/api/logout"),
+  enrollmentTokens: () => request<EnrollmentToken[]>("GET", "/api/enrollment-tokens"),
+  createEnrollmentToken: (serverUrl: string) =>
+    request<NewEnrollmentToken>("POST", "/api/enrollment-tokens", { server_url: serverUrl }),
+  revokeEnrollmentToken: (id: string) => request<EnrollmentToken>("DELETE", `/api/enrollment-tokens/${id}`),
+  audit: () => request<AuditEntry[]>("GET", "/api/audit?limit=500"),
   summary: () => request<Summary>("GET", "/api/summary"),
   hosts: () => request<HostSummary[]>("GET", "/api/hosts"),
   host: (id: string) => request<HostDetail>("GET", `/api/hosts/${id}`),

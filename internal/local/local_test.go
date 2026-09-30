@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"opsarmor/internal/target"
+	"deaconguard/internal/target"
 )
 
 // run is exercised directly so the tests also pass on macOS, where New refuses.

@@ -1,4 +1,9 @@
-// Package server provides the local web UI and its JSON API.
+// Package server provides the web UI, its JSON API, and the agent API.
+//
+// It runs in one of two modes. Local mode (New) listens on a loopback address
+// without sign-in, for one person on this machine. Network mode (NewNetwork)
+// serves the dashboard over HTTPS to other machines, requires sign-in, and
+// lets agents enroll and run scans.
 package server
 
 import (
@@ -13,34 +18,67 @@ import (
 	"path"
 	"strings"
 
-	"opsarmor/internal/buildinfo"
-	"opsarmor/internal/checks"
-	"opsarmor/internal/local"
-	scanpkg "opsarmor/internal/scan"
-	"opsarmor/internal/store"
+	"deaconguard/internal/agentapi"
+	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/checks"
+	"deaconguard/internal/local"
+	scanpkg "deaconguard/internal/scan"
+	"deaconguard/internal/store"
 )
 
 const maxRequestBytes = 64 << 10
 
 type Server struct {
 	runner *runner
+	agents *agentHub
 	// localAvailable reports why this machine cannot be scanned, if it cannot.
 	localAvailable func() error
 	ui             fs.FS
 	handler        http.Handler
+	// network is set in network mode; pin is the TLS certificate's public key
+	// pin that enrollment tokens carry.
+	network bool
+	pin     string
+	limiter *failureLimiter
 }
 
-// New builds the handler. ui holds the built web app; scan may be nil to use
-// the real local scanner.
-func New(ui fs.FS, scan scanFunc) (*Server, error) {
+// New builds the local-mode handler. ui holds the built web app; scan may be
+// nil to use the real local scanner.
+func New(ui fs.FS, scan scanFunc) (*Server, error) { return newServer(ui, scan, false, "") }
+
+// NewNetwork builds the network-mode handler. pin is the public key pin of the
+// certificate the server listens with. At least one user must exist.
+func NewNetwork(ui fs.FS, scan scanFunc, pin string) (*Server, error) {
+	users, err := store.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, errors.New("create a dashboard account before serving on the network: deaconguard user add USERNAME")
+	}
+	return newServer(ui, scan, true, pin)
+}
+
+func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, error) {
 	if err := store.InterruptRunningScans(); err != nil {
 		return nil, err
 	}
 	if err := store.PruneAllScans(store.KeepScansPerHost); err != nil {
 		return nil, err
 	}
-	s := &Server{runner: newRunner(scan), ui: ui, localAvailable: func() error { _, err := local.New(); return err }}
+	s := &Server{
+		runner: newRunner(scan), ui: ui, network: network, pin: pin, limiter: newFailureLimiter(),
+		localAvailable: func() error { _, err := local.New(); return err },
+	}
+	s.agents = newAgentHub(s.runner)
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/session", s.session)
+	mux.HandleFunc("POST /api/login", s.login)
+	mux.HandleFunc("POST /api/logout", s.logout)
+	mux.HandleFunc("GET /api/audit", s.listAudit)
+	mux.HandleFunc("GET /api/enrollment-tokens", s.listEnrollmentTokens)
+	mux.HandleFunc("POST /api/enrollment-tokens", s.createEnrollmentToken)
+	mux.HandleFunc("DELETE /api/enrollment-tokens/{id}", s.revokeEnrollmentToken)
 	mux.HandleFunc("GET /api/summary", s.summary)
 	mux.HandleFunc("GET /api/hosts", s.listHosts)
 	mux.HandleFunc("POST /api/hosts", s.addHost)
@@ -63,7 +101,27 @@ func New(ui fs.FS, scan scanFunc) (*Server, error) {
 		writeError(w, http.StatusNotFound, errors.New("unknown API endpoint"))
 	})
 	mux.HandleFunc("/", s.serveUI)
-	s.handler = localOnly(mux)
+	if network {
+		agentMux := http.NewServeMux()
+		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"enroll", s.agents.enroll(s.limiter))
+		agentMux.HandleFunc("GET "+agentapi.PathPrefix+"job", s.agents.authenticated(s.agents.job))
+		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"scans/{id}/events", s.agents.authenticated(s.agents.events))
+		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"scans/{id}/result", s.agents.authenticated(s.agents.result))
+		agentMux.HandleFunc(agentapi.PathPrefix, func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, http.StatusNotFound, errors.New("unknown agent API endpoint"))
+		})
+		browser := s.signedIn(browserChecks(mux, "https"))
+		s.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, agentapi.PathPrefix) {
+				agentMux.ServeHTTP(w, r)
+				return
+			}
+			browser.ServeHTTP(w, r)
+		})
+		s.agents.start()
+	} else {
+		s.handler = localOnly(browserChecks(mux, "http"))
+	}
 	return s, nil
 }
 
@@ -71,7 +129,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.handler.S
 
 // Close cancels questions waiting for an answer and blocks until background
 // scans finish.
-func (s *Server) Close() { s.runner.close() }
+func (s *Server) Close() {
+	s.agents.stop()
+	s.runner.close()
+}
 
 // IsLoopback reports whether a listen address only accepts local connections.
 func IsLoopback(address string) bool {
@@ -86,10 +147,22 @@ func IsLoopback(address string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// localOnly rejects requests that did not come from a page served by this
-// server. The Host check blocks DNS rebinding; the Origin, Fetch Metadata, and
-// JSON content-type checks stop other websites from changing data.
+// localOnly rejects requests not addressed to localhost, which blocks DNS
+// rebinding in local mode, where there is no sign-in.
 func localOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !IsLoopback(hostWithPort(r.Host)) {
+			writeError(w, http.StatusForbidden, errors.New("DeaconGuard only answers requests addressed to localhost"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// browserChecks rejects requests that did not come from a page served by this
+// server: the Origin, Fetch Metadata, and JSON content-type checks stop other
+// websites from changing data.
+func browserChecks(next http.Handler, scheme string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := w.Header()
 		header.Set("X-Content-Type-Options", "nosniff")
@@ -98,16 +171,12 @@ func localOnly(next http.Handler) http.Handler {
 		header.Set("Content-Security-Policy",
 			"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; "+
 				"frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
-		if !IsLoopback(hostWithPort(r.Host)) {
-			writeError(w, http.StatusForbidden, errors.New("OpsArmor only answers requests addressed to localhost"))
-			return
-		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
 				writeError(w, http.StatusForbidden, errors.New("cross-site requests are not allowed"))
 				return
 			}
-			if origin := r.Header.Get("Origin"); origin != "" && origin != "http://"+r.Host {
+			if origin := r.Header.Get("Origin"); origin != "" && origin != scheme+"://"+r.Host {
 				writeError(w, http.StatusForbidden, errors.New("cross-origin requests are not allowed"))
 				return
 			}
@@ -240,10 +309,12 @@ type capabilitiesResponse struct {
 	LocalReason   string `json:"local_reason,omitempty"`
 	Hostname      string `json:"hostname"`
 	Username      string `json:"username"`
+	// Agents reports whether agents can enroll, which needs network mode.
+	Agents bool `json:"agents"`
 }
 
 func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
-	response := capabilitiesResponse{LocalScanning: true, Hostname: local.Hostname(), Username: local.Username()}
+	response := capabilitiesResponse{LocalScanning: true, Hostname: local.Hostname(), Username: local.Username(), Agents: s.network}
 	if err := s.localAvailable(); err != nil {
 		response.LocalScanning, response.LocalReason = false, err.Error()
 	}
@@ -256,7 +327,7 @@ func (s *Server) addHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.Transport != "" && request.Transport != store.TransportLocal {
-		writeError(w, http.StatusBadRequest, errors.New("only this machine can be added: SSH scanning was removed in OpsArmor 0.2.0"))
+		writeError(w, http.StatusBadRequest, errors.New("only this machine can be added here; other machines join by enrolling an DeaconGuard agent"))
 		return
 	}
 	if err := s.localAvailable(); err != nil {
@@ -278,6 +349,7 @@ func (s *Server) addHost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.audit(r, "host.add", host.Address, "this machine")
 	writeJSON(w, http.StatusCreated, host)
 }
 
@@ -299,6 +371,7 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
+	s.audit(r, "host.sudo", host.Address, fmt.Sprintf("allow sudo: %t", *request.AllowSudo))
 	writeJSON(w, http.StatusOK, host)
 }
 
@@ -339,6 +412,11 @@ func (s *Server) removeHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
+	detail := ""
+	if host.Transport == store.TransportAgent {
+		detail = "agent credential revoked"
+	}
+	s.audit(r, "host.remove", host.Address, detail)
 	writeJSON(w, http.StatusOK, host)
 }
 
@@ -364,6 +442,10 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, scanpkg.ErrSSHRemoved)
 		return
 	}
+	if host.Transport == store.TransportAgent && !s.network {
+		writeError(w, http.StatusConflict, errors.New("agent hosts are scanned when DeaconGuard serves on the network (deaconguard serve --listen 0.0.0.0:8443)"))
+		return
+	}
 	scan, err := s.runner.start(host, selected)
 	if errors.Is(err, errScanInProgress) {
 		writeError(w, http.StatusConflict, err)
@@ -373,6 +455,10 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if host.Transport == store.TransportAgent {
+		s.agents.wake(host.ID)
+	}
+	s.audit(r, "scan.start", host.Address, strings.Join(selected, ", "))
 	writeJSON(w, http.StatusAccepted, scan)
 }
 
@@ -389,8 +475,8 @@ type respondRequest struct {
 	Cancel bool   `json:"cancel"`
 }
 
-// respond answers a scan that is waiting for a host-key decision, a key
-// passphrase, or a password. The answer is handed to that scan only.
+// respond answers a scan that is waiting for the sudo password. The answer is
+// handed to that scan only.
 func (s *Server) respond(w http.ResponseWriter, r *http.Request) {
 	var request respondRequest
 	if !readJSON(w, r, &request) {
@@ -433,6 +519,7 @@ func (s *Server) getScan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteScan(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	record, _ := store.GetScan(id)
 	err := store.DeleteScan(id)
 	switch {
 	case errors.Is(err, store.ErrScanInProgress):
@@ -441,6 +528,11 @@ func (s *Server) deleteScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 	default:
 		s.runner.forget(id)
+		action := "scan.delete"
+		if record.Status == store.ScanQueued {
+			action = "scan.cancel"
+		}
+		s.audit(r, action, record.Address, record.StartedAt)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
 }
@@ -484,7 +576,7 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
-		io.WriteString(w, "The OpsArmor web UI was not built into this binary. Run `make ui build` and restart.\n")
+		io.WriteString(w, "The DeaconGuard web UI was not built into this binary. Run `make ui build` and restart.\n")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

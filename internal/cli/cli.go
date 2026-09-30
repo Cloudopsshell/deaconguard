@@ -1,28 +1,21 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
-	"time"
 
 	"golang.org/x/term"
 
-	"opsarmor/internal/buildinfo"
-	"opsarmor/internal/checks"
-	"opsarmor/internal/local"
-	"opsarmor/internal/scan"
-	"opsarmor/internal/server"
-	"opsarmor/internal/store"
-	"opsarmor/web"
+	"deaconguard/internal/agent"
+	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/checks"
+	"deaconguard/internal/local"
+	"deaconguard/internal/scan"
+	"deaconguard/internal/store"
 )
 
 func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int {
@@ -49,6 +42,12 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runReport(arguments[1:], output)
 	case "serve":
 		err = runServe(arguments[1:], output)
+	case "user":
+		err = runUser(arguments[1:], input, output, diagnostics)
+	case "agent":
+		err = runAgent(arguments[1:], output, diagnostics)
+	case "token":
+		err = runToken(arguments[1:], output)
 	case "version", "--version", "-v":
 		fmt.Fprintln(output, buildinfo.String())
 		return 0
@@ -59,7 +58,11 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = fmt.Errorf("unknown command %q", arguments[0])
 	}
 	if err != nil {
-		fmt.Fprintf(diagnostics, "opsarmor: %v\n", err)
+		fmt.Fprintf(diagnostics, "deaconguard: %v\n", err)
+		if errors.Is(err, agent.ErrRemoved) {
+			// The agent service does not restart on this status.
+			return 3
+		}
 		return 1
 	}
 	return 0
@@ -79,7 +82,7 @@ func runHost(arguments []string, output io.Writer) error {
 				allowSudo = true
 			case "--local":
 			default:
-				return fmt.Errorf("opsarmor host add registers this machine and takes no address: %w", scan.ErrSSHRemoved)
+				return fmt.Errorf("deaconguard host add registers this machine and takes no address: %w", scan.ErrSSHRemoved)
 			}
 		}
 		if _, err := local.New(); err != nil {
@@ -97,7 +100,7 @@ func runHost(arguments []string, output io.Writer) error {
 		fmt.Fprintf(output, "Added %s (%s)\n", host.Address, host.ID)
 	case "sudo":
 		if len(arguments) != 3 || (arguments[2] != "on" && arguments[2] != "off") {
-			return fmt.Errorf("usage: opsarmor host sudo HOST_ID on|off")
+			return fmt.Errorf("usage: deaconguard host sudo HOST_ID on|off")
 		}
 		host, err := store.SetAllowSudo(arguments[1], arguments[2] == "on")
 		if err != nil {
@@ -110,7 +113,7 @@ func runHost(arguments []string, output io.Writer) error {
 			return err
 		}
 		if len(hosts) == 0 {
-			fmt.Fprintln(output, "No hosts registered. Run: opsarmor host add ADDRESS --username USER")
+			fmt.Fprintln(output, "No hosts registered. Run deaconguard host add to add this machine, or enroll agents: deaconguard token create")
 			return nil
 		}
 		for _, host := range hosts {
@@ -119,14 +122,18 @@ func runHost(arguments []string, output io.Writer) error {
 				sudo = "  (sudo allowed)"
 			}
 			if !host.Scannable() {
-				fmt.Fprintf(output, "%s  %s  (SSH host; scanning removed in 0.2.0, earlier results kept)\n", host.ID, host.Address)
+				fmt.Fprintf(output, "%s  %s  (SSH host; cannot be scanned, earlier results kept)\n", host.ID, host.Address)
+				continue
+			}
+			if host.Transport == store.TransportAgent {
+				fmt.Fprintf(output, "%s  %s  (agent)\n", host.ID, host.Address)
 				continue
 			}
 			fmt.Fprintf(output, "%s  this machine (%s, as %s)%s\n", host.ID, host.Address, host.Username, sudo)
 		}
 	case "remove":
 		if len(arguments) != 2 {
-			return fmt.Errorf("usage: opsarmor host remove HOST_ID")
+			return fmt.Errorf("usage: deaconguard host remove HOST_ID")
 		}
 		host, err := store.RemoveHost(arguments[1])
 		if err != nil {
@@ -172,14 +179,14 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 		// A one-off scan of this machine; it is saved but not tied to a registered host.
 		for _, argument := range remaining {
 			if argument != "--json" {
-				return fmt.Errorf("usage: opsarmor scan --local [--allow-sudo] [--checks LIST] [--json]")
+				return fmt.Errorf("usage: deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]")
 			}
 			asJSON = true
 		}
 		host = store.Host{Address: local.Hostname(), Username: local.Username(), Transport: store.TransportLocal, AllowSudo: allowSudo}
 	} else {
 		if allowSudo {
-			return fmt.Errorf("--allow-sudo applies to --local scans; for a registered host use: opsarmor host sudo HOST_ID on")
+			return fmt.Errorf("--allow-sudo applies to --local scans; for a registered host use: deaconguard host sudo HOST_ID on")
 		}
 		var hostID string
 		if hostID, asJSON, err = parseIDAndJSON(remaining, "scan"); err != nil {
@@ -187,6 +194,9 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 		}
 		if host, err = store.GetHost(hostID); err != nil {
 			return err
+		}
+		if host.Transport == store.TransportAgent {
+			return scanThroughAgent(host, selected, asJSON, output, diagnostics)
 		}
 	}
 	report, err := scan.Run(host, selected, scan.Options{
@@ -196,7 +206,7 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 		return err
 	}
 	// Round-trip through JSON so the saved and printed report match what
-	// `opsarmor report` later reads back.
+	// `deaconguard report` later reads back.
 	encoded, err := json.Marshal(report)
 	if err != nil {
 		return err
@@ -236,12 +246,12 @@ func parseIDAndJSON(arguments []string, command string) (string, bool, error) {
 			return "", false, fmt.Errorf("unknown %s option %q", command, argument)
 		}
 		if id != "" {
-			return "", false, fmt.Errorf("usage: opsarmor %s ID [--json]", command)
+			return "", false, fmt.Errorf("usage: deaconguard %s ID [--json]", command)
 		}
 		id = argument
 	}
 	if id == "" {
-		return "", false, fmt.Errorf("usage: opsarmor %s ID [--json]", command)
+		return "", false, fmt.Errorf("usage: deaconguard %s ID [--json]", command)
 	}
 	return id, asJSON, nil
 }
@@ -291,48 +301,6 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 	return nil
 }
 
-const defaultListen = "127.0.0.1:7480"
-
-func runServe(arguments []string, output io.Writer) error {
-	listen := defaultListen
-	for index := 0; index < len(arguments); index++ {
-		if arguments[index] != "--listen" || index+1 >= len(arguments) {
-			return fmt.Errorf("usage: opsarmor serve [--listen 127.0.0.1:PORT]")
-		}
-		index++
-		listen = arguments[index]
-	}
-	if !server.IsLoopback(listen) {
-		return fmt.Errorf("the web UI only listens on a loopback address such as %s", defaultListen)
-	}
-	handler, err := server.New(web.Files(), nil)
-	if err != nil {
-		return err
-	}
-	listener, err := net.Listen("tcp", listen)
-	if err != nil {
-		return err
-	}
-	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	go func() {
-		<-ctx.Done()
-		// Restore default signal handling so a second Ctrl+C exits at once.
-		stop()
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		httpServer.Shutdown(shutdown)
-	}()
-	fmt.Fprintf(output, "OpsArmor %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
-	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	fmt.Fprintln(output, "Waiting for running scans to finish (press Ctrl+C again to quit now)...")
-	handler.Close()
-	return nil
-}
-
 func showCheckResults(report map[string]any, output io.Writer) {
 	results, ok := report["check_results"].(map[string]any)
 	if !ok {
@@ -367,18 +335,33 @@ func showCheckResults(report map[string]any, output io.Writer) {
 }
 
 func usage(output io.Writer) {
-	fmt.Fprintln(output, `OpsArmor scans the Linux machine it runs on against official security advisories.
+	fmt.Fprintln(output, `DeaconGuard scans Linux machines against official security advisories. It
+scans the machine it runs on, and machines running the DeaconGuard agent that
+have enrolled with an DeaconGuard server.
 
-Commands:
-  opsarmor host add [--allow-sudo]    register this machine (Linux)
-  opsarmor host list
-  opsarmor host sudo HOST_ID on|off
-  opsarmor host remove HOST_ID
-  opsarmor scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
-  opsarmor scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
-  opsarmor report REPORT_ID [--json]
-  opsarmor serve [--listen 127.0.0.1:PORT]   web UI, default http://127.0.0.1:7480
-  opsarmor version`)
+Scanning:
+  deaconguard host add [--allow-sudo]    register this machine (Linux)
+  deaconguard host list
+  deaconguard host sudo HOST_ID on|off
+  deaconguard host remove HOST_ID        for an agent host, also revokes its agent
+  deaconguard scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
+  deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
+  deaconguard report REPORT_ID [--json]
+
+Web UI and server:
+  deaconguard serve                       local web UI at http://127.0.0.1:7480, no sign-in
+  deaconguard serve --listen 0.0.0.0:8443 [--tls-cert FILE --tls-key FILE]
+                                       server: HTTPS dashboard with sign-in, agents enroll
+  deaconguard user add|passwd USERNAME [--password-stdin]
+  deaconguard user list | remove USERNAME
+  deaconguard token create --server-url https://HOST:8443   one-time agent token, valid 24 hours
+
+Agent (on each machine to scan):
+  deaconguard agent enroll TOKEN [--force]   enroll with the server that made TOKEN
+  deaconguard agent run                      wait for scans (the deaconguard-agent service)
+  deaconguard agent status
+
+  deaconguard version`)
 }
 
 // terminalSecret asks for a secret on the terminal without echoing it.

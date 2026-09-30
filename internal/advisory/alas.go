@@ -14,9 +14,9 @@ import (
 
 	"golang.org/x/net/html"
 
-	"opsarmor/internal/inventory"
-	"opsarmor/internal/platform"
-	"opsarmor/internal/version"
+	"deaconguard/internal/inventory"
+	"deaconguard/internal/platform"
+	"deaconguard/internal/version"
 )
 
 const maxBulletinBytes = 4 << 20

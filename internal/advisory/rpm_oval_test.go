@@ -3,7 +3,7 @@ package advisory
 import (
 	"testing"
 
-	"opsarmor/internal/inventory"
+	"deaconguard/internal/inventory"
 )
 
 func TestEvaluateRedHatOVALFindsVulnerableRPM(t *testing.T) {

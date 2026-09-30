@@ -3,8 +3,8 @@ package advisory
 import (
 	"testing"
 
-	"opsarmor/internal/inventory"
-	"opsarmor/internal/platform"
+	"deaconguard/internal/inventory"
+	"deaconguard/internal/platform"
 )
 
 func TestEvaluateUbuntuOVALFindsVulnerableDpkgPackage(t *testing.T) {

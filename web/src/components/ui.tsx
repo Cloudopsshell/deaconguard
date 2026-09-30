@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, KeyRound, Loader2, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, KeyRound, Loader2, X, XCircle } from "lucide-react";
 import type { Scan, ScanStatus, Severity, SeverityCounts } from "../api";
 import { countFor, severityOrder, severityStyle } from "../lib/format";
 
@@ -89,6 +89,11 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
 }
 
 const statusStyle: Record<ScanStatus, { label: string; className: string; icon: ReactNode }> = {
+  queued: {
+    label: "Waiting for agent",
+    className: "bg-slate-100 text-slate-700 ring-slate-500/20 dark:bg-slate-500/15 dark:text-slate-300 dark:ring-slate-400/30",
+    icon: <Clock className="size-3.5" aria-hidden />,
+  },
   running: {
     label: "Scanning",
     className: "bg-indigo-50 text-indigo-700 ring-indigo-600/20 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-400/30",
