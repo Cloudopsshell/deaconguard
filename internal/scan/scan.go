@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"opsarmor/internal/buildinfo"
@@ -26,7 +27,11 @@ var evaluationSlots = make(chan struct{}, maxConcurrentEvaluations)
 
 // ErrSSHRemoved is returned for hosts registered for SSH scanning, which was
 // removed in 0.2.0. Their earlier results stay available.
-var ErrSSHRemoved = errors.New("SSH scanning was removed in OpsArmor 0.2.0; this host's earlier results remain available, but to scan it, install OpsArmor on it and run a local scan")
+var ErrSSHRemoved = errors.New("SSH scanning was removed in OpsArmor 0.2.0; this host's earlier results remain available, but to scan it, install the OpsArmor agent on it and enroll it with this server")
+
+// ErrAgentHost is returned when an agent host is scanned in-process; its
+// agent runs the scan instead.
+var ErrAgentHost = errors.New("this host is scanned by its OpsArmor agent through the OpsArmor server")
 
 type Options struct {
 	// SudoPassword is asked for when the host allows sudo but it needs a
@@ -34,6 +39,10 @@ type Options struct {
 	SudoPassword func(retry error) ([]byte, error)
 	// Progress, when set, receives live events as the scan runs.
 	Progress func(Event)
+	// CollectInventory, when set, receives the installed packages in place of
+	// evaluating them here. An agent uses it to leave the evaluation, which
+	// needs the advisory feeds, to the server.
+	CollectInventory func(target.Inventory)
 }
 
 // Run scans host with the given check IDs, reaching it the way its transport
@@ -48,6 +57,9 @@ func Run(host store.Host, checkIDs []string, options Options) (map[string]any, e
 	started := time.Now()
 	if !host.Scannable() {
 		return nil, ErrSSHRemoved
+	}
+	if host.Transport == store.TransportAgent {
+		return nil, ErrAgentHost
 	}
 	progress.startPhase(PhaseConnect, fmt.Sprintf("Scanning this machine (%s) as %s", host.Address, local.Username()))
 	machine, err := local.New()
@@ -80,26 +92,40 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 		progress.endPhase(checks.StatusFailed, err.Error())
 		return nil, err
 	}
-	target, err := platform.Detect(osRelease)
+	detected, err := platform.Detect(osRelease)
 	if err != nil {
 		progress.endPhase(checks.StatusFailed, err.Error())
 		return nil, err
 	}
-	progress.endPhase(checks.StatusCompleted, "Detected "+scanner.PlatformName(target))
+	progress.endPhase(checks.StatusCompleted, "Detected "+scanner.PlatformName(detected))
 
 	now := time.Now().UTC()
 	report := map[string]any{
-		"host_id": host.ID, "address": host.Address, "os": scanner.PlatformName(target),
+		"host_id": host.ID, "address": host.Address, "os": scanner.PlatformName(detected),
 		"scanned_at": now.Format(time.RFC3339), "checks_run": checkIDs,
 		"opsarmor_version": buildinfo.Version,
 	}
 	results := make(map[string]checks.Result)
 	executor := checks.NewExecutor(machine, host.AllowSudo, options.SudoPassword)
 	defer executor.Close()
+	if _, isLocal := machine.(*local.Target); isLocal && os.Geteuid() == 0 {
+		executor.AsRoot()
+	}
 	sudoNoted := false
 	for _, id := range checkIDs {
 		progress.startPhase(id, checkName(id))
 		phaseStarted := time.Now()
+		if id == checks.Packages && options.CollectInventory != nil {
+			inventory, err := target.CollectInventory(machine)
+			if err != nil {
+				progress.endPhase(checks.StatusFailed, err.Error())
+				return nil, err
+			}
+			options.CollectInventory(inventory)
+			progress.endPhase(checks.StatusCompleted, fmt.Sprintf("Collected the package list (%s) for the server to evaluate · %s",
+				formatBytes(len(inventory.DPKGStatus)+len(inventory.RPMQuery)), formatDuration(time.Since(phaseStarted))))
+			continue
+		}
 		if id == checks.Packages {
 			if err := addPackageReport(report, machine, progress); err != nil {
 				progress.endPhase(checks.StatusFailed, err.Error())
@@ -107,7 +133,7 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 			}
 			continue
 		}
-		result := checks.Run(id, executor, target, now)
+		result := checks.Run(id, executor, detected, now)
 		results[id] = result
 		if note := executor.SudoNote(); note != "" && !sudoNoted {
 			sudoNoted = true
@@ -132,6 +158,22 @@ func addPackageReport(report map[string]any, machine target.Target, progress *re
 	if err != nil {
 		return err
 	}
+	return evaluatePackages(report, inventory, progress, started)
+}
+
+// EvaluateInventory evaluates packages an agent collected and adds the result
+// to its report, as a scan run here would have.
+func EvaluateInventory(report map[string]any, inventory target.Inventory, emit func(Event)) error {
+	progress := &reporter{emit: emit}
+	progress.startPhase(checks.Packages, "Evaluating the packages the agent collected")
+	if err := evaluatePackages(report, inventory, progress, time.Now()); err != nil {
+		progress.endPhase(checks.StatusFailed, err.Error())
+		return err
+	}
+	return nil
+}
+
+func evaluatePackages(report map[string]any, inventory target.Inventory, progress *reporter, started time.Time) error {
 	progress.info("Running kernel %s", inventory.Kernel)
 	if len(evaluationSlots) == cap(evaluationSlots) {
 		progress.info("Waiting for another host's advisory evaluation to finish")

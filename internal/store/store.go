@@ -30,13 +30,16 @@ const (
 	// TransportLocal is the machine OpsArmor runs on; Address holds its
 	// hostname and Username the account that runs the scans.
 	TransportLocal = "local"
+	// TransportAgent is a machine running `opsarmor agent`, enrolled with a
+	// one-time token; Address holds the hostname the agent reported.
+	TransportAgent = "agent"
 	// TransportSSH marks hosts registered before SSH scanning was removed in
 	// 0.2.0. They keep their scan history but can no longer be scanned.
 	TransportSSH = "ssh"
 )
 
 // Scannable reports whether OpsArmor can still scan the host.
-func (h Host) Scannable() bool { return h.Transport == TransportLocal }
+func (h Host) Scannable() bool { return h.Transport == TransportLocal || h.Transport == TransportAgent }
 
 const databaseName = "opsarmor.db"
 
@@ -45,9 +48,20 @@ var (
 	databases   = make(map[string]*sql.DB)
 )
 
+// SystemDataDir is the opsarmor-server service's data directory. It is owned
+// by the opsarmor system user the service runs as.
+const SystemDataDir = "/var/lib/opsarmor"
+
+// DataDir is $OPSARMOR_HOME if set; SystemDataDir for the account that owns
+// it, such as the service's; otherwise ~/.local/share/opsarmor.
 func DataDir() string {
 	if configured := os.Getenv("OPSARMOR_HOME"); configured != "" {
 		return configured
+	}
+	if info, err := os.Stat(SystemDataDir); err == nil {
+		if owner, ok := fileOwner(info); ok && owner == os.Geteuid() {
+			return SystemDataDir
+		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -58,9 +72,22 @@ func DataDir() string {
 
 func DatabasePath() string { return filepath.Join(DataDir(), databaseName) }
 
+// ErrServiceData is returned when root runs a command that would change the
+// server's data, which must stay owned by the service account.
+var ErrServiceData = errors.New("the OpsArmor server's data belongs to the opsarmor user; run this command as that user, for example: sudo -u opsarmor opsarmor user add admin")
+
 // database returns a shared connection for the current data directory, creating
 // the schema and importing JSON profiles and reports from earlier releases once.
 func database() (*sql.DB, error) {
+	if os.Getenv("OPSARMOR_HOME") == "" && os.Geteuid() == 0 {
+		// Root would otherwise quietly use a separate database under its own
+		// home directory instead of the server's.
+		if info, err := os.Stat(SystemDataDir); err == nil {
+			if owner, ok := fileOwner(info); ok && owner != 0 {
+				return nil, ErrServiceData
+			}
+		}
+	}
 	path := DatabasePath()
 	databasesMu.Lock()
 	defer databasesMu.Unlock()
@@ -122,6 +149,11 @@ func migrate(db *sql.DB) error {
 	}
 	if version < 4 {
 		if err := execInTx(db, schemaV4); err != nil {
+			return err
+		}
+	}
+	if version < 5 {
+		if err := execInTx(db, schemaV5); err != nil {
 			return err
 		}
 	}
@@ -237,6 +269,53 @@ PRAGMA user_version = 3;`
 const schemaV4 = `
 ALTER TABLE hosts ADD COLUMN transport TEXT NOT NULL DEFAULT 'ssh';
 PRAGMA user_version = 4;`
+
+// schemaV5 adds the network server: dashboard accounts and their sessions, an
+// audit log, one-time enrollment tokens, and enrolled agents. Secrets are
+// stored only as SHA-256 hashes, passwords as PBKDF2 hashes.
+const schemaV5 = `
+CREATE TABLE users (
+	id            TEXT PRIMARY KEY,
+	username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+	password_hash TEXT NOT NULL,
+	created_at    TEXT NOT NULL
+);
+CREATE TABLE sessions (
+	token_hash TEXT PRIMARY KEY,
+	user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	created_at TEXT NOT NULL,
+	expires_at TEXT NOT NULL
+);
+CREATE TABLE audit_log (
+	id     INTEGER PRIMARY KEY AUTOINCREMENT,
+	at     TEXT NOT NULL,
+	actor  TEXT NOT NULL,
+	action TEXT NOT NULL,
+	target TEXT NOT NULL DEFAULT '',
+	detail TEXT NOT NULL DEFAULT '',
+	remote TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE enrollment_tokens (
+	id          TEXT PRIMARY KEY,
+	secret_hash TEXT NOT NULL UNIQUE,
+	server_url  TEXT NOT NULL,
+	created_by  TEXT NOT NULL,
+	created_at  TEXT NOT NULL,
+	expires_at  TEXT NOT NULL,
+	used_at     TEXT,
+	host_id     TEXT,
+	revoked_at  TEXT
+);
+CREATE TABLE agents (
+	host_id         TEXT PRIMARY KEY REFERENCES hosts (id) ON DELETE CASCADE,
+	credential_hash TEXT NOT NULL,
+	enrolled_at     TEXT NOT NULL,
+	last_seen_at    TEXT NOT NULL,
+	version         TEXT NOT NULL DEFAULT '',
+	os              TEXT NOT NULL DEFAULT '',
+	remote          TEXT NOT NULL DEFAULT ''
+);
+PRAGMA user_version = 5;`
 
 // importLegacy copies hosts.json and reports/*.json from the file-based store
 // into the database once. The original files are left untouched.
@@ -410,6 +489,8 @@ func SetAllowSudo(id string, allow bool) (Host, error) {
 	return GetHost(id)
 }
 
+// RemoveHost deletes a host; its scans are kept. Removing an agent host also
+// revokes the agent's credential and cancels its queued scans.
 func RemoveHost(id string) (Host, error) {
 	host, err := GetHost(id)
 	if err != nil {
@@ -422,7 +503,34 @@ func RemoveHost(id string) (Host, error) {
 	if _, err := db.Exec("DELETE FROM hosts WHERE id = ?", id); err != nil {
 		return Host{}, err
 	}
+	if _, err := db.Exec("UPDATE scans SET status = ?, error = ?, finished_at = ? WHERE host_id = ? AND status = ?",
+		ScanFailed, "the host was removed before its agent picked up the scan", nowText(), id, ScanQueued); err != nil {
+		return Host{}, err
+	}
 	return host, nil
+}
+
+// Meta returns a stored setting, or "" if it is not set.
+func Meta(key string) (string, error) {
+	db, err := database()
+	if err != nil {
+		return "", err
+	}
+	var value string
+	err = db.QueryRow("SELECT value FROM meta WHERE key = ?", key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return value, err
+}
+
+func SetMeta(key, value string) error {
+	db, err := database()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", key, value)
+	return err
 }
 
 // SaveReport stores a completed CLI scan report and returns it with its report_id.

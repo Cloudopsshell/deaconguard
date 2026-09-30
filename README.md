@@ -4,18 +4,25 @@
 [![CI](https://github.com/Cloudopsshell/OpsArmor/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/OpsArmor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/Cloudopsshell/OpsArmor)](LICENSE)
 
-OpsArmor is a Linux security scanner written in Go. Install it on a Linux machine and it scans that machine: it runs fixed, read-only commands locally and, by default without `sudo`, evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are OpsArmor code; OpsArmor never installs software, and the only third-party engine it runs is a ClamAV that is already installed, when you choose the antivirus check.
+OpsArmor is a Linux security scanner written in Go. It runs fixed, read-only commands on a Linux machine and evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are OpsArmor code; OpsArmor never installs software, and the only third-party engine it runs is a ClamAV that is already installed, when you choose the antivirus check.
 
-> **SSH scanning was removed in 0.2.0.** OpsArmor no longer connects to other machines. To scan a server, install OpsArmor on it. An agent that enrolls with the OpsArmor server using a one-time token, so one dashboard covers many servers, is planned. Hosts registered for SSH scanning by earlier versions keep their results but can no longer be scanned; see [Update](#update).
+One binary does two jobs:
 
-- [Install](#install) · [Getting started](#getting-started) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
+- **Server:** an HTTPS dashboard with sign-in and an audit log. It scans the machine it runs on and the machines running the agent.
+- **Agent:** runs on each machine to scan. It enrolls once with a one-time token from the server, which is valid for 24 hours. After that it connects out to the server, runs the scans the server asks for, and sends back the results. Target machines need no open ports and no internet access, because the server evaluates their packages against the advisories.
+
+For a single machine, `opsarmor serve` still gives a local dashboard without accounts.
+
+> **SSH scanning was removed in 0.2.0.** Hosts registered for SSH scanning by earlier versions keep their results but can no longer be scanned. Install the agent on those machines instead; see [Update](#update).
+
+- [Install](#install) · [Getting started](#getting-started) · [Run the server](#run-the-server) · [Scan other machines with the agent](#scan-other-machines-with-the-agent) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
 - [Checks](#checks) · [Web UI](#web-ui) · [Supported distributions](#supported-distributions) · [Versioning](#versioning) · [Development](#development) · [Security](#security)
 
 ## Requirements
 
-- **Where OpsArmor runs:** the Linux machine you want to scan, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary; nothing else is needed. macOS builds are published for viewing results from earlier versions; they cannot scan.
-- **Account:** a normal user account is enough; the optional checks see more when [sudo is allowed](#checks).
-- **Network:** HTTPS access to the distribution's advisory feed.
+- **Where OpsArmor runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can view results from earlier versions but cannot scan.
+- **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `opsarmor` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
+- **Network:** the server needs HTTPS access to the distributions' advisory feeds. Agents only need to reach the server, on port 8443 by default.
 
 ## Install
 
@@ -91,7 +98,41 @@ For a one-off scan without registering the machine:
 opsarmor scan --local --checks packages,integrity,malware,config --allow-sudo
 ```
 
-The dashboard is served on the machine's loopback address only. To use it from your own computer, forward the port over your usual remote-access tool, for example `ssh -L 7480:127.0.0.1:7480 you@server`, and open <http://127.0.0.1:7480> locally.
+This local dashboard is served on the machine's loopback address only, without sign-in. To manage other machines, run the server instead.
+
+## Run the server
+
+Install the `.deb` or `.rpm` on the machine that will be the OpsArmor server. Create a dashboard account, then start the service:
+
+```sh
+sudo -u opsarmor opsarmor user add admin        # asks for a password, at least 12 characters
+sudo systemctl enable --now opsarmor-server
+```
+
+Open `https://SERVER:8443` and sign in. On its first start, the server creates a self-signed certificate in `/var/lib/opsarmor/tls/`, so the browser warns about it once. Agents don't rely on that warning being accepted: every enrollment token carries the certificate's fingerprint, and agents trust only that certificate.
+
+- **Use your own certificate:** run `sudo systemctl edit opsarmor-server` and set `ExecStart=` to `/usr/bin/opsarmor serve --listen 0.0.0.0:8443 --tls-cert FILE --tls-key FILE`. The `opsarmor` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again.
+- **Manage accounts:** `opsarmor user add|passwd|remove USERNAME` and `opsarmor user list`, run as the `opsarmor` user. Every account is an administrator. Changing a password or removing an account signs it out everywhere.
+- **Security:** failed sign-ins and enrollments are limited per address, sessions last 12 hours, and the **Audit log** page records sign-ins, tokens, enrollments, scans and removals.
+- **Firewall:** only allow port 8443 from the networks where your admins and agents are.
+
+To run the server in the foreground without systemd, use `opsarmor serve --listen 0.0.0.0:8443`. Any address other than loopback turns on HTTPS and sign-in.
+
+## Scan other machines with the agent
+
+1. On the server's **Agents** page, click **Enroll a machine**. Check the address agents will use to reach the server, then click **Create token**. On the server's command line, `opsarmor token create --server-url https://SERVER:8443` does the same.
+2. On the machine to scan, install the same `.deb` or `.rpm`, then run the two commands the dialog shows:
+
+   ```sh
+   sudo opsarmor agent enroll opsarmor1.…
+   sudo systemctl enable --now opsarmor-agent
+   ```
+
+3. The machine appears on the **Agents** and **Hosts** pages. Scan it from the dashboard like any other host, or with `opsarmor scan HOST_ID` on the server.
+
+Each token enrolls one machine within 24 hours and can be revoked while unused. The agent stores its own credential in `/etc/opsarmor/agent.json`, readable by root only. Removing the host on the server revokes that credential at once, and the agent service then stops. Use `opsarmor agent status` on the machine to see where it is enrolled, and `journalctl -u opsarmor-agent` to see what it did.
+
+The agent runs the checks and sends back the package list. The server evaluates the list against the advisories, so a compromised or modified agent can report false check results, but it cannot supply its own vulnerability verdicts.
 
 ## Update
 
@@ -103,15 +144,18 @@ Check your version with `opsarmor version` and read [CHANGELOG.md](CHANGELOG.md)
 | `.rpm` | Download the new `.rpm` and `sudo dnf install ./opsarmor_NEW_linux_ARCH.rpm` |
 | Archive | Download the new archive and replace `/usr/local/bin/opsarmor` with the binary inside |
 
-Stop `opsarmor serve` before replacing the binary and start it again afterwards. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
+Updating the package restarts running `opsarmor-server` and `opsarmor-agent` services. Stop a foreground `opsarmor serve` before replacing the binary and start it again afterwards. Update the server before its agents. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
 
 **Upgrading to 0.2.0:** SSH scanning is removed. Hosts you registered for SSH scanning stay in the list with their full scan history, marked as no longer scannable; remove them when you no longer need their results. To keep scanning such a server, install OpsArmor on it and run `opsarmor host add` there. The `known_hosts` file in the data directory is no longer used and can be deleted. The container image and Helm chart are no longer published, as they only ran SSH scans.
 
 ## Back up and restore
 
-All data lives in one directory: `~/.local/share/opsarmor/` by default, or the path in `OPSARMOR_HOME`. It holds `opsarmor.db` (hosts, scan results, and activity logs) and `feeds/` (a cache that is downloaded again if missing). Files are readable only by their owner, and no passwords are stored there.
+All data lives in one directory: `/var/lib/opsarmor/` for the server service, `~/.local/share/opsarmor/` otherwise, or the path in `OPSARMOR_HOME`. It holds:
+- `opsarmor.db`: hosts, scan results, activity logs, accounts, tokens and the audit log. Passwords are stored as PBKDF2 hashes; tokens and credentials as SHA-256 hashes.
+- `tls/`: the server's certificate and key. Keep them: agents trust this key.
+- `feeds/`: a cache that is downloaded again if missing.
 
-To back up, stop `opsarmor serve` and copy the directory:
+Files are readable only by their owner. To back up, stop the server (`sudo systemctl stop opsarmor-server`, or `opsarmor serve`) and copy the directory:
 
 ```sh
 cp -a ~/.local/share/opsarmor ~/opsarmor-backup-$(date +%Y%m%d)
@@ -127,7 +171,7 @@ sudo dnf remove opsarmor                 # RHEL, Fedora, Amazon Linux
 sudo rm /usr/local/bin/opsarmor          # archive install
 ```
 
-Uninstalling keeps your data. To delete it as well, remove `~/.local/share/opsarmor/` (or your `OPSARMOR_HOME`).
+Uninstalling stops the services and keeps your data. To delete it as well, remove `/var/lib/opsarmor/` on a server, `/etc/opsarmor/` on an agent, and `~/.local/share/opsarmor/` (or your `OPSARMOR_HOME`).
 
 ## Checks
 
@@ -147,9 +191,9 @@ By default checks run as the user running OpsArmor, which cannot see other users
 
 ## Web UI
 
-`opsarmor serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`). It shows the machine's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. The machine can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
+`opsarmor serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents** and **Audit log** pages. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
 
-The server only listens on a loopback address and rejects requests addressed to other host names or sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command OpsArmor runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
+The local dashboard only listens on a loopback address and rejects requests addressed to other host names. Both reject requests sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command OpsArmor runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
 
 When sudo needs a password, the scan pauses and the browser asks for it. The answer goes to that one scan, is kept in memory only, and is never saved or logged. A wrong password can be retried up to three times; closing the dialog continues the scan without sudo, and an unanswered question stops the scan after 10 minutes.
 

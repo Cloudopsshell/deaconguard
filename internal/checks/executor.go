@@ -23,6 +23,8 @@ const (
 	sudoUnavailable
 	sudoPasswordless
 	sudoWithPassword
+	// runningAsRoot needs no sudo: commands already have full access.
+	runningAsRoot
 )
 
 // Executor runs a check's commands, through sudo when the host allows it.
@@ -41,6 +43,10 @@ func NewExecutor(commander Commander, allowSudo bool, askPassword func(retry err
 	return &Executor{commander: commander, allowSudo: allowSudo, askPassword: askPassword}
 }
 
+// AsRoot tells the executor the scanning account is root, so privileged
+// commands run directly.
+func (e *Executor) AsRoot() { e.mode = runningAsRoot }
+
 // Run executes command as the scanning account. Output is returned even when the
 // command exits non-zero, because verification tools report findings that way.
 func (e *Executor) Run(command string, limit int, timeout time.Duration) ([]byte, int, error) {
@@ -53,6 +59,10 @@ func (e *Executor) RunPrivileged(command string, limit int, timeout time.Duratio
 	if !e.sudo() {
 		output, code, err = e.Run(command, limit, timeout)
 		return output, code, false, err
+	}
+	if e.mode == runningAsRoot {
+		output, code, err = e.Run(command, limit, timeout)
+		return output, code, true, err
 	}
 	wrapped, stdin := e.wrap(command)
 	output, code, err = exitCode(e.commander.Run(wrapped, stdin, limit, timeout))
@@ -79,7 +89,7 @@ func (e *Executor) wrap(command string) (string, []byte) {
 
 func (e *Executor) sudo() bool {
 	if e.mode != sudoUnknown {
-		return e.mode == sudoPasswordless || e.mode == sudoWithPassword
+		return e.mode == sudoPasswordless || e.mode == sudoWithPassword || e.mode == runningAsRoot
 	}
 	e.mode = sudoUnavailable
 	if !e.allowSudo {

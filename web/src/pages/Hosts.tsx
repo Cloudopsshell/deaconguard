@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Play, Plus, Server, Trash2 } from "lucide-react";
+import { Play, Plus, RadioTower, Server, Trash2 } from "lucide-react";
 import { api, type HostSummary } from "../api";
 import {
   Button,
@@ -23,7 +23,7 @@ import { useRefreshAll } from "../lib/hooks";
 import { isActive, severityStyle, timeAgo } from "../lib/format";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { ScanDialog } from "../components/ScanDialog";
-import { shortConnectionLabel } from "../lib/hosts";
+import { agentOnline, scannable, shortConnectionLabel } from "../lib/hosts";
 import { RemoveHostDialog } from "./HostDetail";
 
 export function Hosts() {
@@ -31,6 +31,8 @@ export function Hosts() {
   const adding = searchParams.get("add") === "1";
   const setAdding = (open: boolean) => setSearchParams(open ? { add: "1" } : {}, { replace: true });
 
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
+  const network = capabilities.data?.agents ?? false;
   const { data, error, isPending } = useQuery({
     queryKey: ["hosts"],
     queryFn: api.hosts,
@@ -41,11 +43,25 @@ export function Hosts() {
     <>
       <PageHeader
         title="Hosts"
-        description="The machine OpsArmor runs on, plus SSH hosts from earlier versions, kept for their results."
+        description={
+          network
+            ? "This server's own machine and the machines running the OpsArmor agent."
+            : "The machine OpsArmor runs on, plus SSH hosts from earlier versions, kept for their results."
+        }
         action={
-          <Button onClick={() => setAdding(true)}>
-            <Plus className="size-4" /> Add this machine
-          </Button>
+          <>
+            <Button variant={network ? "secondary" : "primary"} onClick={() => setAdding(true)}>
+              <Plus className="size-4" /> Add this machine
+            </Button>
+            {network && (
+              <Link
+                to="/agents?enroll=1"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold whitespace-nowrap text-white shadow-sm hover:bg-indigo-500"
+              >
+                <RadioTower className="size-4" /> Enroll a machine
+              </Link>
+            )}
+          </>
         }
       />
       <Card>
@@ -59,7 +75,11 @@ export function Hosts() {
           <EmptyState
             icon={<Server className="size-6" />}
             title="No hosts yet"
-            description="Register the Linux machine OpsArmor runs on to scan it. No SSH, agent, or root access is needed."
+            description={
+              network
+                ? "Add this server's machine, or enroll other machines with the OpsArmor agent."
+                : "Register the Linux machine OpsArmor runs on to scan it."
+            }
             action={
               <Button onClick={() => setAdding(true)}>
                 <Plus className="size-4" /> Add this machine
@@ -108,10 +128,17 @@ function HostRow({ host }: { host: HostSummary }) {
           {host.address}
         </Link>
         <p className="text-xs text-slate-500 dark:text-slate-400">
+          {host.transport === "agent" && (
+            <span
+              className={cx("mr-1 inline-block size-1.5 rounded-full align-middle", agentOnline(host) ? "bg-emerald-500" : "bg-slate-400")}
+              title={agentOnline(host) ? "Agent online" : "Agent offline"}
+            />
+          )}
           {shortConnectionLabel(host)}
+          {host.transport === "agent" && (agentOnline(host) ? " · online" : " · offline")}
         </p>
       </Td>
-      <Td className="text-slate-600 dark:text-slate-300">{host.last_report?.os || "—"}</Td>
+      <Td className="text-slate-600 dark:text-slate-300">{host.last_report?.os || host.agent?.os || "—"}</Td>
       <Td>
         {host.last_scan ? (
           <div className="space-y-1">
@@ -138,15 +165,21 @@ function HostRow({ host }: { host: HostSummary }) {
           <Button
             variant="secondary"
             loading={running}
-            disabled={host.transport !== "local"}
-            title={host.transport !== "local" ? "SSH scanning was removed in 0.2.0" : undefined}
+            disabled={!scannable(host)}
+            title={!scannable(host) ? "SSH scanning was removed in 0.2.0" : undefined}
             onClick={(event) => {
               event.stopPropagation();
               setScanning(true);
             }}
           >
             {!running && <Play className="size-4" />}
-            {host.last_scan?.status.startsWith("needs_") ? "Waiting for input" : running ? "Scanning" : "Scan"}
+            {host.last_scan?.status.startsWith("needs_")
+              ? "Waiting for input"
+              : host.last_scan?.status === "queued"
+                ? "Waiting for agent"
+                : running
+                  ? "Scanning"
+                  : "Scan"}
           </Button>
           <Button
             variant="ghost"
@@ -240,8 +273,8 @@ function AddHostDialog({ open, onClose, registered }: { open: boolean; onClose: 
           </p>
         )}
         <p className="rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
-          SSH scanning of other machines was removed in OpsArmor 0.2.0. To scan another server, install OpsArmor on it. An agent
-          that enrolls with a token is planned.
+          To scan other machines, install OpsArmor on them and enroll them as agents with a one-time token from the Agents page
+          (needs the OpsArmor server running on the network).
         </p>
         {!unavailable && !registered && (
           <label className="flex cursor-pointer gap-2 text-sm">
