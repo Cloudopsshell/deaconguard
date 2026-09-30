@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are released for the latest minor version of DeaconGuard. Upgrade to the newest release on the [Releases page](https://github.com/Cloudopsshell/DeaconGuard/releases) before reporting, and check `deaconguard version`.
+Security fixes are released for the latest minor version of DeaconGuard. Upgrade to the newest release on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases) before reporting, and check `deaconguard version`.
 
 | Version | Supported |
 | --- | --- |
