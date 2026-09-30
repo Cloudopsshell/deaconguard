@@ -1,3 +1,5 @@
+<img src="assets/brand/deaconguard-icon.svg" alt="DeaconGuard" width="88">
+
 # DeaconGuard
 
 [![Release](https://img.shields.io/github/v/release/Cloudopsshell/deaconguard)](https://github.com/Cloudopsshell/deaconguard/releases/latest)

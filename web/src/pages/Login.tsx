@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldCheck } from "lucide-react";
+import { Logo } from "../components/Logo";
 import { api } from "../api";
 import { Button, Card, ErrorMessage, Field, Loading } from "../components/ui";
 
@@ -39,7 +39,7 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2">
-          <ShieldCheck className="size-8 text-indigo-600 dark:text-indigo-400" aria-hidden />
+          <Logo className="size-10 shrink-0" />
           <span className="text-2xl font-bold tracking-tight">DeaconGuard</span>
         </div>
         <Card className="p-6">
