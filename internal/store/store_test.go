@@ -26,7 +26,7 @@ func withTempDataDir(t *testing.T) string {
 }
 
 // addTestHost inserts a host directly; transport is TransportLocal or the
-// legacy TransportSSH, which databases from before 0.2.0 still contain.
+// legacy TransportSSH, which older databases can still contain.
 func addTestHost(t *testing.T, address, transport string) Host {
 	t.Helper()
 	db, err := database()

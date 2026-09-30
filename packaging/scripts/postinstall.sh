@@ -11,6 +11,10 @@ if ! getent passwd deaconguard >/dev/null 2>&1; then
 		adduser --system --group --home /var/lib/deaconguard --no-create-home --shell "$nologin" deaconguard
 	fi
 fi
+# The server's data directory, so accounts can be created before its first start.
+if getent passwd deaconguard >/dev/null 2>&1; then
+	install -d -o deaconguard -g deaconguard -m 0700 /var/lib/deaconguard
+fi
 if [ -d /run/systemd/system ]; then
 	systemctl daemon-reload >/dev/null 2>&1 || true
 	# Pick up a new binary in services that are already running.

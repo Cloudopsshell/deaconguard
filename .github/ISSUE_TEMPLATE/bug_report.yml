@@ -10,7 +10,7 @@ body:
     attributes:
       label: DeaconGuard version
       description: Output of `deaconguard version`
-      placeholder: deaconguard 0.1.1 (commit ..., built ...)
+      placeholder: deaconguard 0.1.0 (commit ..., built ...)
     validations:
       required: true
   - type: input
