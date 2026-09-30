@@ -99,6 +99,6 @@ release:
   github:
     owner: Cloudopsshell
     name: deaconguard
-  name_template: "DeaconGuard v{{ .Version }}"
+  name_template: "deaconguard v{{ .Version }}"
   # Tags with a suffix, such as v1.2.0-rc.1, are published as pre-releases.
   prerelease: auto
