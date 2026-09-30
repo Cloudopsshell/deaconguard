@@ -78,5 +78,5 @@ func String() string {
 
 // UserAgent identifies DeaconGuard to advisory feed servers.
 func UserAgent() string {
-	return "DeaconGuard/" + Version + " (+https://github.com/Cloudopsshell/DeaconGuard)"
+	return "DeaconGuard/" + Version + " (+https://github.com/Cloudopsshell/deaconguard)"
 }

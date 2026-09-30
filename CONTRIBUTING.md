@@ -7,7 +7,7 @@ Thanks for helping. This guide covers setting up, making a change, and getting i
 You need Go 1.26 or later and Node.js 24 with npm.
 
 ```sh
-git clone https://github.com/Cloudopsshell/DeaconGuard.git && cd DeaconGuard
+git clone https://github.com/Cloudopsshell/deaconguard.git && cd deaconguard
 make build        # web UI and binary
 make test vet     # Go tests and vet
 make ui-dev       # web UI with hot reload; run ./deaconguard serve alongside it

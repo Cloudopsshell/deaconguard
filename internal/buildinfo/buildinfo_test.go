@@ -13,7 +13,7 @@ func TestStringShortensCommitButKeepsDirtyMarker(t *testing.T) {
 	if !strings.HasPrefix(got, "deaconguard 1.2.3 (commit 0123456789ab-dirty, built 2026-09-29T10:00:00Z") {
 		t.Fatalf("String() = %q", got)
 	}
-	if UserAgent() != "DeaconGuard/1.2.3 (+https://github.com/Cloudopsshell/DeaconGuard)" {
+	if UserAgent() != "DeaconGuard/1.2.3 (+https://github.com/Cloudopsshell/deaconguard)" {
 		t.Fatalf("UserAgent() = %q", UserAgent())
 	}
 }
