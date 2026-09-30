@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"opsarmor/internal/scan"
-	"opsarmor/internal/store"
+	"deaconguard/internal/scan"
+	"deaconguard/internal/store"
 )
 
 const (

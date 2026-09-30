@@ -6,11 +6,11 @@ import tailwindcss from "@tailwindcss/vite";
 // Go's embed needs dist/ to hold a file even before the UI is built, so the
 // committed placeholder is restored after Vite empties the directory.
 const keepDist: Plugin = {
-  name: "opsarmor-keep-dist",
+  name: "deaconguard-keep-dist",
   closeBundle: () => writeFileSync("dist/.gitkeep", ""),
 };
 
-// `npm run dev` serves the UI on :5173 and forwards /api to `opsarmor serve`.
+// `npm run dev` serves the UI on :5173 and forwards /api to `deaconguard serve`.
 export default defineConfig({
   plugins: [react(), tailwindcss(), keepDist],
   build: { outDir: "dist", emptyOutDir: true },

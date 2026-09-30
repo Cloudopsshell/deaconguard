@@ -1,4 +1,4 @@
-# Releasing OpsArmor
+# Releasing DeaconGuard
 
 Releases are built by the [release workflow](.github/workflows/release.yml) when a `v*` tag is pushed. It checks that the tag is a semantic version, runs the tests, and publishes:
 
@@ -20,15 +20,15 @@ Follow [Semantic Versioning](https://semver.org):
 
    ```sh
    git switch main && git pull
-   git tag -a vX.Y.Z-rc.1 -m "OpsArmor X.Y.Z release candidate 1"
+   git tag -a vX.Y.Z-rc.1 -m "DeaconGuard X.Y.Z release candidate 1"
    git push origin vX.Y.Z-rc.1
    ```
 
-   The GitHub release is marked as a pre-release. Install it, check `opsarmor version`, and scan a test machine.
+   The GitHub release is marked as a pre-release. Install it, check `deaconguard version`, and scan a test machine.
 4. **Tag the release** from the same commit once the candidate works:
 
    ```sh
-   git tag -a vX.Y.Z -m "OpsArmor X.Y.Z"
+   git tag -a vX.Y.Z -m "DeaconGuard X.Y.Z"
    git push origin vX.Y.Z
    ```
 

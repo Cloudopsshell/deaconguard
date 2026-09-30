@@ -1,7 +1,7 @@
-// Package target defines how OpsArmor runs commands on a machine it scans,
+// Package target defines how DeaconGuard runs commands on a machine it scans,
 // independent of how it reaches that machine. Today that is the machine
-// OpsArmor runs on (internal/local); the planned agent will use the same
-// interface. Every command is a fixed, read-only string from OpsArmor's source.
+// DeaconGuard runs on (internal/local); the planned agent will use the same
+// interface. Every command is a fixed, read-only string from DeaconGuard's source.
 package target
 
 import (
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"opsarmor/internal/platform"
+	"deaconguard/internal/platform"
 )
 
 const (
@@ -49,10 +49,10 @@ func ExitStatus(err error) (int, bool) {
 
 // Inventory is what the package vulnerability check evaluates.
 type Inventory struct {
-	OSRelease  string
-	DPKGStatus string
-	RPMQuery   string
-	Kernel     string
+	OSRelease  string `json:"os_release"`
+	DPKGStatus string `json:"dpkg_status,omitempty"`
+	RPMQuery   string `json:"rpm_query,omitempty"`
+	Kernel     string `json:"kernel"`
 }
 
 // OSRelease reads /etc/os-release.

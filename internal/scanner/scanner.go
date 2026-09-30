@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"opsarmor/internal/advisory"
-	"opsarmor/internal/inventory"
-	"opsarmor/internal/platform"
+	"deaconguard/internal/advisory"
+	"deaconguard/internal/inventory"
+	"deaconguard/internal/platform"
 )
 
 const maxInventoryBytes = 32 << 20
@@ -99,7 +99,7 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 		AdvisoryDatabase: feed.Metadata,
 		Maintenance:      maintenance(target),
 		PackageManager:   packageManager,
-		Evaluator:        "OpsArmor Go scanner",
+		Evaluator:        "DeaconGuard Go scanner",
 		PackageCount:     len(packages),
 	}, nil
 }
@@ -137,7 +137,7 @@ func coverage(family platform.Family) string {
 
 func maintenance(target platform.Platform) string {
 	if target.Family == platform.Ubuntu && (target.VersionID == "18.04" || target.VersionID == "20.04") {
-		return "Check Ubuntu Pro/ESM entitlement; OpsArmor does not verify entitlement"
+		return "Check Ubuntu Pro/ESM entitlement; DeaconGuard does not verify entitlement"
 	}
 	if target.Family == platform.Debian {
 		return "Debian stable security status; verify Debian LTS/ELTS coverage for older packages"

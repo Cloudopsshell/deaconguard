@@ -113,12 +113,12 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
               />
               <span>
                 <span className="flex items-center gap-1.5 font-semibold">
-                  <ShieldCheck className="size-4 text-slate-500" /> Let OpsArmor use sudo on this host
+                  <ShieldCheck className="size-4 text-slate-500" /> Let DeaconGuard use sudo on this host
                 </span>
                 <span className="mt-0.5 block text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                   {allowSudo
-                    ? "Checks will read other users' processes, protected files, and firewall rules with OpsArmor's fixed read-only commands. If sudo needs a password you will be asked for it. Saved for this host."
-                    : "Off: the checks you picked will only see what the user running OpsArmor can read, and results will show partial coverage. Tick this to use sudo. Saved for this host."}
+                    ? "Checks will read other users' processes, protected files, and firewall rules with DeaconGuard's fixed read-only commands. If sudo needs a password you will be asked for it. Saved for this host."
+                    : "Off: the checks you picked will only see what the user running DeaconGuard can read, and results will show partial coverage. Tick this to use sudo. Saved for this host."}
                 </span>
               </span>
             </label>

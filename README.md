@@ -1,46 +1,51 @@
-# OpsArmor
+# DeaconGuard
 
-[![Release](https://img.shields.io/github/v/release/Cloudopsshell/OpsArmor)](https://github.com/Cloudopsshell/OpsArmor/releases/latest)
-[![CI](https://github.com/Cloudopsshell/OpsArmor/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/OpsArmor/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/Cloudopsshell/OpsArmor)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Cloudopsshell/DeaconGuard)](https://github.com/Cloudopsshell/DeaconGuard/releases/latest)
+[![CI](https://github.com/Cloudopsshell/DeaconGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/DeaconGuard/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Cloudopsshell/DeaconGuard)](LICENSE)
 
-OpsArmor is a Linux security scanner written in Go. Install it on a Linux machine and it scans that machine: it runs fixed, read-only commands locally and, by default without `sudo`, evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are OpsArmor code; OpsArmor never installs software, and the only third-party engine it runs is a ClamAV that is already installed, when you choose the antivirus check.
+DeaconGuard is a Linux security scanner written in Go. It runs fixed, read-only commands on a Linux machine and evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are DeaconGuard code; DeaconGuard never installs software, and the only third-party engine it runs is a ClamAV that is already installed, when you choose the antivirus check.
 
-> **SSH scanning was removed in 0.2.0.** OpsArmor no longer connects to other machines. To scan a server, install OpsArmor on it. An agent that enrolls with the OpsArmor server using a one-time token, so one dashboard covers many servers, is planned. Hosts registered for SSH scanning by earlier versions keep their results but can no longer be scanned; see [Update](#update).
+One binary does two jobs:
 
-- [Install](#install) · [Getting started](#getting-started) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
+- **Server:** an HTTPS dashboard with sign-in and an audit log. It scans the machine it runs on and the machines running the agent.
+- **Agent:** runs on each machine to scan. It enrolls once with a one-time token from the server, which is valid for 24 hours. After that it connects out to the server, runs the scans the server asks for, and sends back the results. Target machines need no open ports and no internet access, because the server evaluates their packages against the advisories.
+
+For a single machine, `deaconguard serve` gives a local dashboard without accounts.
+
+- [Install](#install) · [Getting started](#getting-started) · [Run the server](#run-the-server) · [Scan other machines with the agent](#scan-other-machines-with-the-agent) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
 - [Checks](#checks) · [Web UI](#web-ui) · [Supported distributions](#supported-distributions) · [Versioning](#versioning) · [Development](#development) · [Security](#security)
 
 ## Requirements
 
-- **Where OpsArmor runs:** the Linux machine you want to scan, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary; nothing else is needed. macOS builds are published for viewing results from earlier versions; they cannot scan.
-- **Account:** a normal user account is enough; the optional checks see more when [sudo is allowed](#checks).
-- **Network:** HTTPS access to the distribution's advisory feed.
+- **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself.
+- **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
+- **Network:** the server needs HTTPS access to the distributions' advisory feeds. Agents only need to reach the server, on port 8443 by default.
 
 ## Install
 
-Releases are published on the [Releases page](https://github.com/Cloudopsshell/OpsArmor/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Replace `0.2.0` below with the version you want.
+Releases are published on the [Releases page](https://github.com/Cloudopsshell/DeaconGuard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Replace `0.1.0` below with the version you want.
 
-Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.2.0 -R Cloudopsshell/OpsArmor -p 'FILE'`.
+Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.1.0 -R Cloudopsshell/DeaconGuard -p 'FILE'`.
 
 ### Debian and Ubuntu
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/opsarmor_0.2.0_linux_amd64.deb
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.deb
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-sudo apt install ./opsarmor_0.2.0_linux_amd64.deb
-opsarmor version
+sudo apt install ./deaconguard_0.1.0_linux_amd64.deb
+deaconguard version
 ```
 
 ### RHEL, Fedora, and Amazon Linux
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/opsarmor_0.2.0_linux_amd64.rpm
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.rpm
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-sudo dnf install ./opsarmor_0.2.0_linux_amd64.rpm
-opsarmor version
+sudo dnf install ./deaconguard_0.1.0_linux_amd64.rpm
+deaconguard version
 ```
 
 Use `arm64` instead of `amd64` on ARM machines such as AWS Graviton.
@@ -48,24 +53,24 @@ Use `arm64` instead of `amd64` on ARM machines such as AWS Graviton.
 ### Other Linux systems and macOS
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/opsarmor_0.2.0_linux_amd64.tar.gz
-curl -LO https://github.com/Cloudopsshell/OpsArmor/releases/download/v0.2.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.tar.gz
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-tar -xzf opsarmor_0.2.0_linux_amd64.tar.gz opsarmor
-sudo install -m 0755 opsarmor /usr/local/bin/opsarmor
-opsarmor version
+tar -xzf deaconguard_0.1.0_linux_amd64.tar.gz deaconguard
+sudo install -m 0755 deaconguard /usr/local/bin/deaconguard
+deaconguard version
 ```
 
-Pick the archive for your system: `linux_amd64`, `linux_arm64`, `darwin_arm64` (Apple silicon), or `darwin_amd64` (Intel Mac); on macOS, check with `shasum -a 256` instead of `sha256sum`. macOS builds can open results from earlier versions but cannot scan. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/opsarmor`.
+Pick the archive for your system: `linux_amd64`, `linux_arm64`, `darwin_arm64` (Apple silicon), or `darwin_amd64` (Intel Mac); on macOS, check with `shasum -a 256` instead of `sha256sum`. macOS builds can run the server and the CLI but cannot scan the Mac itself. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
 
 ### From source
 
 Requires Go 1.26 or later and, for the web UI, Node.js 24 with npm.
 
 ```sh
-git clone https://github.com/Cloudopsshell/OpsArmor.git && cd OpsArmor
-make build          # builds the web UI and the opsarmor binary
-./opsarmor version
+git clone https://github.com/Cloudopsshell/DeaconGuard.git && cd DeaconGuard
+make build          # builds the web UI and the deaconguard binary
+./deaconguard version
 ```
 
 ## Getting started
@@ -73,65 +78,100 @@ make build          # builds the web UI and the opsarmor binary
 On the Linux machine you want to scan, register it once and open the dashboard:
 
 ```sh
-opsarmor host add                               # add --allow-sudo to let the deeper checks use sudo
-opsarmor serve                                  # then open http://127.0.0.1:7480
+deaconguard host add                               # add --allow-sudo to let the deeper checks use sudo
+deaconguard serve                                  # then open http://127.0.0.1:7480
 ```
 
 or work in the terminal:
 
 ```sh
-opsarmor host list
-opsarmor scan HOST_ID --checks packages,malware,config
-opsarmor report REPORT_ID --json
+deaconguard host list
+deaconguard scan HOST_ID --checks packages,malware,config
+deaconguard report REPORT_ID --json
 ```
 
 For a one-off scan without registering the machine:
 
 ```sh
-opsarmor scan --local --checks packages,integrity,malware,config --allow-sudo
+deaconguard scan --local --checks packages,integrity,malware,config --allow-sudo
 ```
 
-The dashboard is served on the machine's loopback address only. To use it from your own computer, forward the port over your usual remote-access tool, for example `ssh -L 7480:127.0.0.1:7480 you@server`, and open <http://127.0.0.1:7480> locally.
+This local dashboard is served on the machine's loopback address only, without sign-in. To manage other machines, run the server instead.
+
+## Run the server
+
+Install the `.deb` or `.rpm` on the machine that will be the DeaconGuard server. Create a dashboard account, then start the service:
+
+```sh
+sudo -u deaconguard deaconguard user add admin        # asks for a password, at least 12 characters
+sudo systemctl enable --now deaconguard-server
+```
+
+Open `https://SERVER:8443` and sign in. On its first start, the server creates a self-signed certificate in `/var/lib/deaconguard/tls/`, so the browser warns about it once. Agents don't rely on that warning being accepted: every enrollment token carries the certificate's fingerprint, and agents trust only that certificate.
+
+- **Use your own certificate:** run `sudo systemctl edit deaconguard-server` and set `ExecStart=` to `/usr/bin/deaconguard serve --listen 0.0.0.0:8443 --tls-cert FILE --tls-key FILE`. The `deaconguard` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again.
+- **Manage accounts:** `deaconguard user add|passwd|remove USERNAME` and `deaconguard user list`, run as the `deaconguard` user. Every account is an administrator. Changing a password or removing an account signs it out everywhere.
+- **Security:** failed sign-ins and enrollments are limited per address, sessions last 12 hours, and the **Audit log** page records sign-ins, tokens, enrollments, scans and removals.
+- **Firewall:** only allow port 8443 from the networks where your admins and agents are.
+
+To run the server in the foreground without systemd, use `deaconguard serve --listen 0.0.0.0:8443`. Any address other than loopback turns on HTTPS and sign-in.
+
+## Scan other machines with the agent
+
+1. On the server's **Agents** page, click **Enroll a machine**. Check the address agents will use to reach the server, then click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same.
+2. On the machine to scan, install the same `.deb` or `.rpm`, then run the two commands the dialog shows:
+
+   ```sh
+   sudo deaconguard agent enroll deaconguard1.…
+   sudo systemctl enable --now deaconguard-agent
+   ```
+
+3. The machine appears on the **Agents** and **Hosts** pages. Scan it from the dashboard like any other host, or with `deaconguard scan HOST_ID` on the server.
+
+Each token enrolls one machine within 24 hours and can be revoked while unused. The agent stores its own credential in `/etc/deaconguard/agent.json`, readable by root only. Removing the host on the server revokes that credential at once, and the agent service then stops. Use `deaconguard agent status` on the machine to see where it is enrolled, and `journalctl -u deaconguard-agent` to see what it did.
+
+The agent runs the checks and sends back the package list. The server evaluates the list against the advisories, so a compromised or modified agent can report false check results, but it cannot supply its own vulnerability verdicts.
 
 ## Update
 
-Check your version with `opsarmor version` and read [CHANGELOG.md](CHANGELOG.md) for what changed; any upgrade steps are listed there. [Back up](#back-up-and-restore) your data before updating across a minor version.
+Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.md) for what changed; any upgrade steps are listed there. [Back up](#back-up-and-restore) your data before updating across a minor version.
 
 | Installed with | Update |
 | --- | --- |
-| `.deb` | Download the new `.deb` and `sudo apt install ./opsarmor_NEW_linux_ARCH.deb` |
-| `.rpm` | Download the new `.rpm` and `sudo dnf install ./opsarmor_NEW_linux_ARCH.rpm` |
-| Archive | Download the new archive and replace `/usr/local/bin/opsarmor` with the binary inside |
+| `.deb` | Download the new `.deb` and `sudo apt install ./deaconguard_NEW_linux_ARCH.deb` |
+| `.rpm` | Download the new `.rpm` and `sudo dnf install ./deaconguard_NEW_linux_ARCH.rpm` |
+| Archive | Download the new archive and replace `/usr/local/bin/deaconguard` with the binary inside |
 
-Stop `opsarmor serve` before replacing the binary and start it again afterwards. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
-
-**Upgrading to 0.2.0:** SSH scanning is removed. Hosts you registered for SSH scanning stay in the list with their full scan history, marked as no longer scannable; remove them when you no longer need their results. To keep scanning such a server, install OpsArmor on it and run `opsarmor host add` there. The `known_hosts` file in the data directory is no longer used and can be deleted. The container image and Helm chart are no longer published, as they only ran SSH scans.
+Updating the package restarts running `deaconguard-server` and `deaconguard-agent` services. Stop a foreground `deaconguard serve` before replacing the binary and start it again afterwards. Update the server before its agents. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
 
 ## Back up and restore
 
-All data lives in one directory: `~/.local/share/opsarmor/` by default, or the path in `OPSARMOR_HOME`. It holds `opsarmor.db` (hosts, scan results, and activity logs) and `feeds/` (a cache that is downloaded again if missing). Files are readable only by their owner, and no passwords are stored there.
+All data lives in one directory: `/var/lib/deaconguard/` for the server service, `~/.local/share/deaconguard/` otherwise, or the path in `DEACONGUARD_HOME`. It holds:
+- `deaconguard.db`: hosts, scan results, activity logs, accounts, tokens and the audit log. Passwords are stored as PBKDF2 hashes; tokens and credentials as SHA-256 hashes.
+- `tls/`: the server's certificate and key. Keep them: agents trust this key.
+- `feeds/`: a cache that is downloaded again if missing.
 
-To back up, stop `opsarmor serve` and copy the directory:
+Files are readable only by their owner. To back up, stop the server (`sudo systemctl stop deaconguard-server`, or `deaconguard serve`) and copy the directory:
 
 ```sh
-cp -a ~/.local/share/opsarmor ~/opsarmor-backup-$(date +%Y%m%d)
+cp -a ~/.local/share/deaconguard ~/deaconguard-backup-$(date +%Y%m%d)
 ```
 
-To restore, stop OpsArmor and copy the backup back into place.
+To restore, stop DeaconGuard and copy the backup back into place.
 
 ## Uninstall
 
 ```sh
-sudo apt remove opsarmor                 # Debian and Ubuntu
-sudo dnf remove opsarmor                 # RHEL, Fedora, Amazon Linux
-sudo rm /usr/local/bin/opsarmor          # archive install
+sudo apt remove deaconguard                 # Debian and Ubuntu
+sudo dnf remove deaconguard                 # RHEL, Fedora, Amazon Linux
+sudo rm /usr/local/bin/deaconguard          # archive install
 ```
 
-Uninstalling keeps your data. To delete it as well, remove `~/.local/share/opsarmor/` (or your `OPSARMOR_HOME`).
+Uninstalling stops the services and keeps your data. To delete it as well, remove `/var/lib/deaconguard/` on a server, `/etc/deaconguard/` on an agent, and `~/.local/share/deaconguard/` (or your `DEACONGUARD_HOME`).
 
 ## Checks
 
-Each scan runs the checks you choose, in the web UI's scan dialog or with `opsarmor scan HOST_ID --checks packages,integrity,malware,config,antivirus`. Package vulnerabilities is the default.
+Each scan runs the checks you choose, in the web UI's scan dialog or with `deaconguard scan HOST_ID --checks packages,integrity,malware,config,antivirus`. Package vulnerabilities is the default.
 
 | Check | What it does | Commands |
 | --- | --- | --- |
@@ -141,15 +181,15 @@ Each scan runs the checks you choose, in the web UI's scan dialog or with `opsar
 | Security configuration | Reports SSH root or password login, empty passwords, X11 forwarding, risky services such as Redis, databases, Telnet, or the Docker API listening on all interfaces, pending reboots, disabled automatic updates, and, with sudo, a missing host firewall. | sshd configuration, `ss`/`netstat`, reboot and update settings, firewall rules |
 | Antivirus (ClamAV) | Runs the host's own `clamscan` at low priority on temporary, home, and application directories and reports detections and signatures older than 7 days. Skipped when ClamAV is not installed, or when the host has less than about 1.5 GB of free memory and swap, since ClamAV loads its whole signature database into memory. | `clamscan` |
 
-Every command is a fixed string in OpsArmor's source; nothing from the user or the host is inserted into it.
+Every command is a fixed string in DeaconGuard's source; nothing from the user or the host is inserted into it.
 
-By default checks run as the user running OpsArmor, which cannot see other users' processes, protected files, or firewall rules; results then say they have partial coverage. Allow sudo (`--allow-sudo` when adding the machine or scanning it once, `opsarmor host sudo HOST_ID on`, or the switch on the host page) to run the same read-only commands through `sudo`. If sudo needs a password, the UI or terminal asks for it once per scan and keeps it in memory only; declining continues the scan without sudo. A skipped or failed check is never shown as clean.
+By default checks run as the user running DeaconGuard, which cannot see other users' processes, protected files, or firewall rules; results then say they have partial coverage. Allow sudo (`--allow-sudo` when adding the machine or scanning it once, `deaconguard host sudo HOST_ID on`, or the switch on the host page) to run the same read-only commands through `sudo`. If sudo needs a password, the UI or terminal asks for it once per scan and keeps it in memory only; declining continues the scan without sudo. A skipped or failed check is never shown as clean.
 
 ## Web UI
 
-`opsarmor serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`). It shows the machine's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. The machine can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
+`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents** and **Audit log** pages. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
 
-The server only listens on a loopback address and rejects requests addressed to other host names or sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command OpsArmor runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
+The local dashboard only listens on a loopback address and rejects requests addressed to other host names. Both reject requests sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command DeaconGuard runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
 
 When sudo needs a password, the scan pauses and the browser asks for it. The answer goes to that one scan, is kept in memory only, and is never saved or logged. A wrong password can be retried up to three times; closing the dialog continues the scan without sudo, and an unanswered question stops the scan after 10 minutes.
 
@@ -166,22 +206,22 @@ Package reports cover the installed DPKG/RPM packages and the running kernel whe
 
 ## Versioning
 
-OpsArmor follows [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`. Patch releases only fix bugs; minor releases add features. Before 1.0.0, a minor release may also contain breaking changes, always listed with upgrade steps in [CHANGELOG.md](CHANGELOG.md). Versions with a suffix, such as `0.2.0-rc.1`, are pre-releases for testing and are marked as such on GitHub. Every binary reports its version with `opsarmor version`, and each scan report records the version that produced it.
+DeaconGuard follows [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`. Patch releases only fix bugs; minor releases add features. Before 1.0.0, a minor release may also contain breaking changes, always listed with upgrade steps in [CHANGELOG.md](CHANGELOG.md). Versions with a suffix, such as `0.2.0-rc.1`, are pre-releases for testing and are marked as such on GitHub. Every binary reports its version with `deaconguard version`, and each scan report records the version that produced it.
 
 ## Development
 
 ```sh
 make build        # web UI and binary, version taken from the nearest git tag
 make test vet     # Go tests and vet
-make ui-dev       # web UI with hot reload on http://localhost:5173; run ./opsarmor serve alongside it
+make ui-dev       # web UI with hot reload on http://localhost:5173; run ./deaconguard serve alongside it
 ```
 
-A plain `go build ./cmd/opsarmor` works without Node.js; the binary then explains that the web UI was not built. The UI source is in [web/](web/) and uses React, TypeScript, Vite, Tailwind CSS, TanStack Query, and React Router. Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request process. Maintainers publish releases as described in [RELEASING.md](RELEASING.md).
+A plain `go build ./cmd/deaconguard` works without Node.js; the binary then explains that the web UI was not built. The UI source is in [web/](web/) and uses React, TypeScript, Vite, Tailwind CSS, TanStack Query, and React Router. Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request process. Maintainers publish releases as described in [RELEASING.md](RELEASING.md).
 
 ## Security
 
-Please report vulnerabilities in OpsArmor privately, as described in [SECURITY.md](SECURITY.md), not in public issues.
+Please report vulnerabilities in DeaconGuard privately, as described in [SECURITY.md](SECURITY.md), not in public issues.
 
 ## License
 
-OpsArmor is available under the MIT license. Advisory data remains the property and responsibility of its publishing distribution. Only scan systems you own or are authorized to scan.
+DeaconGuard is available under the MIT license. Advisory data remains the property and responsibility of its publishing distribution. Only scan systems you own or are authorized to scan.
