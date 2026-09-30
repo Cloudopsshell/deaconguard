@@ -8,6 +8,14 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- On minimal RHEL-family systems without `shadow-utils`, the `.rpm` installed without creating the `deaconguard` user, so the server service could not start. The packages now depend on `shadow-utils` (`.rpm`) and `passwd` (`.deb`).
+
+### Changed
+
+- The README's install steps download into `/tmp`, detect the architecture, and stop on a failed download, so the same commands work on every machine and apt shows no "unsandboxed" notice.
+
 ## [0.1.0] - 2026-09-30
 
 The first release of DeaconGuard, a Linux security scanner with a server and agents.

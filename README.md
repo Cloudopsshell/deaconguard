@@ -26,44 +26,54 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 
 ## Install
 
-Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Replace `0.1.0` below with the version you want.
+Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Downloads need no GitHub account.
 
-Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.1.0 -R Cloudopsshell/deaconguard -p 'FILE'`.
+Each method below downloads into `/tmp`, verifies the checksum, and installs. Set `VERSION` to the release you want; the machine's architecture (`amd64` or `arm64`) is detected for you.
 
 ### Debian and Ubuntu
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.deb
-curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/checksums.txt
+VERSION=0.1.0
+ARCH=$(dpkg --print-architecture)
+cd /tmp
+curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_linux_${ARCH}.deb"
+curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/checksums.txt"
 sha256sum --check --ignore-missing checksums.txt
-sudo apt install ./deaconguard_0.1.0_linux_amd64.deb
+sudo apt install "./deaconguard_${VERSION}_linux_${ARCH}.deb"
 deaconguard version
 ```
 
 ### RHEL, Fedora, and Amazon Linux
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.rpm
-curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/checksums.txt
+VERSION=0.1.0
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+cd /tmp
+curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_linux_${ARCH}.rpm"
+curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/checksums.txt"
 sha256sum --check --ignore-missing checksums.txt
-sudo dnf install ./deaconguard_0.1.0_linux_amd64.rpm
+sudo dnf install "./deaconguard_${VERSION}_linux_${ARCH}.rpm"
 deaconguard version
 ```
-
-Use `arm64` instead of `amd64` on ARM machines such as AWS Graviton.
 
 ### Other Linux systems and macOS
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.tar.gz
-curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/checksums.txt
-sha256sum --check --ignore-missing checksums.txt
-tar -xzf deaconguard_0.1.0_linux_amd64.tar.gz deaconguard
+VERSION=0.1.0
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+cd /tmp
+curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_${OS}_${ARCH}.tar.gz"
+curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/checksums.txt"
+sha256sum --check --ignore-missing checksums.txt      # on macOS: shasum -a 256 --check --ignore-missing checksums.txt
+tar -xzf "deaconguard_${VERSION}_${OS}_${ARCH}.tar.gz" deaconguard
 sudo install -m 0755 deaconguard /usr/local/bin/deaconguard
 deaconguard version
 ```
 
-Pick the archive for your system: `linux_amd64`, `linux_arm64`, `darwin_arm64` (Apple silicon), or `darwin_amd64` (Intel Mac); on macOS, check with `shasum -a 256` instead of `sha256sum`. macOS builds can run the server and the CLI but cannot scan the Mac itself. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
+macOS builds can run the server and the CLI but cannot scan the Mac itself. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
+
+With the [GitHub CLI](https://cli.github.com), `gh release download v0.1.0 -R Cloudopsshell/deaconguard -p 'FILE'` downloads a release file instead of `curl`.
 
 ### From source
 
@@ -140,9 +150,9 @@ Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.
 
 | Installed with | Update |
 | --- | --- |
-| `.deb` | Download the new `.deb` and `sudo apt install ./deaconguard_NEW_linux_ARCH.deb` |
-| `.rpm` | Download the new `.rpm` and `sudo dnf install ./deaconguard_NEW_linux_ARCH.rpm` |
-| Archive | Download the new archive and replace `/usr/local/bin/deaconguard` with the binary inside |
+| `.deb` | Run the [Debian and Ubuntu](#debian-and-ubuntu) steps with the new `VERSION` |
+| `.rpm` | Run the [RHEL, Fedora, and Amazon Linux](#rhel-fedora-and-amazon-linux) steps with the new `VERSION` |
+| Archive | Run the [archive](#other-linux-systems-and-macos) steps with the new `VERSION`; they replace `/usr/local/bin/deaconguard` |
 
 Updating the package restarts running `deaconguard-server` and `deaconguard-agent` services. Stop a foreground `deaconguard serve` before replacing the binary and start it again afterwards. Update the server before its agents. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
 
