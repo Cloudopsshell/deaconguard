@@ -75,6 +75,9 @@ func (r *runner) start(host store.Host, checks []string) (store.Scan, error) {
 	if _, busy := r.running[host.ID]; busy {
 		return store.Scan{}, errScanInProgress
 	}
+	if host.Transport == store.TransportAgent {
+		return r.queue(host, checks)
+	}
 	record, err := store.CreateScan(host, checks)
 	if err != nil {
 		return store.Scan{}, err
@@ -86,6 +89,49 @@ func (r *runner) start(host store.Host, checks []string) (store.Scan, error) {
 	r.wg.Add(1)
 	go r.run(host, record.ID, checks, log)
 	return record, nil
+}
+
+// queue records a scan of an agent host for its agent to pick up. r.mu must be held.
+func (r *runner) queue(host store.Host, checks []string) (store.Scan, error) {
+	if _, busy, err := store.UnfinishedScan(host.ID); err != nil {
+		return store.Scan{}, err
+	} else if busy {
+		return store.Scan{}, errScanInProgress
+	}
+	record, err := store.QueueScan(host, checks)
+	if err != nil {
+		return store.Scan{}, err
+	}
+	r.pruneLogs()
+	log := newEventLog(host, record, checks)
+	r.logs[record.ID] = log
+	log.add(scan.Event{Kind: "phase", Phase: scan.PhaseConnect, Message: fmt.Sprintf("Waiting for the agent on %s to pick up the scan", host.Address)})
+	return record, nil
+}
+
+// attach returns the live log of an agent scan being picked up, creating one
+// for scans queued by the CLI or before a restart.
+func (r *runner) attach(host store.Host, record store.Scan) *eventLog {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if log, ok := r.logs[record.ID]; ok {
+		return log
+	}
+	r.pruneLogs()
+	log := newEventLog(host, record, record.Checks)
+	r.logs[record.ID] = log
+	log.add(scan.Event{Kind: "phase", Phase: scan.PhaseConnect, Message: fmt.Sprintf("Scan queued for the agent on %s", host.Address)})
+	return log
+}
+
+// publishFailure closes the live log of a scan that failed without running.
+func (r *runner) publishFailure(scanID string, log *eventLog, message string) {
+	done := scan.Event{Kind: "done", Status: store.ScanFailed, Message: "Scan failed: " + message}
+	log.add(done)
+	if encoded, err := json.Marshal(log.snapshot()); err == nil {
+		_ = store.SaveScanEvents(scanID, encoded)
+	}
+	log.finish(store.ScanFailed)
 }
 
 func (r *runner) run(host store.Host, scanID string, checks []string, log *eventLog) {
@@ -103,6 +149,12 @@ func (r *runner) run(host store.Host, scanID string, checks []string, log *event
 		Progress: log.add,
 	}
 	report, err := r.scan(host, checks, options)
+	r.finish(host, scanID, log, report, err, started)
+}
+
+// finish stores a scan's outcome, its log, and the pruned history, then
+// publishes "done".
+func (r *runner) finish(host store.Host, scanID string, log *eventLog, report map[string]any, err error, started time.Time) {
 	if err == nil {
 		err = store.CompleteScan(scanID, report)
 	}

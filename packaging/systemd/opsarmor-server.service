@@ -1,0 +1,24 @@
+[Unit]
+Description=OpsArmor server
+Documentation=https://github.com/Cloudopsshell/OpsArmor#run-the-server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=opsarmor
+Group=opsarmor
+# To change the port or use your own certificate, run: systemctl edit opsarmor-server
+ExecStart=/usr/bin/opsarmor serve --listen 0.0.0.0:8443
+# /var/lib/opsarmor holds the database and the TLS certificate.
+StateDirectory=opsarmor
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/opsarmor
+
+[Install]
+WantedBy=multi-user.target
