@@ -1,6 +1,6 @@
 [Unit]
 Description=DeaconGuard agent
-Documentation=https://github.com/Cloudopsshell/DeaconGuard#scan-other-machines-with-the-agent
+Documentation=https://github.com/Cloudopsshell/deaconguard#scan-other-machines-with-the-agent
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/etc/deaconguard/agent.json
