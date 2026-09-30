@@ -1,27 +1,28 @@
 # Changelog
 
-All notable changes to OpsArmor are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and OpsArmor uses
+All notable changes to DeaconGuard, called OpsArmor before 0.3.0, are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and DeaconGuard uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). While the major
 version is 0, a minor release may include breaking changes; they are listed
 under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
-OpsArmor becomes a server with agents: one dashboard now scans many machines, without SSH.
-
-### Added
-
-- **Server mode**: `opsarmor serve --listen 0.0.0.0:8443` (the new `opsarmor-server` service) serves the dashboard over HTTPS with a self-signed certificate created on first start, or your own with `--tls-cert`/`--tls-key`. It requires sign-in with accounts managed by `opsarmor user add|passwd|list|remove`, limits failed sign-ins, and records sign-ins, tokens, enrollments, scans and removals in an **Audit log** page.
-- **Agents**: `opsarmor agent enroll TOKEN` enrolls a machine with a one-time token, created on the new **Agents** page or with `opsarmor token create`. Tokens are valid for 24 hours and can be revoked. The `opsarmor-agent` service then connects out to the server over HTTPS and runs the scans it asks for; the machine needs no open ports and no internet access. Tokens carry the server certificate's fingerprint, which agents pin.
-- Agent hosts are scanned from the dashboard or with `opsarmor scan HOST_ID` on the server. Scans wait for an offline agent for up to an hour, and a waiting scan can be cancelled. The server evaluates agents' packages against the advisories itself.
-- systemd units `opsarmor-server.service` and `opsarmor-agent.service`, and an `opsarmor` system user, in the `.deb` and `.rpm` packages. Neither service is enabled on install.
+OpsArmor is now **DeaconGuard**, and becomes a server with agents: one dashboard now scans many machines, without SSH.
 
 ### Changed
 
-- Checks run directly, without sudo, when OpsArmor runs as root.
+- **Renamed from OpsArmor to DeaconGuard** (breaking for scripts): the command is `deaconguard`, the package `deaconguard` (it replaces `opsarmor`), the data directory `~/.local/share/deaconguard/`, the database `deaconguard.db`, and the variable `DEACONGUARD_HOME`. Data under the old names is moved on first start, and `OPSARMOR_HOME` is still honored. The repository moved to https://github.com/Cloudopsshell/DeaconGuard; old links redirect.
+- Checks run directly, without sudo, when DeaconGuard runs as root.
 - Removing an agent host revokes its agent.
-- **Upgrade notes:** the database is upgraded to a new schema on first start. `opsarmor serve` on localhost works as before, without sign-in. The CI workflow no longer runs a full local scan.
+- **Upgrade notes:** the database is upgraded to a new schema on first start. `deaconguard serve` on localhost works as before, without sign-in. The CI workflow no longer runs a full local scan.
+
+### Added
+
+- **Server mode**: `deaconguard serve --listen 0.0.0.0:8443` (the new `deaconguard-server` service) serves the dashboard over HTTPS with a self-signed certificate created on first start, or your own with `--tls-cert`/`--tls-key`. It requires sign-in with accounts managed by `deaconguard user add|passwd|list|remove`, limits failed sign-ins, and records sign-ins, tokens, enrollments, scans and removals in an **Audit log** page.
+- **Agents**: `deaconguard agent enroll TOKEN` enrolls a machine with a one-time token, created on the new **Agents** page or with `deaconguard token create`. Tokens are valid for 24 hours and can be revoked. The `deaconguard-agent` service then connects out to the server over HTTPS and runs the scans it asks for; the machine needs no open ports and no internet access. Tokens carry the server certificate's fingerprint, which agents pin.
+- Agent hosts are scanned from the dashboard or with `deaconguard scan HOST_ID` on the server. Scans wait for an offline agent for up to an hour, and a waiting scan can be cancelled. The server evaluates agents' packages against the advisories itself.
+- systemd units `deaconguard-server.service` and `deaconguard-agent.service`, and an `deaconguard` system user, in the `.deb` and `.rpm` packages. Neither service is enabled on install.
 
 ## [0.2.0] - 2026-09-29
 
@@ -73,7 +74,7 @@ The first release of OpsArmor.
 - `opsarmor version`, and the version in the web UI, in every report, and in requests to advisory feeds.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, `.deb` and `.rpm` packages, a multi-architecture container image on GHCR, and a Helm chart for scheduled scans.
 
-[Unreleased]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/Cloudopsshell/OpsArmor/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/Cloudopsshell/OpsArmor/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Cloudopsshell/DeaconGuard/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Cloudopsshell/DeaconGuard/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/Cloudopsshell/DeaconGuard/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/Cloudopsshell/DeaconGuard/releases/tag/v0.1.0

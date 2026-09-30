@@ -1,0 +1,24 @@
+[Unit]
+Description=DeaconGuard server
+Documentation=https://github.com/Cloudopsshell/DeaconGuard#run-the-server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=deaconguard
+Group=deaconguard
+# To change the port or use your own certificate, run: systemctl edit deaconguard-server
+ExecStart=/usr/bin/deaconguard serve --listen 0.0.0.0:8443
+# /var/lib/deaconguard holds the database and the TLS certificate.
+StateDirectory=deaconguard
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/deaconguard
+
+[Install]
+WantedBy=multi-user.target

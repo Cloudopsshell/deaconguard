@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"opsarmor/internal/checks"
-	"opsarmor/internal/store"
-	"opsarmor/internal/target"
+	"deaconguard/internal/checks"
+	"deaconguard/internal/store"
+	"deaconguard/internal/target"
 )
 
 // fakeTarget answers the fixed commands a scan sends, like an Ubuntu host would.

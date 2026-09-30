@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"opsarmor/internal/target"
+	"deaconguard/internal/target"
 )
 
 const maxSudoAttempts = 3
@@ -93,7 +93,7 @@ func (e *Executor) sudo() bool {
 	}
 	e.mode = sudoUnavailable
 	if !e.allowSudo {
-		e.note = "OpsArmor's \"use sudo\" setting is off for this host, so only what the scanning account can read was checked. Turn it on for full coverage."
+		e.note = "DeaconGuard's \"use sudo\" setting is off for this host, so only what the scanning account can read was checked. Turn it on for full coverage."
 		return false
 	}
 	output, _, err := exitCode(e.commander.Run("sudo -n true", nil, 4096, 30*time.Second))

@@ -40,11 +40,11 @@ export function Login() {
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2">
           <ShieldCheck className="size-8 text-indigo-600 dark:text-indigo-400" aria-hidden />
-          <span className="text-2xl font-bold tracking-tight">OpsArmor</span>
+          <span className="text-2xl font-bold tracking-tight">DeaconGuard</span>
         </div>
         <Card className="p-6">
           <h1 className="text-lg font-semibold">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Use an account created on the server with opsarmor user add.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Use an account created on the server with deaconguard user add.</p>
           <form onSubmit={submit} className="mt-5 space-y-4">
             <Field
               label="Username"

@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"opsarmor/internal/checks"
-	"opsarmor/internal/target"
+	"deaconguard/internal/checks"
+	"deaconguard/internal/target"
 )
 
-// Event is one line of live scan progress. Events describe what OpsArmor is
+// Event is one line of live scan progress. Events describe what DeaconGuard is
 // doing; they never contain command output or credentials.
 type Event struct {
 	Seq  int       `json:"seq"`
@@ -105,7 +105,7 @@ func (r *reporter) findings(result checks.Result) {
 	}
 }
 
-// displayCommand shows the command a check asked for, unwrapping OpsArmor's
+// displayCommand shows the command a check asked for, unwrapping DeaconGuard's
 // own sudo wrapper so the live log reads naturally.
 func displayCommand(command string) (string, bool) {
 	for _, prefix := range []string{"sudo -n -- sh -c ", "sudo -S -p '' -- sh -c "} {

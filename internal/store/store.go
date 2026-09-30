@@ -22,15 +22,15 @@ type Host struct {
 	Username string `json:"username"`
 	// AllowSudo lets deeper checks run fixed read-only commands through sudo.
 	AllowSudo bool `json:"allow_sudo"`
-	// Transport is how OpsArmor reaches the host.
+	// Transport is how DeaconGuard reaches the host.
 	Transport string `json:"transport"`
 }
 
 const (
-	// TransportLocal is the machine OpsArmor runs on; Address holds its
+	// TransportLocal is the machine DeaconGuard runs on; Address holds its
 	// hostname and Username the account that runs the scans.
 	TransportLocal = "local"
-	// TransportAgent is a machine running `opsarmor agent`, enrolled with a
+	// TransportAgent is a machine running `deaconguard agent`, enrolled with a
 	// one-time token; Address holds the hostname the agent reported.
 	TransportAgent = "agent"
 	// TransportSSH marks hosts registered before SSH scanning was removed in
@@ -38,24 +38,39 @@ const (
 	TransportSSH = "ssh"
 )
 
-// Scannable reports whether OpsArmor can still scan the host.
+// Scannable reports whether DeaconGuard can still scan the host.
 func (h Host) Scannable() bool { return h.Transport == TransportLocal || h.Transport == TransportAgent }
 
-const databaseName = "opsarmor.db"
+const databaseName = "deaconguard.db"
 
 var (
 	databasesMu sync.Mutex
 	databases   = make(map[string]*sql.DB)
 )
 
-// SystemDataDir is the opsarmor-server service's data directory. It is owned
-// by the opsarmor system user the service runs as.
-const SystemDataDir = "/var/lib/opsarmor"
+// SystemDataDir is the deaconguard-server service's data directory. It is owned
+// by the deaconguard system user the service runs as.
+const SystemDataDir = "/var/lib/deaconguard"
 
-// DataDir is $OPSARMOR_HOME if set; SystemDataDir for the account that owns
-// it, such as the service's; otherwise ~/.local/share/opsarmor.
+// Before 0.3.0 DeaconGuard was called OpsArmor. Its data directory, database
+// file, and OPSARMOR_HOME variable are still found and moved to the new names.
+const (
+	legacyName         = "opsarmor"
+	legacyDatabaseName = "opsarmor.db"
+)
+
+// configuredHome is $DEACONGUARD_HOME, or $OPSARMOR_HOME from before the rename.
+func configuredHome() string {
+	if configured := os.Getenv("DEACONGUARD_HOME"); configured != "" {
+		return configured
+	}
+	return os.Getenv("OPSARMOR_HOME")
+}
+
+// DataDir is $DEACONGUARD_HOME if set; SystemDataDir for the account that owns
+// it, such as the service's; otherwise ~/.local/share/deaconguard.
 func DataDir() string {
-	if configured := os.Getenv("OPSARMOR_HOME"); configured != "" {
+	if configured := configuredHome(); configured != "" {
 		return configured
 	}
 	if info, err := os.Stat(SystemDataDir); err == nil {
@@ -65,21 +80,54 @@ func DataDir() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(".", ".local", "share", "opsarmor")
+		return filepath.Join(".", ".local", "share", "deaconguard")
 	}
-	return filepath.Join(home, ".local", "share", "opsarmor")
+	return filepath.Join(home, ".local", "share", "deaconguard")
+}
+
+// adoptLegacyData moves data kept under the OpsArmor names into directory: the
+// ~/.local/share/opsarmor directory when directory is its default successor,
+// and opsarmor.db with its WAL files inside directory.
+func adoptLegacyData(directory string) error {
+	if configuredHome() == "" {
+		legacy := filepath.Join(filepath.Dir(directory), legacyName)
+		if filepath.Base(directory) == "deaconguard" && directory != SystemDataDir {
+			if _, err := os.Stat(directory); errors.Is(err, os.ErrNotExist) {
+				if info, err := os.Stat(legacy); err == nil && info.IsDir() {
+					if err := os.Rename(legacy, directory); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	current := filepath.Join(directory, databaseName)
+	if _, err := os.Stat(current); !errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	old := filepath.Join(directory, legacyDatabaseName)
+	if _, err := os.Stat(old); err != nil {
+		return nil
+	}
+	// The WAL and shared-memory files belong to the database and move with it.
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if err := os.Rename(old+suffix, current+suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return os.Rename(old, current)
 }
 
 func DatabasePath() string { return filepath.Join(DataDir(), databaseName) }
 
 // ErrServiceData is returned when root runs a command that would change the
 // server's data, which must stay owned by the service account.
-var ErrServiceData = errors.New("the OpsArmor server's data belongs to the opsarmor user; run this command as that user, for example: sudo -u opsarmor opsarmor user add admin")
+var ErrServiceData = errors.New("the DeaconGuard server's data belongs to the deaconguard user; run this command as that user, for example: sudo -u deaconguard deaconguard user add admin")
 
 // database returns a shared connection for the current data directory, creating
 // the schema and importing JSON profiles and reports from earlier releases once.
 func database() (*sql.DB, error) {
-	if os.Getenv("OPSARMOR_HOME") == "" && os.Geteuid() == 0 {
+	if configuredHome() == "" && os.Geteuid() == 0 {
 		// Root would otherwise quietly use a separate database under its own
 		// home directory instead of the server's.
 		if info, err := os.Stat(SystemDataDir); err == nil {
@@ -93,6 +141,9 @@ func database() (*sql.DB, error) {
 	defer databasesMu.Unlock()
 	if db, ok := databases[path]; ok {
 		return db, nil
+	}
+	if err := adoptLegacyData(filepath.Dir(path)); err != nil {
+		return nil, fmt.Errorf("move OpsArmor data to %s: %w", filepath.Dir(path), err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
@@ -117,11 +168,11 @@ func database() (*sql.DB, error) {
 	}
 	if err := migrate(db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("prepare OpsArmor database: %w", err)
+		return nil, fmt.Errorf("prepare DeaconGuard database: %w", err)
 	}
 	if err := importLegacy(db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("import earlier OpsArmor data: %w", err)
+		return nil, fmt.Errorf("import earlier DeaconGuard data: %w", err)
 	}
 	databases[path] = db
 	return db, nil
@@ -427,8 +478,8 @@ func scanHost(row rowScanner) (Host, error) {
 // ErrLocalHostExists is returned when this machine is already registered.
 var ErrLocalHostExists = errors.New("this machine is already registered as a host")
 
-// AddLocalHost registers the machine OpsArmor runs on. hostname and username
-// describe it; scans run as the user running OpsArmor.
+// AddLocalHost registers the machine DeaconGuard runs on. hostname and username
+// describe it; scans run as the user running DeaconGuard.
 func AddLocalHost(hostname, username string) (Host, error) {
 	db, err := database()
 	if err != nil {

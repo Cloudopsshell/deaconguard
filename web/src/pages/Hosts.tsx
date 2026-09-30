@@ -45,8 +45,8 @@ export function Hosts() {
         title="Hosts"
         description={
           network
-            ? "This server's own machine and the machines running the OpsArmor agent."
-            : "The machine OpsArmor runs on, plus SSH hosts from earlier versions, kept for their results."
+            ? "This server's own machine and the machines running the DeaconGuard agent."
+            : "The machine DeaconGuard runs on, plus SSH hosts from earlier versions, kept for their results."
         }
         action={
           <>
@@ -77,8 +77,8 @@ export function Hosts() {
             title="No hosts yet"
             description={
               network
-                ? "Add this server's machine, or enroll other machines with the OpsArmor agent."
-                : "Register the Linux machine OpsArmor runs on to scan it."
+                ? "Add this server's machine, or enroll other machines with the DeaconGuard agent."
+                : "Register the Linux machine DeaconGuard runs on to scan it."
             }
             action={
               <Button onClick={() => setAdding(true)}>
@@ -268,13 +268,13 @@ function AddHostDialog({ open, onClose, registered }: { open: boolean; onClose: 
         ) : (
           <p className="text-sm text-slate-600 dark:text-slate-300">
             Registers <span className="font-semibold">{capabilities.data?.hostname ?? "this machine"}</span>, the Linux machine
-            OpsArmor runs on. Scans run fixed, read-only commands directly on it as{" "}
+            DeaconGuard runs on. Scans run fixed, read-only commands directly on it as{" "}
             <span className="font-semibold">{capabilities.data?.username}</span>.
           </p>
         )}
         <p className="rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
-          To scan other machines, install OpsArmor on them and enroll them as agents with a one-time token from the Agents page
-          (needs the OpsArmor server running on the network).
+          To scan other machines, install DeaconGuard on them and enroll them as agents with a one-time token from the Agents page
+          (needs the DeaconGuard server running on the network).
         </p>
         {!unavailable && !registered && (
           <label className="flex cursor-pointer gap-2 text-sm">

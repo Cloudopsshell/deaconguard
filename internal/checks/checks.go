@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"opsarmor/internal/platform"
+	"deaconguard/internal/platform"
 )
 
 const (
@@ -62,7 +62,7 @@ var definitions = []Definition{
 	},
 	{
 		ID: Antivirus, Name: "Antivirus (ClamAV)", Sudo: "recommended",
-		Description: "Runs the host's own ClamAV on temporary, home, and application directories. Skipped when ClamAV is not installed; OpsArmor never installs software.",
+		Description: "Runs the host's own ClamAV on temporary, home, and application directories. Skipped when ClamAV is not installed; DeaconGuard never installs software.",
 		Warning:     "ClamAV loads its signatures on the host, using about 1 GB of memory, and can take several minutes.",
 	},
 }
