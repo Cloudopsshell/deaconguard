@@ -1,0 +1,22 @@
+[Unit]
+Description=DeaconGuard agent
+Documentation=https://github.com/Cloudopsshell/DeaconGuard#scan-other-machines-with-the-agent
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/deaconguard/agent.json
+
+[Service]
+# Root, so every check can read what it needs; the agent only runs DeaconGuard's
+# fixed read-only commands and opens no port.
+ExecStart=/usr/bin/deaconguard agent run
+Restart=on-failure
+RestartSec=10
+# Exit status 3 means the server removed this agent; restarting would not help.
+RestartPreventExitStatus=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

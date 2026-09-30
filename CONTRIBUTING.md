@@ -1,4 +1,4 @@
-# Contributing to OpsArmor
+# Contributing to DeaconGuard
 
 Thanks for helping. This guide covers setting up, making a change, and getting it merged.
 
@@ -7,10 +7,10 @@ Thanks for helping. This guide covers setting up, making a change, and getting i
 You need Go 1.26 or later and Node.js 24 with npm.
 
 ```sh
-git clone https://github.com/Cloudopsshell/OpsArmor.git && cd OpsArmor
+git clone https://github.com/Cloudopsshell/DeaconGuard.git && cd DeaconGuard
 make build        # web UI and binary
 make test vet     # Go tests and vet
-make ui-dev       # web UI with hot reload; run ./opsarmor serve alongside it
+make ui-dev       # web UI with hot reload; run ./deaconguard serve alongside it
 ```
 
 ## Make a change
@@ -34,7 +34,7 @@ A pull request can be merged when:
 
 ## Rules for scanner code
 
-OpsArmor runs on other people's servers, so these rules are not negotiable:
+DeaconGuard runs on other people's servers, so these rules are not negotiable:
 
 - Commands run on a scanned machine are **fixed, read-only strings** defined in `internal/target` or `internal/checks`, and run through the `target.Target` interface (implemented by `internal/local`). Never insert user input or data from the machine into a command.
 - Use sudo only when the host allows it, and never store or log passwords.

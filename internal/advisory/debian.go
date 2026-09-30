@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"opsarmor/internal/inventory"
-	"opsarmor/internal/platform"
-	"opsarmor/internal/version"
+	"deaconguard/internal/inventory"
+	"deaconguard/internal/platform"
+	"deaconguard/internal/version"
 )
 
 type Finding struct {
