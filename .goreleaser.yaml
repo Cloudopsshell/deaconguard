@@ -56,6 +56,14 @@ nfpms:
     formats:
       - deb
       - rpm
+    # The install script creates the deaconguard user with useradd.
+    overrides:
+      deb:
+        dependencies:
+          - passwd
+      rpm:
+        dependencies:
+          - shadow-utils
     bindir: /usr/bin
     contents:
       - src: README.md
