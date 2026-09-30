@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"opsarmor/internal/platform"
+	"deaconguard/internal/platform"
 )
 
 const (

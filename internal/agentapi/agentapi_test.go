@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"opsarmor/internal/agentapi"
-	"opsarmor/internal/tlscert"
+	"deaconguard/internal/agentapi"
+	"deaconguard/internal/tlscert"
 )
 
 func TestTokenRoundTrip(t *testing.T) {
 	token := agentapi.Token{
-		ServerURL: "https://opsarmor.example.com:8443",
+		ServerURL: "https://deaconguard.example.com:8443",
 		Pin:       strings.Repeat("A", 43),
 		Secret:    strings.Repeat("B", 43),
 	}
@@ -25,7 +25,7 @@ func TestTokenRoundTrip(t *testing.T) {
 		t.Fatalf("got %+v", parsed)
 	}
 	for _, bad := range []string{
-		"", "opsarmor1.", "something-else", token.Encode()[:len(token.Encode())-2],
+		"", "deaconguard1.", "something-else", token.Encode()[:len(token.Encode())-2],
 		agentapi.Token{ServerURL: "http://insecure:8080", Pin: token.Pin, Secret: token.Secret}.Encode(),
 	} {
 		if _, err := agentapi.ParseToken(bad); err == nil {
@@ -35,7 +35,7 @@ func TestTokenRoundTrip(t *testing.T) {
 }
 
 func TestValidateServerURL(t *testing.T) {
-	for _, good := range []string{"https://10.0.0.5:8443", "https://opsarmor.example.com", "https://opsarmor:8443/"} {
+	for _, good := range []string{"https://10.0.0.5:8443", "https://deaconguard.example.com", "https://deaconguard:8443/"} {
 		if err := agentapi.ValidateServerURL(good); err != nil {
 			t.Errorf("%s: %v", good, err)
 		}
@@ -48,7 +48,7 @@ func TestValidateServerURL(t *testing.T) {
 }
 
 func TestClientTrustsOnlyThePinnedKey(t *testing.T) {
-	certificate, created, err := tlscert.Ensure(t.TempDir(), "opsarmor-test")
+	certificate, created, err := tlscert.Ensure(t.TempDir(), "deaconguard-test")
 	if err != nil || !created {
 		t.Fatalf("create certificate: %v (created %t)", err, created)
 	}
@@ -75,11 +75,11 @@ func TestClientTrustsOnlyThePinnedKey(t *testing.T) {
 
 func TestEnsureReusesTheCertificate(t *testing.T) {
 	directory := t.TempDir()
-	first, _, err := tlscert.Ensure(directory, "opsarmor-test")
+	first, _, err := tlscert.Ensure(directory, "deaconguard-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, created, err := tlscert.Ensure(directory, "opsarmor-test")
+	second, created, err := tlscert.Ensure(directory, "deaconguard-test")
 	if err != nil || created {
 		t.Fatalf("second Ensure: %v (created %t)", err, created)
 	}

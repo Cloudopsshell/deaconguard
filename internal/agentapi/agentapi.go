@@ -1,4 +1,4 @@
-// Package agentapi is the protocol between an OpsArmor server and its agents:
+// Package agentapi is the protocol between an DeaconGuard server and its agents:
 // the enrollment token format, how an agent trusts the server's certificate,
 // and the JSON messages they exchange over HTTPS. The agent always connects to
 // the server; the server never connects to an agent.
@@ -16,15 +16,15 @@ import (
 	"strings"
 	"time"
 
-	"opsarmor/internal/scan"
-	"opsarmor/internal/target"
+	"deaconguard/internal/scan"
+	"deaconguard/internal/target"
 )
 
 // PathPrefix is where the server answers agents.
 const PathPrefix = "/agent/v1/"
 
 // tokenPrefix marks and versions an enrollment token.
-const tokenPrefix = "opsarmor1."
+const tokenPrefix = "deaconguard1."
 
 // Token is what an enrollment token carries: where the server is, the
 // fingerprint of its certificate's public key, and the one-time secret.
@@ -48,7 +48,7 @@ func ParseToken(value string) (Token, error) {
 	rest, found := strings.CutPrefix(value, tokenPrefix)
 	parts := strings.Split(rest, ".")
 	if !found || len(parts) != 3 {
-		return Token{}, errors.New("this is not an OpsArmor enrollment token; copy it again from the server's Agents page")
+		return Token{}, errors.New("this is not an DeaconGuard enrollment token; copy it again from the server's Agents page")
 	}
 	serverURL, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
@@ -71,7 +71,7 @@ func ValidateServerURL(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
 		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("the server address must look like https://opsarmor.example.com:8443, not %q", value)
+		return fmt.Errorf("the server address must look like https://deaconguard.example.com:8443, not %q", value)
 	}
 	return nil
 }
@@ -159,8 +159,8 @@ const MaxResultBytes = 80 << 20
 
 // Headers the agent sends with every request.
 const (
-	HeaderVersion  = "X-OpsArmor-Agent-Version"
-	HeaderHostname = "X-OpsArmor-Agent-Hostname"
-	HeaderUsername = "X-OpsArmor-Agent-Username"
-	HeaderOS       = "X-OpsArmor-Agent-OS"
+	HeaderVersion  = "X-DeaconGuard-Agent-Version"
+	HeaderHostname = "X-DeaconGuard-Agent-Hostname"
+	HeaderUsername = "X-DeaconGuard-Agent-Username"
+	HeaderOS       = "X-DeaconGuard-Agent-OS"
 )

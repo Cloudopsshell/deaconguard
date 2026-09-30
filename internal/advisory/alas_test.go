@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"opsarmor/internal/inventory"
-	"opsarmor/internal/platform"
+	"deaconguard/internal/inventory"
+	"deaconguard/internal/platform"
 )
 
 func TestEvaluateAmazonLinux2023UsesALASReplacementPackage(t *testing.T) {

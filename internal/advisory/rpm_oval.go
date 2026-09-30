@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"opsarmor/internal/inventory"
-	"opsarmor/internal/version"
+	"deaconguard/internal/inventory"
+	"deaconguard/internal/version"
 )
 
 const maxExpandedOVAL = 512 << 20

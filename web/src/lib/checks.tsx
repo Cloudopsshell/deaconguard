@@ -44,7 +44,7 @@ export function topSeverity(counts: SeverityCounts) {
   return severityOrder.find((severity) => counts[severity.toLowerCase() as keyof SeverityCounts] > 0);
 }
 
-const storageKey = "opsarmor.selectedChecks";
+const storageKey = "deaconguard.selectedChecks";
 
 export function rememberedChecks(): CheckId[] | null {
   try {

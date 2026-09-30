@@ -10,16 +10,16 @@ import (
 
 func withTempDataDir(t *testing.T) string {
 	t.Helper()
-	previous, hadPrevious := os.LookupEnv("OPSARMOR_HOME")
+	previous, hadPrevious := os.LookupEnv("DEACONGUARD_HOME")
 	directory := t.TempDir()
-	if err := os.Setenv("OPSARMOR_HOME", directory); err != nil {
+	if err := os.Setenv("DEACONGUARD_HOME", directory); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		if hadPrevious {
-			_ = os.Setenv("OPSARMOR_HOME", previous)
+			_ = os.Setenv("DEACONGUARD_HOME", previous)
 		} else {
-			_ = os.Unsetenv("OPSARMOR_HOME")
+			_ = os.Unsetenv("DEACONGUARD_HOME")
 		}
 	})
 	return directory
@@ -57,9 +57,9 @@ func TestLocalHostRoundTripWithPrivatePermissions(t *testing.T) {
 	if _, err := AddLocalHost("build-01", "ops"); !errors.Is(err, ErrLocalHostExists) {
 		t.Fatalf("a second local host: %v", err)
 	}
-	info, err := os.Stat(filepath.Join(directory, "opsarmor.db"))
+	info, err := os.Stat(filepath.Join(directory, "deaconguard.db"))
 	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("opsarmor.db permissions = %v, %v; want 0600", info, err)
+		t.Fatalf("deaconguard.db permissions = %v, %v; want 0600", info, err)
 	}
 }
 

@@ -1,6 +1,6 @@
 // Package scan runs the checks a user chose against one host and assembles
 // the report. It reaches the host through a target.Target; today that is the
-// machine OpsArmor runs on. The CLI and the web UI share it.
+// machine DeaconGuard runs on. The CLI and the web UI share it.
 package scan
 
 import (
@@ -10,13 +10,13 @@ import (
 	"os"
 	"time"
 
-	"opsarmor/internal/buildinfo"
-	"opsarmor/internal/checks"
-	"opsarmor/internal/local"
-	"opsarmor/internal/platform"
-	"opsarmor/internal/scanner"
-	"opsarmor/internal/store"
-	"opsarmor/internal/target"
+	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/checks"
+	"deaconguard/internal/local"
+	"deaconguard/internal/platform"
+	"deaconguard/internal/scanner"
+	"deaconguard/internal/store"
+	"deaconguard/internal/target"
 )
 
 // maxConcurrentEvaluations bounds the memory-heavy advisory evaluation when
@@ -27,11 +27,11 @@ var evaluationSlots = make(chan struct{}, maxConcurrentEvaluations)
 
 // ErrSSHRemoved is returned for hosts registered for SSH scanning, which was
 // removed in 0.2.0. Their earlier results stay available.
-var ErrSSHRemoved = errors.New("SSH scanning was removed in OpsArmor 0.2.0; this host's earlier results remain available, but to scan it, install the OpsArmor agent on it and enroll it with this server")
+var ErrSSHRemoved = errors.New("SSH scanning was removed in 0.2.0; this host's earlier results remain available, but to scan it, install the DeaconGuard agent on it and enroll it with this server")
 
 // ErrAgentHost is returned when an agent host is scanned in-process; its
 // agent runs the scan instead.
-var ErrAgentHost = errors.New("this host is scanned by its OpsArmor agent through the OpsArmor server")
+var ErrAgentHost = errors.New("this host is scanned by its DeaconGuard agent through the DeaconGuard server")
 
 type Options struct {
 	// SudoPassword is asked for when the host allows sudo but it needs a
@@ -103,7 +103,7 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 	report := map[string]any{
 		"host_id": host.ID, "address": host.Address, "os": scanner.PlatformName(detected),
 		"scanned_at": now.Format(time.RFC3339), "checks_run": checkIDs,
-		"opsarmor_version": buildinfo.Version,
+		"deaconguard_version": buildinfo.Version,
 	}
 	results := make(map[string]checks.Result)
 	executor := checks.NewExecutor(machine, host.AllowSudo, options.SudoPassword)

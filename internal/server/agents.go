@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"opsarmor/internal/agentapi"
-	"opsarmor/internal/scan"
-	"opsarmor/internal/store"
-	"opsarmor/internal/target"
+	"deaconguard/internal/agentapi"
+	"deaconguard/internal/scan"
+	"deaconguard/internal/store"
+	"deaconguard/internal/target"
 )
 
 const (
@@ -177,7 +177,7 @@ func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		store.Audit("agent", "agent.enroll", host.Address, fmt.Sprintf("%s, OpsArmor %s", request.OS, request.Version), remote)
+		store.Audit("agent", "agent.enroll", host.Address, fmt.Sprintf("%s, DeaconGuard %s", request.OS, request.Version), remote)
 		writeJSON(w, http.StatusCreated, agentapi.EnrollResponse{HostID: host.ID, Credential: credential})
 	}
 }
@@ -274,7 +274,7 @@ func (h *agentHub) events(w http.ResponseWriter, r *http.Request, host store.Hos
 
 // agentReportKeys are the report fields an agent may set; package results are
 // always evaluated by the server.
-var agentReportKeys = []string{"os", "scanned_at", "checks_run", "check_results", "opsarmor_version"}
+var agentReportKeys = []string{"os", "scanned_at", "checks_run", "check_results", "deaconguard_version"}
 
 func (h *agentHub) result(w http.ResponseWriter, r *http.Request, host store.Host) {
 	scanID := r.PathValue("id")
@@ -378,7 +378,7 @@ func (s *Server) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	}
 	encoded := agentapi.Token{ServerURL: request.ServerURL, Pin: s.pin, Secret: secret}.Encode()
 	s.audit(r, "token.create", token.ID[:8], "for "+request.ServerURL+", expires "+token.ExpiresAt)
-	writeJSON(w, http.StatusCreated, enrollmentTokenResponse{EnrollmentToken: token, Token: encoded, Command: "sudo opsarmor agent enroll " + encoded})
+	writeJSON(w, http.StatusCreated, enrollmentTokenResponse{EnrollmentToken: token, Token: encoded, Command: "sudo deaconguard agent enroll " + encoded})
 }
 
 func (s *Server) listEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
@@ -400,4 +400,4 @@ func (s *Server) revokeEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, token)
 }
 
-var errNeedsNetworkMode = errors.New("agents enroll with an OpsArmor server on the network: run opsarmor serve --listen 0.0.0.0:8443")
+var errNeedsNetworkMode = errors.New("agents enroll with an DeaconGuard server on the network: run deaconguard serve --listen 0.0.0.0:8443")

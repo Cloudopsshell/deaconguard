@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"opsarmor/internal/buildinfo"
-	"opsarmor/internal/platform"
-	"opsarmor/internal/store"
+	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/platform"
+	"deaconguard/internal/store"
 )
 
 const (

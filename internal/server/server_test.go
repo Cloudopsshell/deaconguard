@@ -13,16 +13,16 @@ import (
 	"testing/fstest"
 	"time"
 
-	"opsarmor/internal/checks"
-	"opsarmor/internal/scan"
-	"opsarmor/internal/store"
+	"deaconguard/internal/checks"
+	"deaconguard/internal/scan"
+	"deaconguard/internal/store"
 )
 
 func newTestServer(t *testing.T, scan scanFunc) *Server {
 	t.Helper()
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	ui := fstest.MapFS{
-		"index.html":    {Data: []byte("<!doctype html><title>OpsArmor</title>")},
+		"index.html":    {Data: []byte("<!doctype html><title>DeaconGuard</title>")},
 		"assets/app.js": {Data: []byte("console.log('ui')")},
 	}
 	s, err := New(ui, scan)
@@ -204,7 +204,7 @@ func TestLocalOnlyProtections(t *testing.T) {
 func TestServesUIWithClientRouteFallback(t *testing.T) {
 	s := newTestServer(t, nil)
 	page := request(t, s, http.MethodGet, "/hosts/some-id", nil)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "<title>OpsArmor</title>") {
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "<title>DeaconGuard</title>") {
 		t.Fatalf("client route: %d %s", page.Code, page.Body.String())
 	}
 	asset := request(t, s, http.MethodGet, "/assets/app.js", nil)
@@ -457,7 +457,7 @@ func TestSSHHostsCanNoLongerBeAddedOrScanned(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "hosts.json"), []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("OPSARMOR_HOME", directory)
+	t.Setenv("DEACONGUARD_HOME", directory)
 	s, err := New(fstest.MapFS{}, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"opsarmor/internal/platform"
+	"deaconguard/internal/platform"
 )
 
 func rules(result Result) map[string]int {

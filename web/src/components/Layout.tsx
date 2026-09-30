@@ -60,7 +60,7 @@ export function Layout() {
       <aside className="border-b border-slate-200 bg-white lg:fixed lg:inset-y-0 lg:w-60 lg:border-r lg:border-b-0 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center gap-2 px-5 py-4 lg:py-5">
           <ShieldCheck className="size-7 text-indigo-600 dark:text-indigo-400" aria-hidden />
-          <span className="text-lg font-bold tracking-tight">OpsArmor</span>
+          <span className="text-lg font-bold tracking-tight">DeaconGuard</span>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:pb-0" aria-label="Main">
           {navigation.filter(({ to }) => network || (to !== "/agents" && to !== "/audit")).map(({ to, label, icon: Icon, end }) => (

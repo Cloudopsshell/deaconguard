@@ -96,7 +96,7 @@ export function HostDetail() {
             <h2 className="font-semibold">The agent is offline</h2>
             <p className="mt-1 text-slate-600 dark:text-slate-300">
               It last checked in {data.agent ? timeAgo(data.agent.last_seen_at) : "never"}. Scans you start wait up to an hour for it to
-              reconnect. On the machine, check it with: sudo systemctl status opsarmor-agent
+              reconnect. On the machine, check it with: sudo systemctl status deaconguard-agent
             </p>
           </div>
         </Card>
@@ -107,8 +107,8 @@ export function HostDetail() {
           <div className="p-5 text-sm">
             <h2 className="font-semibold">This SSH host can no longer be scanned</h2>
             <p className="mt-1 text-slate-600 dark:text-slate-300">
-              OpsArmor 0.2.0 removed SSH scanning. This host's earlier results and scan history stay available below. To scan it
-              again, install OpsArmor on it and enroll it as an agent from the Agents page; you can remove this entry when you no longer
+              Version 0.2.0 removed SSH scanning. This host's earlier results and scan history stay available below. To scan it
+              again, install DeaconGuard on it and enroll it as an agent from the Agents page; you can remove this entry when you no longer
               need its history.
             </p>
           </div>
@@ -266,7 +266,7 @@ function SudoToggle({ host }: { host: Host }) {
       <ShieldCheck className="size-4" aria-hidden />
       <span>
         {host.allow_sudo
-          ? "OpsArmor may use sudo on this host for deeper checks"
+          ? "DeaconGuard may use sudo on this host for deeper checks"
           : "Use sudo for deeper checks: off · turn on to let checks read protected files and all processes"}
       </span>
       {update.error && <span className="text-red-600">{update.error.message}</span>}
@@ -459,7 +459,7 @@ export function RemoveHostDialog({ host, open, onClose }: { host: Host; open: bo
   return (
     <Dialog open={open} onClose={onClose} title="Remove host">
       <p className="text-sm text-slate-600 dark:text-slate-300">
-        Remove <span className="font-semibold">{host.address}</span> from OpsArmor? It will no longer appear on the dashboard. Earlier
+        Remove <span className="font-semibold">{host.address}</span> from DeaconGuard? It will no longer appear on the dashboard. Earlier
         reports stay stored and can still be opened with the CLI.
         {host.transport === "agent" &&
           " Its agent is disconnected at once and cannot reconnect; to scan the machine again, enroll it with a new token."}

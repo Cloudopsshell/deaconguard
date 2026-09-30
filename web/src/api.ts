@@ -24,7 +24,7 @@ export interface Host {
   address: string;
   username: string;
   allow_sudo: boolean;
-  /** "local" is the machine OpsArmor runs on; "agent" machines run the OpsArmor agent and
+  /** "local" is the machine DeaconGuard runs on; "agent" machines run the DeaconGuard agent and
    * enrolled with this server. "ssh" hosts were registered before SSH scanning was removed in
    * 0.2.0; their results remain but they cannot be scanned. */
   transport: "local" | "agent" | "ssh";
@@ -48,7 +48,7 @@ export interface Capabilities {
 }
 
 export interface Session {
-  /** False when OpsArmor serves only this machine at localhost, without accounts. */
+  /** False when DeaconGuard serves only this machine at localhost, without accounts. */
   login_required: boolean;
   authenticated: boolean;
   username?: string;

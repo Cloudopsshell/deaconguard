@@ -9,7 +9,7 @@ import { cx } from "./ui";
 
 /**
  * A translucent console on a host's page that follows that host's scans:
- * each step, the fixed commands OpsArmor runs on the host, and findings as
+ * each step, the fixed commands DeaconGuard runs on the host, and findings as
  * checks complete. A running scan always shows, at least as a pill; a finished
  * one stays only while the page that watched it is open, or when its saved
  * log is opened from the scan history.

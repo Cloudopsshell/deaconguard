@@ -18,19 +18,19 @@ import (
 
 	"golang.org/x/term"
 
-	"opsarmor/internal/agent"
-	"opsarmor/internal/agentapi"
-	"opsarmor/internal/buildinfo"
-	"opsarmor/internal/local"
-	"opsarmor/internal/server"
-	"opsarmor/internal/store"
-	"opsarmor/internal/tlscert"
-	"opsarmor/web"
+	"deaconguard/internal/agent"
+	"deaconguard/internal/agentapi"
+	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/local"
+	"deaconguard/internal/server"
+	"deaconguard/internal/store"
+	"deaconguard/internal/tlscert"
+	"deaconguard/web"
 )
 
 const (
 	defaultListen = "127.0.0.1:7480"
-	// metaServerPin records the server certificate's pin for opsarmor token create.
+	// metaServerPin records the server certificate's pin for deaconguard token create.
 	metaServerPin = "server_pin"
 )
 
@@ -38,7 +38,7 @@ func runServe(arguments []string, output io.Writer) error {
 	listen, certificatePath, keyPath := defaultListen, "", ""
 	for index := 0; index < len(arguments); index++ {
 		if index+1 >= len(arguments) {
-			return fmt.Errorf("usage: opsarmor serve [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE]")
+			return fmt.Errorf("usage: deaconguard serve [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE]")
 		}
 		switch arguments[index] {
 		case "--listen":
@@ -64,7 +64,7 @@ func runServe(arguments []string, output io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "OpsArmor %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
+		fmt.Fprintf(output, "DeaconGuard %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
 		return serveUntilStopped(handler, listener, output)
 	}
 
@@ -92,7 +92,7 @@ func runServe(arguments []string, output io.Writer) error {
 		return err
 	}
 	listener = tls.NewListener(listener, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
-	fmt.Fprintf(output, "OpsArmor %s server: https://%s\n", buildinfo.Version, displayAddress(listener.Addr()))
+	fmt.Fprintf(output, "DeaconGuard %s server: https://%s\n", buildinfo.Version, displayAddress(listener.Addr()))
 	if created {
 		fmt.Fprintf(output, "Created a self-signed certificate in %s. Browsers warn about it once;\n",
 			filepath.Join(store.DataDir(), "tls"))
@@ -144,7 +144,7 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			return err
 		}
 		if len(users) == 0 {
-			fmt.Fprintln(output, "No dashboard accounts. Create one: opsarmor user add USERNAME")
+			fmt.Fprintln(output, "No dashboard accounts. Create one: deaconguard user add USERNAME")
 		}
 		for _, user := range users {
 			fmt.Fprintf(output, "%s  (created %s)\n", user.Username, user.CreatedAt)
@@ -152,7 +152,7 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 		return nil
 	case "remove":
 		if len(arguments) != 2 {
-			return fmt.Errorf("usage: opsarmor user remove USERNAME")
+			return fmt.Errorf("usage: deaconguard user remove USERNAME")
 		}
 		if err := store.RemoveUser(arguments[1]); err != nil {
 			return err
@@ -170,13 +170,13 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 		case argument == "--password-stdin":
 			fromStdin = true
 		case strings.HasPrefix(argument, "-") || username != "":
-			return fmt.Errorf("usage: opsarmor user %s USERNAME [--password-stdin]", arguments[0])
+			return fmt.Errorf("usage: deaconguard user %s USERNAME [--password-stdin]", arguments[0])
 		default:
 			username = argument
 		}
 	}
 	if username == "" {
-		return fmt.Errorf("usage: opsarmor user %s USERNAME [--password-stdin]", arguments[0])
+		return fmt.Errorf("usage: deaconguard user %s USERNAME [--password-stdin]", arguments[0])
 	}
 	password, err := readNewPassword(input, diagnostics, fromStdin)
 	if err != nil {
@@ -188,7 +188,7 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			return err
 		}
 		store.Audit(local.Username()+" (cli)", "user.add", username, "", "")
-		fmt.Fprintf(output, "Created %s. Sign in to the dashboard served by: opsarmor serve --listen 0.0.0.0:8443\n", username)
+		fmt.Fprintf(output, "Created %s. Sign in to the dashboard served by: deaconguard serve --listen 0.0.0.0:8443\n", username)
 		return nil
 	}
 	if err := store.SetPassword(username, password); err != nil {
@@ -235,7 +235,7 @@ func readNewPassword(input io.Reader, diagnostics io.Writer, fromStdin bool) ([]
 
 func runToken(arguments []string, output io.Writer) error {
 	if len(arguments) != 3 || arguments[0] != "create" || arguments[1] != "--server-url" {
-		return fmt.Errorf("usage: opsarmor token create --server-url https://HOST:8443")
+		return fmt.Errorf("usage: deaconguard token create --server-url https://HOST:8443")
 	}
 	serverURL := strings.TrimSuffix(strings.TrimSpace(arguments[2]), "/")
 	if err := agentapi.ValidateServerURL(serverURL); err != nil {
@@ -246,7 +246,7 @@ func runToken(arguments []string, output io.Writer) error {
 		return err
 	}
 	if pin == "" {
-		return fmt.Errorf("start the server once first, so it has a certificate: opsarmor serve --listen 0.0.0.0:8443")
+		return fmt.Errorf("start the server once first, so it has a certificate: deaconguard serve --listen 0.0.0.0:8443")
 	}
 	token, secret, err := store.CreateEnrollmentToken(serverURL, local.Username()+" (cli)")
 	if err != nil {
@@ -255,7 +255,7 @@ func runToken(arguments []string, output io.Writer) error {
 	store.Audit(local.Username()+" (cli)", "token.create", token.ID[:8], "for "+serverURL+", expires "+token.ExpiresAt, "")
 	encoded := agentapi.Token{ServerURL: serverURL, Pin: pin, Secret: secret}.Encode()
 	fmt.Fprintf(output, "One-time enrollment token, valid until %s:\n\n  %s\n\n", token.ExpiresAt, encoded)
-	fmt.Fprintf(output, "On the machine to scan, install OpsArmor and run:\n\n  sudo opsarmor agent enroll %s\n  sudo systemctl enable --now opsarmor-agent\n", encoded)
+	fmt.Fprintf(output, "On the machine to scan, install DeaconGuard and run:\n\n  sudo deaconguard agent enroll %s\n  sudo systemctl enable --now deaconguard-agent\n", encoded)
 	return nil
 }
 
@@ -274,11 +274,11 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 			case token == "" && !strings.HasPrefix(argument, "-"):
 				token = argument
 			default:
-				return fmt.Errorf("usage: opsarmor agent enroll TOKEN [--force]")
+				return fmt.Errorf("usage: deaconguard agent enroll TOKEN [--force]")
 			}
 		}
 		if token == "" {
-			return fmt.Errorf("usage: opsarmor agent enroll TOKEN [--force]")
+			return fmt.Errorf("usage: deaconguard agent enroll TOKEN [--force]")
 		}
 		config, err := agent.Enroll(context.Background(), token, path, force)
 		if err != nil {
@@ -286,14 +286,14 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 		}
 		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\nSaved %s\n", local.Hostname(), config.ServerURL, config.HostID, path)
 		if os.Geteuid() == 0 {
-			fmt.Fprintln(output, "Start the agent: sudo systemctl enable --now opsarmor-agent")
+			fmt.Fprintln(output, "Start the agent: sudo systemctl enable --now deaconguard-agent")
 		} else {
-			fmt.Fprintln(output, "Start the agent: opsarmor agent run\nNot running as root: the deeper checks will use passwordless sudo if available.")
+			fmt.Fprintln(output, "Start the agent: deaconguard agent run\nNot running as root: the deeper checks will use passwordless sudo if available.")
 		}
 		return nil
 	case "run":
 		if len(arguments) != 1 {
-			return fmt.Errorf("usage: opsarmor agent run")
+			return fmt.Errorf("usage: deaconguard agent run")
 		}
 		config, err := agent.LoadConfig(path)
 		if err != nil {
@@ -329,7 +329,7 @@ func scanThroughAgent(host store.Host, checks []string, asJSON bool, output, dia
 		return err
 	}
 	store.Audit(local.Username()+" (cli)", "scan.start", host.Address, strings.Join(checks, ", "), "")
-	fmt.Fprintf(diagnostics, "Queued scan %s for the agent on %s; the OpsArmor server must be running to hand it over.\n", record.ID, host.Address)
+	fmt.Fprintf(diagnostics, "Queued scan %s for the agent on %s; the DeaconGuard server must be running to hand it over.\n", record.ID, host.Address)
 	fmt.Fprintln(diagnostics, "Waiting for the result (Ctrl+C stops waiting; the scan stays queued)...")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

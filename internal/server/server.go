@@ -18,12 +18,12 @@ import (
 	"path"
 	"strings"
 
-	"opsarmor/internal/agentapi"
-	"opsarmor/internal/buildinfo"
-	"opsarmor/internal/checks"
-	"opsarmor/internal/local"
-	scanpkg "opsarmor/internal/scan"
-	"opsarmor/internal/store"
+	"deaconguard/internal/agentapi"
+	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/checks"
+	"deaconguard/internal/local"
+	scanpkg "deaconguard/internal/scan"
+	"deaconguard/internal/store"
 )
 
 const maxRequestBytes = 64 << 10
@@ -54,7 +54,7 @@ func NewNetwork(ui fs.FS, scan scanFunc, pin string) (*Server, error) {
 		return nil, err
 	}
 	if len(users) == 0 {
-		return nil, errors.New("create a dashboard account before serving on the network: opsarmor user add USERNAME")
+		return nil, errors.New("create a dashboard account before serving on the network: deaconguard user add USERNAME")
 	}
 	return newServer(ui, scan, true, pin)
 }
@@ -152,7 +152,7 @@ func IsLoopback(address string) bool {
 func localOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !IsLoopback(hostWithPort(r.Host)) {
-			writeError(w, http.StatusForbidden, errors.New("OpsArmor only answers requests addressed to localhost"))
+			writeError(w, http.StatusForbidden, errors.New("DeaconGuard only answers requests addressed to localhost"))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -327,7 +327,7 @@ func (s *Server) addHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.Transport != "" && request.Transport != store.TransportLocal {
-		writeError(w, http.StatusBadRequest, errors.New("only this machine can be added here; other machines join by enrolling an OpsArmor agent"))
+		writeError(w, http.StatusBadRequest, errors.New("only this machine can be added here; other machines join by enrolling an DeaconGuard agent"))
 		return
 	}
 	if err := s.localAvailable(); err != nil {
@@ -443,7 +443,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if host.Transport == store.TransportAgent && !s.network {
-		writeError(w, http.StatusConflict, errors.New("agent hosts are scanned when OpsArmor serves on the network (opsarmor serve --listen 0.0.0.0:8443)"))
+		writeError(w, http.StatusConflict, errors.New("agent hosts are scanned when DeaconGuard serves on the network (deaconguard serve --listen 0.0.0.0:8443)"))
 		return
 	}
 	scan, err := s.runner.start(host, selected)
@@ -576,7 +576,7 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
-		io.WriteString(w, "The OpsArmor web UI was not built into this binary. Run `make ui build` and restart.\n")
+		io.WriteString(w, "The DeaconGuard web UI was not built into this binary. Run `make ui build` and restart.\n")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

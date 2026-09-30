@@ -9,19 +9,19 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"opsarmor/internal/agentapi"
-	"opsarmor/internal/store"
+	"deaconguard/internal/agentapi"
+	"deaconguard/internal/store"
 )
 
 const (
-	testOrigin   = "https://opsarmor.example:8443"
+	testOrigin   = "https://deaconguard.example:8443"
 	testPassword = "correct horse battery"
 	testPin      = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 )
 
 func newNetworkTestServer(t *testing.T) *Server {
 	t.Helper()
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	if _, err := NewNetwork(fstest.MapFS{}, nil, testPin); err == nil {
 		t.Fatal("network mode started without any account")
 	}

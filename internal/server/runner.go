@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"opsarmor/internal/scan"
-	"opsarmor/internal/store"
+	"deaconguard/internal/scan"
+	"deaconguard/internal/store"
 )
 
 const promptTimeout = 10 * time.Minute
@@ -219,7 +219,7 @@ func (r *runner) ask(host store.Host, scanID string, prompt Prompt) ([]byte, err
 	case <-timer.C:
 		return nil, fmt.Errorf("scan stopped: no answer within %s (%s)", promptTimeout, cancelReason(prompt.Kind))
 	case <-r.ctx.Done():
-		return nil, errors.New("scan stopped because OpsArmor was shut down while waiting for input")
+		return nil, errors.New("scan stopped because DeaconGuard was shut down while waiting for input")
 	}
 }
 

@@ -21,7 +21,7 @@ func (roundTrip roundTripFunc) Do(request *http.Request) (*http.Response, error)
 
 func TestLoadFeedFetchesAndCachesOfficialDataPrivately(t *testing.T) {
 	directory := t.TempDir()
-	t.Setenv("OPSARMOR_HOME", directory)
+	t.Setenv("DEACONGUARD_HOME", directory)
 	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	client := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.Header.Get("User-Agent") == "" {
@@ -54,7 +54,7 @@ func TestLoadFeedFetchesAndCachesOfficialDataPrivately(t *testing.T) {
 }
 
 func TestLoadFeedUsesStaleCacheOnRefreshFailure(t *testing.T) {
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	now := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	working := roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("cached source")), Header: make(http.Header)}, nil
@@ -73,7 +73,7 @@ func TestLoadFeedUsesStaleCacheOnRefreshFailure(t *testing.T) {
 }
 
 func TestLoadFeedFailsWithoutCacheAndOnOversizedResponse(t *testing.T) {
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	failing := roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New("offline") })
 	if _, err := LoadFeed("https://vendor.example/security.json", "missing", failing, time.Now()); err == nil {
 		t.Fatal("expected a missing cache and failed fetch to fail")
@@ -87,7 +87,7 @@ func TestLoadFeedFailsWithoutCacheAndOnOversizedResponse(t *testing.T) {
 }
 
 func TestLoadFeedAcceptsTypedNilHTTPClient(t *testing.T) {
-	t.Setenv("OPSARMOR_HOME", t.TempDir())
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(writer, "fixture feed")
 	}))

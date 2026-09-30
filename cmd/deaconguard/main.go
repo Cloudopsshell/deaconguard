@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"opsarmor/internal/cli"
+	"deaconguard/internal/cli"
 )
 
 func main() {
