@@ -22,17 +22,17 @@ func TestHostCommandsWithLegacySSHHost(t *testing.T) {
 	}
 	var output, diagnostics bytes.Buffer
 	if code := Run([]string{"host", "add", "new.example", "--username", "ubuntu"}, nil, &output, &diagnostics); code == 0 ||
-		!strings.Contains(diagnostics.String(), "SSH scanning was removed") {
+		!strings.Contains(diagnostics.String(), "SSH scanning is not supported") {
 		t.Fatalf("adding an SSH host: code %d, %s", code, diagnostics.String())
 	}
 	output.Reset()
 	if code := Run([]string{"host", "list"}, nil, &output, &diagnostics); code != 0 ||
-		!strings.Contains(output.String(), "old.example") || !strings.Contains(output.String(), "scanning removed") {
+		!strings.Contains(output.String(), "old.example") || !strings.Contains(output.String(), "cannot be scanned") {
 		t.Fatalf("host list: %s", output.String())
 	}
 	diagnostics.Reset()
 	if code := Run([]string{"scan", "0123456789abcdef0123456789abcdef", "--checks", "config"}, nil, &output, &diagnostics); code == 0 ||
-		!strings.Contains(diagnostics.String(), "SSH scanning was removed") {
+		!strings.Contains(diagnostics.String(), "SSH scanning is not supported") {
 		t.Fatalf("scanning a legacy SSH host: code %d, %s", code, diagnostics.String())
 	}
 	output.Reset()

@@ -33,8 +33,8 @@ const (
 	// TransportAgent is a machine running `deaconguard agent`, enrolled with a
 	// one-time token; Address holds the hostname the agent reported.
 	TransportAgent = "agent"
-	// TransportSSH marks hosts registered before SSH scanning was removed in
-	// 0.2.0. They keep their scan history but can no longer be scanned.
+	// TransportSSH marks hosts from databases that predate DeaconGuard's
+	// agents. They keep their scan history but cannot be scanned.
 	TransportSSH = "ssh"
 )
 
@@ -52,20 +52,8 @@ var (
 // by the deaconguard system user the service runs as.
 const SystemDataDir = "/var/lib/deaconguard"
 
-// Before 0.3.0 DeaconGuard was called OpsArmor. Its data directory, database
-// file, and OPSARMOR_HOME variable are still found and moved to the new names.
-const (
-	legacyName         = "opsarmor"
-	legacyDatabaseName = "opsarmor.db"
-)
-
-// configuredHome is $DEACONGUARD_HOME, or $OPSARMOR_HOME from before the rename.
-func configuredHome() string {
-	if configured := os.Getenv("DEACONGUARD_HOME"); configured != "" {
-		return configured
-	}
-	return os.Getenv("OPSARMOR_HOME")
-}
+// configuredHome is $DEACONGUARD_HOME.
+func configuredHome() string { return os.Getenv("DEACONGUARD_HOME") }
 
 // DataDir is $DEACONGUARD_HOME if set; SystemDataDir for the account that owns
 // it, such as the service's; otherwise ~/.local/share/deaconguard.
@@ -83,39 +71,6 @@ func DataDir() string {
 		return filepath.Join(".", ".local", "share", "deaconguard")
 	}
 	return filepath.Join(home, ".local", "share", "deaconguard")
-}
-
-// adoptLegacyData moves data kept under the OpsArmor names into directory: the
-// ~/.local/share/opsarmor directory when directory is its default successor,
-// and opsarmor.db with its WAL files inside directory.
-func adoptLegacyData(directory string) error {
-	if configuredHome() == "" {
-		legacy := filepath.Join(filepath.Dir(directory), legacyName)
-		if filepath.Base(directory) == "deaconguard" && directory != SystemDataDir {
-			if _, err := os.Stat(directory); errors.Is(err, os.ErrNotExist) {
-				if info, err := os.Stat(legacy); err == nil && info.IsDir() {
-					if err := os.Rename(legacy, directory); err != nil {
-						return err
-					}
-				}
-			}
-		}
-	}
-	current := filepath.Join(directory, databaseName)
-	if _, err := os.Stat(current); !errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	old := filepath.Join(directory, legacyDatabaseName)
-	if _, err := os.Stat(old); err != nil {
-		return nil
-	}
-	// The WAL and shared-memory files belong to the database and move with it.
-	for _, suffix := range []string{"-wal", "-shm"} {
-		if err := os.Rename(old+suffix, current+suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-	return os.Rename(old, current)
 }
 
 func DatabasePath() string { return filepath.Join(DataDir(), databaseName) }
@@ -141,9 +96,6 @@ func database() (*sql.DB, error) {
 	defer databasesMu.Unlock()
 	if db, ok := databases[path]; ok {
 		return db, nil
-	}
-	if err := adoptLegacyData(filepath.Dir(path)); err != nil {
-		return nil, fmt.Errorf("move OpsArmor data to %s: %w", filepath.Dir(path), err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
@@ -315,8 +267,8 @@ const schemaV3 = `
 ALTER TABLE scans ADD COLUMN events_json TEXT;
 PRAGMA user_version = 3;`
 
-// schemaV4 records how each host is reached; hosts from earlier versions were
-// all SSH hosts, which 0.2.0 keeps for their history but no longer scans.
+// schemaV4 records how each host is reached; hosts from before it were all
+// SSH hosts, which are kept for their history but cannot be scanned.
 const schemaV4 = `
 ALTER TABLE hosts ADD COLUMN transport TEXT NOT NULL DEFAULT 'ssh';
 PRAGMA user_version = 4;`

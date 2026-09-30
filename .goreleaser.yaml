@@ -56,13 +56,6 @@ nfpms:
     formats:
       - deb
       - rpm
-    # DeaconGuard was called OpsArmor before 0.3.0; installing it replaces that package.
-    replaces:
-      - opsarmor
-    conflicts:
-      - opsarmor
-    provides:
-      - opsarmor
     bindir: /usr/bin
     contents:
       - src: README.md
@@ -107,5 +100,5 @@ release:
     owner: Cloudopsshell
     name: DeaconGuard
   name_template: "DeaconGuard v{{ .Version }}"
-  # Tags with a suffix, such as v0.2.0-rc.1, are published as pre-releases.
+  # Tags with a suffix, such as v1.2.0-rc.1, are published as pre-releases.
   prerelease: auto

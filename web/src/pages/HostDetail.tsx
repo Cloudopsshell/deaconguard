@@ -74,7 +74,7 @@ export function HostDetail() {
             <Button
               loading={running}
               disabled={!scannable(data)}
-              title={!scannable(data) ? "SSH scanning was removed in 0.2.0" : undefined}
+              title={!scannable(data) ? "SSH hosts cannot be scanned" : undefined}
               onClick={() => setScanning({})}
             >
               {!running && <Play className="size-4" />}
@@ -107,7 +107,7 @@ export function HostDetail() {
           <div className="p-5 text-sm">
             <h2 className="font-semibold">This SSH host can no longer be scanned</h2>
             <p className="mt-1 text-slate-600 dark:text-slate-300">
-              Version 0.2.0 removed SSH scanning. This host's earlier results and scan history stay available below. To scan it
+              DeaconGuard does not scan over SSH. This host's earlier results and scan history stay available below. To scan it
               again, install DeaconGuard on it and enroll it as an agent from the Agents page; you can remove this entry when you no longer
               need its history.
             </p>

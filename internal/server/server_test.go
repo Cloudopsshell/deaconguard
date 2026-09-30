@@ -471,7 +471,7 @@ func TestSSHHostsCanNoLongerBeAddedOrScanned(t *testing.T) {
 		t.Fatalf("legacy hosts = %+v", hosts)
 	}
 	response := request(t, s, http.MethodPost, "/api/hosts/"+hosts[0].ID+"/scans", map[string]any{"checks": []string{checks.Config}})
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "SSH scanning was removed") {
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "SSH scanning is not supported") {
 		t.Fatalf("scanning a legacy SSH host = %d %s", response.Code, response.Body.String())
 	}
 }

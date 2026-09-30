@@ -8,7 +8,7 @@ export function agentOnline(host: HostSummary): boolean {
   return Date.now() - new Date(host.agent.last_seen_at).getTime() < onlineWindowMs;
 }
 
-/** Whether DeaconGuard can scan the host now; SSH hosts from before 0.2.0 cannot. */
+/** Whether DeaconGuard can scan the host now; SSH hosts from older databases cannot. */
 export function scannable(host: Host): boolean {
   return host.transport === "local" || host.transport === "agent";
 }
@@ -20,7 +20,7 @@ export function connectionLabel(host: HostSummary): string {
     const agent = host.agent;
     return `DeaconGuard agent · runs as ${host.username}${agent?.version ? ` · agent ${agent.version}` : ""}${agent?.remote ? ` · from ${agent.remote}` : ""}`;
   }
-  return `${host.username}@${host.address} · SSH host · scanning removed in 0.2.0, earlier results kept`;
+  return `${host.username}@${host.address} · SSH host · cannot be scanned, earlier results kept`;
 }
 
 /** A short label for lists. */

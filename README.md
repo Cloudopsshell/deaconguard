@@ -1,7 +1,5 @@
 # DeaconGuard
 
-*Formerly OpsArmor.*
-
 [![Release](https://img.shields.io/github/v/release/Cloudopsshell/DeaconGuard)](https://github.com/Cloudopsshell/DeaconGuard/releases/latest)
 [![CI](https://github.com/Cloudopsshell/DeaconGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/DeaconGuard/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/Cloudopsshell/DeaconGuard)](LICENSE)
@@ -13,42 +11,40 @@ One binary does two jobs:
 - **Server:** an HTTPS dashboard with sign-in and an audit log. It scans the machine it runs on and the machines running the agent.
 - **Agent:** runs on each machine to scan. It enrolls once with a one-time token from the server, which is valid for 24 hours. After that it connects out to the server, runs the scans the server asks for, and sends back the results. Target machines need no open ports and no internet access, because the server evaluates their packages against the advisories.
 
-For a single machine, `deaconguard serve` still gives a local dashboard without accounts.
-
-> **SSH scanning was removed in 0.2.0.** Hosts registered for SSH scanning by earlier versions keep their results but can no longer be scanned. Install the agent on those machines instead; see [Update](#update).
+For a single machine, `deaconguard serve` gives a local dashboard without accounts.
 
 - [Install](#install) · [Getting started](#getting-started) · [Run the server](#run-the-server) · [Scan other machines with the agent](#scan-other-machines-with-the-agent) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
 - [Checks](#checks) · [Web UI](#web-ui) · [Supported distributions](#supported-distributions) · [Versioning](#versioning) · [Development](#development) · [Security](#security)
 
 ## Requirements
 
-- **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can view results from earlier versions but cannot scan.
+- **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
 - **Network:** the server needs HTTPS access to the distributions' advisory feeds. Agents only need to reach the server, on port 8443 by default.
 
 ## Install
 
-Releases are published on the [Releases page](https://github.com/Cloudopsshell/DeaconGuard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Replace `0.3.0` below with the version you want.
+Releases are published on the [Releases page](https://github.com/Cloudopsshell/DeaconGuard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Replace `0.1.0` below with the version you want.
 
-Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.3.0 -R Cloudopsshell/DeaconGuard -p 'FILE'`.
+Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.1.0 -R Cloudopsshell/DeaconGuard -p 'FILE'`.
 
 ### Debian and Ubuntu
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.3.0/deaconguard_0.3.0_linux_amd64.deb
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.3.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.deb
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-sudo apt install ./deaconguard_0.3.0_linux_amd64.deb
+sudo apt install ./deaconguard_0.1.0_linux_amd64.deb
 deaconguard version
 ```
 
 ### RHEL, Fedora, and Amazon Linux
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.3.0/deaconguard_0.3.0_linux_amd64.rpm
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.3.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.rpm
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-sudo dnf install ./deaconguard_0.3.0_linux_amd64.rpm
+sudo dnf install ./deaconguard_0.1.0_linux_amd64.rpm
 deaconguard version
 ```
 
@@ -57,15 +53,15 @@ Use `arm64` instead of `amd64` on ARM machines such as AWS Graviton.
 ### Other Linux systems and macOS
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.3.0/deaconguard_0.3.0_linux_amd64.tar.gz
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.3.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.tar.gz
+curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
-tar -xzf deaconguard_0.3.0_linux_amd64.tar.gz deaconguard
+tar -xzf deaconguard_0.1.0_linux_amd64.tar.gz deaconguard
 sudo install -m 0755 deaconguard /usr/local/bin/deaconguard
 deaconguard version
 ```
 
-Pick the archive for your system: `linux_amd64`, `linux_arm64`, `darwin_arm64` (Apple silicon), or `darwin_amd64` (Intel Mac); on macOS, check with `shasum -a 256` instead of `sha256sum`. macOS builds can open results from earlier versions but cannot scan. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
+Pick the archive for your system: `linux_amd64`, `linux_arm64`, `darwin_arm64` (Apple silicon), or `darwin_amd64` (Intel Mac); on macOS, check with `shasum -a 256` instead of `sha256sum`. macOS builds can run the server and the CLI but cannot scan the Mac itself. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
 
 ### From source
 
@@ -147,10 +143,6 @@ Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.
 | Archive | Download the new archive and replace `/usr/local/bin/deaconguard` with the binary inside |
 
 Updating the package restarts running `deaconguard-server` and `deaconguard-agent` services. Stop a foreground `deaconguard serve` before replacing the binary and start it again afterwards. Update the server before its agents. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
-
-**Upgrading from OpsArmor to DeaconGuard 0.3.0:** OpsArmor was renamed DeaconGuard. Install the `deaconguard` package, which replaces the `opsarmor` package, or put the `deaconguard` binary in place of `opsarmor`. On its first start, DeaconGuard moves `~/.local/share/opsarmor/` to `~/.local/share/deaconguard/` and renames `opsarmor.db` to `deaconguard.db`. `OPSARMOR_HOME` is still honored; new setups should use `DEACONGUARD_HOME`. Scripts that call `opsarmor` need to call `deaconguard` instead.
-
-**Upgrading to 0.2.0:** SSH scanning is removed. Hosts you registered for SSH scanning stay in the list with their full scan history, marked as no longer scannable; remove them when you no longer need their results. To keep scanning such a server, install DeaconGuard on it and run `deaconguard host add` there. The `known_hosts` file in the data directory is no longer used and can be deleted. The container image and Helm chart are no longer published, as they only ran SSH scans.
 
 ## Back up and restore
 

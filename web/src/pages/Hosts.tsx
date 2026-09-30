@@ -46,7 +46,7 @@ export function Hosts() {
         description={
           network
             ? "This server's own machine and the machines running the DeaconGuard agent."
-            : "The machine DeaconGuard runs on, plus SSH hosts from earlier versions, kept for their results."
+            : "The machine DeaconGuard runs on. Run it as a server to scan other machines with the agent."
         }
         action={
           <>
@@ -166,7 +166,7 @@ function HostRow({ host }: { host: HostSummary }) {
             variant="secondary"
             loading={running}
             disabled={!scannable(host)}
-            title={!scannable(host) ? "SSH scanning was removed in 0.2.0" : undefined}
+            title={!scannable(host) ? "SSH hosts cannot be scanned" : undefined}
             onClick={(event) => {
               event.stopPropagation();
               setScanning(true);

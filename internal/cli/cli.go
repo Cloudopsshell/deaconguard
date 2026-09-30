@@ -122,7 +122,7 @@ func runHost(arguments []string, output io.Writer) error {
 				sudo = "  (sudo allowed)"
 			}
 			if !host.Scannable() {
-				fmt.Fprintf(output, "%s  %s  (SSH host; scanning removed in 0.2.0, earlier results kept)\n", host.ID, host.Address)
+				fmt.Fprintf(output, "%s  %s  (SSH host; cannot be scanned, earlier results kept)\n", host.ID, host.Address)
 				continue
 			}
 			if host.Transport == store.TransportAgent {
