@@ -1,6 +1,6 @@
 [Unit]
 Description=DeaconGuard server
-Documentation=https://github.com/Cloudopsshell/DeaconGuard#run-the-server
+Documentation=https://github.com/Cloudopsshell/deaconguard#run-the-server
 After=network-online.target
 Wants=network-online.target
 
