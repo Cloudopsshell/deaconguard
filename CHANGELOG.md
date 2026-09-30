@@ -8,6 +8,21 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+OpsArmor becomes a server with agents: one dashboard now scans many machines, without SSH.
+
+### Added
+
+- **Server mode**: `opsarmor serve --listen 0.0.0.0:8443` (the new `opsarmor-server` service) serves the dashboard over HTTPS with a self-signed certificate created on first start, or your own with `--tls-cert`/`--tls-key`. It requires sign-in with accounts managed by `opsarmor user add|passwd|list|remove`, limits failed sign-ins, and records sign-ins, tokens, enrollments, scans and removals in an **Audit log** page.
+- **Agents**: `opsarmor agent enroll TOKEN` enrolls a machine with a one-time token, created on the new **Agents** page or with `opsarmor token create`. Tokens are valid for 24 hours and can be revoked. The `opsarmor-agent` service then connects out to the server over HTTPS and runs the scans it asks for; the machine needs no open ports and no internet access. Tokens carry the server certificate's fingerprint, which agents pin.
+- Agent hosts are scanned from the dashboard or with `opsarmor scan HOST_ID` on the server. Scans wait for an offline agent for up to an hour, and a waiting scan can be cancelled. The server evaluates agents' packages against the advisories itself.
+- systemd units `opsarmor-server.service` and `opsarmor-agent.service`, and an `opsarmor` system user, in the `.deb` and `.rpm` packages. Neither service is enabled on install.
+
+### Changed
+
+- Checks run directly, without sudo, when OpsArmor runs as root.
+- Removing an agent host revokes its agent.
+- **Upgrade notes:** the database is upgraded to a new schema on first start. `opsarmor serve` on localhost works as before, without sign-in. The CI workflow no longer runs a full local scan.
+
 ## [0.2.0] - 2026-09-29
 
 This release removes SSH scanning: OpsArmor now scans the Linux machine it is installed on. An agent that enrolls with a one-time token, so one OpsArmor server covers many machines, is planned to follow.

@@ -49,10 +49,10 @@ func ExitStatus(err error) (int, bool) {
 
 // Inventory is what the package vulnerability check evaluates.
 type Inventory struct {
-	OSRelease  string
-	DPKGStatus string
-	RPMQuery   string
-	Kernel     string
+	OSRelease  string `json:"os_release"`
+	DPKGStatus string `json:"dpkg_status,omitempty"`
+	RPMQuery   string `json:"rpm_query,omitempty"`
+	Kernel     string `json:"kernel"`
 }
 
 // OSRelease reads /etc/os-release.

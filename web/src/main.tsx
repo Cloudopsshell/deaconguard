@@ -11,6 +11,9 @@ import { Vulnerabilities } from "./pages/Vulnerabilities";
 import { VulnerabilityDetail } from "./pages/VulnerabilityDetail";
 import { NotFound } from "./pages/NotFound";
 import { PageError } from "./pages/PageError";
+import { Login } from "./pages/Login";
+import { Agents } from "./pages/Agents";
+import { Audit } from "./pages/Audit";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -18,6 +21,7 @@ const queryClient = new QueryClient({
 });
 
 const router = createBrowserRouter([
+  { path: "/login", element: <Login /> },
   {
     element: <Layout />,
     // A pathless child keeps the sidebar and scan console on screen when a page fails.
@@ -31,6 +35,8 @@ const router = createBrowserRouter([
           { path: "/scans/:scanId", element: <ScanReport /> },
           { path: "/vulnerabilities", element: <Vulnerabilities /> },
           { path: "/vulnerabilities/:cve", element: <VulnerabilityDetail /> },
+          { path: "/agents", element: <Agents /> },
+          { path: "/audit", element: <Audit /> },
           { path: "*", element: <NotFound /> },
         ],
       },

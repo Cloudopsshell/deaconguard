@@ -1,28 +1,21 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
-	"time"
 
 	"golang.org/x/term"
 
+	"opsarmor/internal/agent"
 	"opsarmor/internal/buildinfo"
 	"opsarmor/internal/checks"
 	"opsarmor/internal/local"
 	"opsarmor/internal/scan"
-	"opsarmor/internal/server"
 	"opsarmor/internal/store"
-	"opsarmor/web"
 )
 
 func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int {
@@ -49,6 +42,12 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runReport(arguments[1:], output)
 	case "serve":
 		err = runServe(arguments[1:], output)
+	case "user":
+		err = runUser(arguments[1:], input, output, diagnostics)
+	case "agent":
+		err = runAgent(arguments[1:], output, diagnostics)
+	case "token":
+		err = runToken(arguments[1:], output)
 	case "version", "--version", "-v":
 		fmt.Fprintln(output, buildinfo.String())
 		return 0
@@ -60,6 +59,10 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 	}
 	if err != nil {
 		fmt.Fprintf(diagnostics, "opsarmor: %v\n", err)
+		if errors.Is(err, agent.ErrRemoved) {
+			// The agent service does not restart on this status.
+			return 3
+		}
 		return 1
 	}
 	return 0
@@ -110,7 +113,7 @@ func runHost(arguments []string, output io.Writer) error {
 			return err
 		}
 		if len(hosts) == 0 {
-			fmt.Fprintln(output, "No hosts registered. Run: opsarmor host add ADDRESS --username USER")
+			fmt.Fprintln(output, "No hosts registered. Run opsarmor host add to add this machine, or enroll agents: opsarmor token create")
 			return nil
 		}
 		for _, host := range hosts {
@@ -120,6 +123,10 @@ func runHost(arguments []string, output io.Writer) error {
 			}
 			if !host.Scannable() {
 				fmt.Fprintf(output, "%s  %s  (SSH host; scanning removed in 0.2.0, earlier results kept)\n", host.ID, host.Address)
+				continue
+			}
+			if host.Transport == store.TransportAgent {
+				fmt.Fprintf(output, "%s  %s  (agent)\n", host.ID, host.Address)
 				continue
 			}
 			fmt.Fprintf(output, "%s  this machine (%s, as %s)%s\n", host.ID, host.Address, host.Username, sudo)
@@ -187,6 +194,9 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 		}
 		if host, err = store.GetHost(hostID); err != nil {
 			return err
+		}
+		if host.Transport == store.TransportAgent {
+			return scanThroughAgent(host, selected, asJSON, output, diagnostics)
 		}
 	}
 	report, err := scan.Run(host, selected, scan.Options{
@@ -291,48 +301,6 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 	return nil
 }
 
-const defaultListen = "127.0.0.1:7480"
-
-func runServe(arguments []string, output io.Writer) error {
-	listen := defaultListen
-	for index := 0; index < len(arguments); index++ {
-		if arguments[index] != "--listen" || index+1 >= len(arguments) {
-			return fmt.Errorf("usage: opsarmor serve [--listen 127.0.0.1:PORT]")
-		}
-		index++
-		listen = arguments[index]
-	}
-	if !server.IsLoopback(listen) {
-		return fmt.Errorf("the web UI only listens on a loopback address such as %s", defaultListen)
-	}
-	handler, err := server.New(web.Files(), nil)
-	if err != nil {
-		return err
-	}
-	listener, err := net.Listen("tcp", listen)
-	if err != nil {
-		return err
-	}
-	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	go func() {
-		<-ctx.Done()
-		// Restore default signal handling so a second Ctrl+C exits at once.
-		stop()
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		httpServer.Shutdown(shutdown)
-	}()
-	fmt.Fprintf(output, "OpsArmor %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
-	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	fmt.Fprintln(output, "Waiting for running scans to finish (press Ctrl+C again to quit now)...")
-	handler.Close()
-	return nil
-}
-
 func showCheckResults(report map[string]any, output io.Writer) {
 	results, ok := report["check_results"].(map[string]any)
 	if !ok {
@@ -367,17 +335,32 @@ func showCheckResults(report map[string]any, output io.Writer) {
 }
 
 func usage(output io.Writer) {
-	fmt.Fprintln(output, `OpsArmor scans the Linux machine it runs on against official security advisories.
+	fmt.Fprintln(output, `OpsArmor scans Linux machines against official security advisories. It
+scans the machine it runs on, and machines running the OpsArmor agent that
+have enrolled with an OpsArmor server.
 
-Commands:
+Scanning:
   opsarmor host add [--allow-sudo]    register this machine (Linux)
   opsarmor host list
   opsarmor host sudo HOST_ID on|off
-  opsarmor host remove HOST_ID
+  opsarmor host remove HOST_ID        for an agent host, also revokes its agent
   opsarmor scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
   opsarmor scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   opsarmor report REPORT_ID [--json]
-  opsarmor serve [--listen 127.0.0.1:PORT]   web UI, default http://127.0.0.1:7480
+
+Web UI and server:
+  opsarmor serve                       local web UI at http://127.0.0.1:7480, no sign-in
+  opsarmor serve --listen 0.0.0.0:8443 [--tls-cert FILE --tls-key FILE]
+                                       server: HTTPS dashboard with sign-in, agents enroll
+  opsarmor user add|passwd USERNAME [--password-stdin]
+  opsarmor user list | remove USERNAME
+  opsarmor token create --server-url https://HOST:8443   one-time agent token, valid 24 hours
+
+Agent (on each machine to scan):
+  opsarmor agent enroll TOKEN [--force]   enroll with the server that made TOKEN
+  opsarmor agent run                      wait for scans (the opsarmor-agent service)
+  opsarmor agent status
+
   opsarmor version`)
 }
 

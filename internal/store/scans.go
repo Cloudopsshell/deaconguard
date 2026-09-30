@@ -11,8 +11,10 @@ import (
 )
 
 // A running scan can pause in a needs_* status while it waits for the user to
-// approve a host key or enter a passphrase or password, then resumes.
+// approve a host key or enter a passphrase or password, then resumes. A scan of
+// an agent host is queued until its agent picks it up.
 const (
+	ScanQueued          = "queued"
 	ScanRunning         = "running"
 	ScanSucceeded       = "succeeded"
 	ScanFailed          = "failed"
@@ -22,7 +24,16 @@ const (
 	ScanNeedsSudo       = "needs_sudo"
 )
 
-const unfinishedStatuses = "('running', 'needs_trust', 'needs_passphrase', 'needs_password', 'needs_sudo')"
+const unfinishedStatuses = "('queued', 'running', 'needs_trust', 'needs_passphrase', 'needs_password', 'needs_sudo')"
+
+// activeStatuses are the unfinished statuses of a scan that some process is
+// working on, as opposed to one queued for an agent.
+const activeStatuses = "('running', 'needs_trust', 'needs_passphrase', 'needs_password', 'needs_sudo')"
+
+// IsUnfinished reports whether a scan may still produce a result.
+func IsUnfinished(status string) bool {
+	return status == ScanQueued || status == ScanRunning || IsWaiting(status)
+}
 
 func IsWaiting(status string) bool {
 	return status == ScanNeedsTrust || status == ScanNeedsPassphrase || status == ScanNeedsPassword || status == ScanNeedsSudo
@@ -115,6 +126,18 @@ func scanScan(row rowScanner) (Scan, error) {
 
 // CreateScan records a scan of the given checks that has started for host.
 func CreateScan(host Host, checks []string) (Scan, error) {
+	return createScan(host, checks, ScanRunning)
+}
+
+// QueueScan records a scan of an agent host for its agent to pick up.
+func QueueScan(host Host, checks []string) (Scan, error) {
+	if host.Transport != TransportAgent {
+		return Scan{}, fmt.Errorf("only agent hosts have queued scans")
+	}
+	return createScan(host, checks, ScanQueued)
+}
+
+func createScan(host Host, checks []string, status string) (Scan, error) {
 	if len(checks) == 0 {
 		return Scan{}, fmt.Errorf("choose at least one check")
 	}
@@ -127,7 +150,7 @@ func CreateScan(host Host, checks []string) (Scan, error) {
 		return Scan{}, err
 	}
 	if _, err := db.Exec("INSERT INTO scans (id, host_id, address, status, started_at, checks) VALUES (?, ?, ?, ?, ?, ?)",
-		id, host.ID, host.Address, ScanRunning, nowText(), encodeChecks(checks)); err != nil {
+		id, host.ID, host.Address, status, nowText(), encodeChecks(checks)); err != nil {
 		return Scan{}, err
 	}
 	return GetScan(id)
@@ -163,7 +186,7 @@ func WaitForInput(id, status, message, fingerprint string) error {
 // ResumeScan returns a waiting scan to running once the user has responded.
 func ResumeScan(id string) error {
 	return updateScan(`UPDATE scans SET status = ?, error = '', host_key_fingerprint = '' WHERE id = ? AND status IN `+
-		unfinishedStatuses, ScanRunning, id)
+		activeStatuses, ScanRunning, id)
 }
 
 // FailScan records why an unfinished scan stopped without a report.
@@ -213,7 +236,8 @@ const KeepScansPerHost = 10
 
 var ErrScanInProgress = errors.New("a scan that is still running cannot be deleted")
 
-// DeleteScan removes one finished scan with its findings and log.
+// DeleteScan removes one finished scan with its findings and log. A scan still
+// queued for its agent is cancelled this way too.
 func DeleteScan(id string) error {
 	scan, err := GetScan(id)
 	if err != nil {
@@ -225,6 +249,17 @@ func DeleteScan(id string) error {
 	db, err := database()
 	if err != nil {
 		return err
+	}
+	if scan.Status == ScanQueued {
+		// The agent may have claimed it in the meantime.
+		result, err := db.Exec("DELETE FROM scans WHERE id = ? AND status = ?", id, ScanQueued)
+		if err != nil {
+			return err
+		}
+		if changed, _ := result.RowsAffected(); changed == 0 {
+			return ErrScanInProgress
+		}
+		return nil
 	}
 	_, err = db.Exec("DELETE FROM scans WHERE id = ?", id)
 	return err
@@ -276,7 +311,7 @@ func PruneScans(hostID string, keep int) (int, error) {
 			rows.Close()
 			return 0, err
 		}
-		if position >= keep && !protected[id] && status != ScanRunning && !IsWaiting(status) {
+		if position >= keep && !protected[id] && !IsUnfinished(status) {
 			stale = append(stale, id)
 		}
 	}
@@ -307,14 +342,92 @@ func PruneAllScans(keep int) error {
 }
 
 // InterruptRunningScans fails scans left unfinished by a previous process.
+// Queued scans stay queued for their agents.
 func InterruptRunningScans() error {
 	db, err := database()
 	if err != nil {
 		return err
 	}
 	_, err = db.Exec(`UPDATE scans SET status = ?, error = ?, host_key_fingerprint = '', finished_at = COALESCE(finished_at, ?)
-		WHERE status IN `+unfinishedStatuses, ScanFailed, "scan was interrupted before it finished", nowText())
+		WHERE status IN `+activeStatuses, ScanFailed, "scan was interrupted before it finished", nowText())
 	return err
+}
+
+// ClaimQueuedScan marks the oldest queued scan of hostID as running and
+// returns it; found is false when nothing is queued.
+func ClaimQueuedScan(hostID string) (scan Scan, found bool, err error) {
+	db, err := database()
+	if err != nil {
+		return Scan{}, false, err
+	}
+	for {
+		var id string
+		err := db.QueryRow("SELECT id FROM scans WHERE host_id = ? AND status = ? ORDER BY started_at, rowid LIMIT 1",
+			hostID, ScanQueued).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return Scan{}, false, nil
+		}
+		if err != nil {
+			return Scan{}, false, err
+		}
+		result, err := db.Exec("UPDATE scans SET status = ? WHERE id = ? AND status = ?", ScanRunning, id, ScanQueued)
+		if err != nil {
+			return Scan{}, false, err
+		}
+		if changed, _ := result.RowsAffected(); changed == 1 {
+			scan, err := GetScan(id)
+			return scan, err == nil, err
+		}
+		// Another request claimed or cancelled it first; look again.
+	}
+}
+
+// ExpireQueuedScans fails scans that stayed queued since before cutoff,
+// because their agent never picked them up, and returns their IDs.
+func ExpireQueuedScans(cutoff time.Time, message string) ([]string, error) {
+	db, err := database()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query("SELECT id FROM scans WHERE status = ? AND started_at < ?", ScanQueued, cutoff.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	expired := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if err := updateScan(`UPDATE scans SET status = ?, error = ?, finished_at = ? WHERE id = ? AND status = ?`,
+			ScanFailed, message, nowText(), id, ScanQueued); err == nil {
+			expired = append(expired, id)
+		}
+	}
+	return expired, nil
+}
+
+// UnfinishedScan returns hostID's queued or running scan, if it has one.
+func UnfinishedScan(hostID string) (Scan, bool, error) {
+	db, err := database()
+	if err != nil {
+		return Scan{}, false, err
+	}
+	scan, err := scanScan(db.QueryRow("SELECT "+scanColumns+" FROM scans WHERE host_id = ? AND status IN "+
+		unfinishedStatuses+" ORDER BY started_at DESC, rowid DESC LIMIT 1", hostID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Scan{}, false, nil
+	}
+	return scan, err == nil, err
 }
 
 func GetScan(id string) (Scan, error) {
@@ -362,6 +475,8 @@ type HostSummary struct {
 	LastReport *Scan `json:"last_report"`
 	// Checks holds the newest successful result of every check run on the host.
 	Checks map[string]CheckSummary `json:"checks"`
+	// Agent describes the agent of an agent host.
+	Agent *Agent `json:"agent,omitempty"`
 }
 
 // CheckSummary is one check's result within a scan.
@@ -387,9 +502,16 @@ func HostSummaries() ([]HostSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	agents, err := Agents()
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]HostSummary, 0, len(hosts))
 	for _, host := range hosts {
 		summary := HostSummary{Host: host}
+		if agent, ok := agents[host.ID]; ok {
+			summary.Agent = &agent
+		}
 		last, err := scanScan(db.QueryRow("SELECT "+scanColumns+
 			" FROM scans WHERE host_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1", host.ID))
 		if err == nil {
