@@ -45,7 +45,7 @@ nfpms:
     ids:
       - deaconguard
     vendor: CloudOpsShell
-    homepage: https://github.com/Cloudopsshell/DeaconGuard
+    homepage: https://github.com/Cloudopsshell/deaconguard
     maintainer: CloudOpsShell <opensource@cloudopsshell.com>
     description: >-
       Linux security scanner: package vulnerabilities from official
@@ -98,7 +98,7 @@ snapshot:
 release:
   github:
     owner: Cloudopsshell
-    name: DeaconGuard
+    name: deaconguard
   name_template: "DeaconGuard v{{ .Version }}"
   # Tags with a suffix, such as v1.2.0-rc.1, are published as pre-releases.
   prerelease: auto

@@ -1,8 +1,8 @@
 # DeaconGuard
 
-[![Release](https://img.shields.io/github/v/release/Cloudopsshell/DeaconGuard)](https://github.com/Cloudopsshell/DeaconGuard/releases/latest)
-[![CI](https://github.com/Cloudopsshell/DeaconGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/DeaconGuard/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/Cloudopsshell/DeaconGuard)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Cloudopsshell/deaconguard)](https://github.com/Cloudopsshell/deaconguard/releases/latest)
+[![CI](https://github.com/Cloudopsshell/deaconguard/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/deaconguard/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Cloudopsshell/deaconguard)](LICENSE)
 
 DeaconGuard is a Linux security scanner written in Go. It runs fixed, read-only commands on a Linux machine and evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are DeaconGuard code; DeaconGuard never installs software, and the only third-party engine it runs is a ClamAV that is already installed, when you choose the antivirus check.
 
@@ -24,15 +24,15 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 
 ## Install
 
-Releases are published on the [Releases page](https://github.com/Cloudopsshell/DeaconGuard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Replace `0.1.0` below with the version you want.
+Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Replace `0.1.0` below with the version you want.
 
-Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.1.0 -R Cloudopsshell/DeaconGuard -p 'FILE'`.
+Downloads need no GitHub account. With the [GitHub CLI](https://cli.github.com) you can also use `gh release download v0.1.0 -R Cloudopsshell/deaconguard -p 'FILE'`.
 
 ### Debian and Ubuntu
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.deb
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.deb
+curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
 sudo apt install ./deaconguard_0.1.0_linux_amd64.deb
 deaconguard version
@@ -41,8 +41,8 @@ deaconguard version
 ### RHEL, Fedora, and Amazon Linux
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.rpm
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.rpm
+curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
 sudo dnf install ./deaconguard_0.1.0_linux_amd64.rpm
 deaconguard version
@@ -53,8 +53,8 @@ Use `arm64` instead of `amd64` on ARM machines such as AWS Graviton.
 ### Other Linux systems and macOS
 
 ```sh
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.tar.gz
-curl -LO https://github.com/Cloudopsshell/DeaconGuard/releases/download/v0.1.0/checksums.txt
+curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/deaconguard_0.1.0_linux_amd64.tar.gz
+curl -LO https://github.com/Cloudopsshell/deaconguard/releases/download/v0.1.0/checksums.txt
 sha256sum --check --ignore-missing checksums.txt
 tar -xzf deaconguard_0.1.0_linux_amd64.tar.gz deaconguard
 sudo install -m 0755 deaconguard /usr/local/bin/deaconguard
@@ -68,7 +68,7 @@ Pick the archive for your system: `linux_amd64`, `linux_arm64`, `darwin_arm64` (
 Requires Go 1.26 or later and, for the web UI, Node.js 24 with npm.
 
 ```sh
-git clone https://github.com/Cloudopsshell/DeaconGuard.git && cd DeaconGuard
+git clone https://github.com/Cloudopsshell/deaconguard.git && cd deaconguard
 make build          # builds the web UI and the deaconguard binary
 ./deaconguard version
 ```
