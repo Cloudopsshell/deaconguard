@@ -25,8 +25,8 @@ export interface Host {
   username: string;
   allow_sudo: boolean;
   /** "local" is the machine DeaconGuard runs on; "agent" machines run the DeaconGuard agent and
-   * enrolled with this server. "ssh" hosts were registered before SSH scanning was removed in
-   * 0.2.0; their results remain but they cannot be scanned. */
+   * enrolled with this server. "ssh" hosts come from older databases;
+   * their results remain but they cannot be scanned. */
   transport: "local" | "agent" | "ssh";
 }
 

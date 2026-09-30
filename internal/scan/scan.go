@@ -26,8 +26,8 @@ const maxConcurrentEvaluations = 2
 var evaluationSlots = make(chan struct{}, maxConcurrentEvaluations)
 
 // ErrSSHRemoved is returned for hosts registered for SSH scanning, which was
-// removed in 0.2.0. Their earlier results stay available.
-var ErrSSHRemoved = errors.New("SSH scanning was removed in 0.2.0; this host's earlier results remain available, but to scan it, install the DeaconGuard agent on it and enroll it with this server")
+// not supported. Their earlier results stay available.
+var ErrSSHRemoved = errors.New("SSH scanning is not supported; this host's earlier results remain available, but to scan it, install the DeaconGuard agent on it and enroll it with this server")
 
 // ErrAgentHost is returned when an agent host is scanned in-process; its
 // agent runs the scan instead.
