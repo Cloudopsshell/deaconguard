@@ -33,7 +33,7 @@ Each method below downloads into `/tmp`, verifies the checksum, and installs. Se
 ### Debian and Ubuntu
 
 ```sh
-VERSION=0.1.0
+VERSION=0.1.1
 ARCH=$(dpkg --print-architecture)
 cd /tmp
 curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_linux_${ARCH}.deb"
@@ -46,7 +46,7 @@ deaconguard version
 ### RHEL, Fedora, and Amazon Linux
 
 ```sh
-VERSION=0.1.0
+VERSION=0.1.1
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 cd /tmp
 curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_linux_${ARCH}.rpm"
@@ -59,7 +59,7 @@ deaconguard version
 ### Other Linux systems and macOS
 
 ```sh
-VERSION=0.1.0
+VERSION=0.1.1
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 cd /tmp
@@ -73,7 +73,7 @@ deaconguard version
 
 macOS builds can run the server and the CLI but cannot scan the Mac itself. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
 
-With the [GitHub CLI](https://cli.github.com), `gh release download v0.1.0 -R Cloudopsshell/deaconguard -p 'FILE'` downloads a release file instead of `curl`.
+With the [GitHub CLI](https://cli.github.com), `gh release download v0.1.1 -R Cloudopsshell/deaconguard -p 'FILE'` downloads a release file instead of `curl`.
 
 ### From source
 
@@ -86,6 +86,17 @@ make build          # builds the web UI and the deaconguard binary
 ```
 
 ## Getting started
+
+**Which mode do I need?** The same install runs in either mode:
+
+| | Server mode | Local mode |
+| --- | --- | --- |
+| For | one dashboard for many machines | checking one machine on its own |
+| Dashboard | `https://SERVER:8443`, with sign-in | `http://127.0.0.1:7480`, this machine only, no sign-in |
+| Scans | the server's machine and every enrolled agent | only the machine it runs on |
+| Start with | [Run the server](#run-the-server), then [add agents](#scan-other-machines-with-the-agent) | the steps below |
+
+### Local mode
 
 On the Linux machine you want to scan, register it once and open the dashboard:
 
