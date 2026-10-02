@@ -16,7 +16,7 @@ concurrency:
 jobs:
   go:
     name: Go tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, deaconguard]
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -49,7 +49,7 @@ jobs:
 
   web:
     name: Web UI build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, deaconguard]
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -71,7 +71,7 @@ jobs:
 
   release-config:
     name: Release config
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, deaconguard]
     steps:
       - name: Check out source
         uses: actions/checkout@v7
