@@ -48,6 +48,8 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runAgent(arguments[1:], output, diagnostics)
 	case "token":
 		err = runToken(arguments[1:], output)
+	case "setup":
+		err = runSetup(arguments[1:], output, diagnostics)
 	case "version", "--version", "-v":
 		fmt.Fprintln(output, buildinfo.String())
 		return 0
@@ -347,6 +349,13 @@ Scanning:
   deaconguard scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
   deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   deaconguard report REPORT_ID [--json]
+
+Setup (as root, after installing the .deb or .rpm; install.sh runs these):
+  deaconguard setup server [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE]
+                           [--admin-user NAME] [--admin-password-file FILE]
+                                       create the first account, start the server service
+  deaconguard setup agent [--token-file FILE] [--force]
+                                       enroll (asks for the token), start the agent service
 
 Web UI and server:
   deaconguard serve                       local web UI at http://127.0.0.1:7480, no sign-in

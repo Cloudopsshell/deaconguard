@@ -8,6 +8,22 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Install script**: `curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --server` (or `--agent`) installs the right `.deb` or `.rpm` for the machine, after checking the release's signature and the package's checksum, and sets it up. Running it again upgrades. `--version` installs a specific release.
+- **`deaconguard setup server`** creates the first dashboard account, saves `--listen` and `--tls-cert`/`--tls-key` settings in a systemd drop-in that upgrades keep, starts the server, and prints its addresses and certificate fingerprint. `--admin-user` and `--admin-password-file` set it up without prompts.
+- **`deaconguard setup agent`** asks for the enrollment token without showing it, or reads it from `--token-file` or `DEACONGUARD_TOKEN`, enrolls the machine, and starts the agent. An enrolled machine keeps its enrollment unless `--force` is given.
+- Signed releases: `checksums.txt.sig`, made with the DeaconGuard release key, and `checksums.txt.sigstore.json`, a Sigstore signature of the release workflow. See **Verify a release** in the README.
+
+### Changed
+
+- The **Enroll a machine** dialog and `deaconguard token create` show the install command for the server's version, and the token separately to paste when asked, instead of a command line that contains the token.
+- `deaconguard user add` and `user passwd` ask for the password on the terminal also when standard input is not one, such as under `curl ... | sudo sh`.
+
+### Removed
+
+- The container image no longer has the `/home/nonroot/.ssh` and `/ssh-keys` directories left over from SSH scanning.
+
 ## [0.1.1] - 2026-09-30
 
 ### Fixed

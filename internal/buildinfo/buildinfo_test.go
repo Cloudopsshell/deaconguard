@@ -17,3 +17,19 @@ func TestStringShortensCommitButKeepsDirtyMarker(t *testing.T) {
 		t.Fatalf("UserAgent() = %q", UserAgent())
 	}
 }
+
+func TestInstallCommand(t *testing.T) {
+	saved := Version
+	defer func() { Version = saved }()
+	for version, want := range map[string]string{
+		"0.2.0":                  "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/v0.2.0/install.sh | sudo sh -s -- --agent --version 0.2.0",
+		"0.2.0-rc.1":             "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/v0.2.0-rc.1/install.sh | sudo sh -s -- --agent --version 0.2.0-rc.1",
+		"dev":                    "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent",
+		"0.1.1-3-gabc1234-dirty": "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent",
+	} {
+		Version = version
+		if got := InstallCommand("agent"); got != want {
+			t.Errorf("InstallCommand for %s = %q, want %q", version, got, want)
+		}
+	}
+}

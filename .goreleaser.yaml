@@ -95,6 +95,35 @@ nfpms:
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+  extra_files:
+    - glob: ./packaging/install.sh
+
+# checksums.txt lists every release file, so signing it covers them all.
+# install.sh checks the release-key signature with openssl, which nearly every
+# machine has; the Sigstore bundle lets anyone verify the release with cosign
+# against this repository's release workflow.
+signs:
+  - id: release-key
+    artifacts: checksum
+    cmd: openssl
+    args:
+      - dgst
+      - -sha256
+      - -sign
+      - "{{ .Env.RELEASE_SIGNING_KEY_FILE }}"
+      - -out
+      - "${signature}"
+      - "${artifact}"
+    signature: "${artifact}.sig"
+  - id: sigstore
+    artifacts: checksum
+    cmd: cosign
+    args:
+      - sign-blob
+      - --yes
+      - --bundle=${signature}
+      - ${artifact}
+    signature: "${artifact}.sigstore.json"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
@@ -110,3 +139,5 @@ release:
   name_template: "deaconguard v{{ .Version }}"
   # Tags with a suffix, such as v1.2.0-rc.1, are published as pre-releases.
   prerelease: auto
+  extra_files:
+    - glob: ./packaging/install.sh
