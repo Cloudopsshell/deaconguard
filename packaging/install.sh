@@ -4,10 +4,12 @@
 #   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --server
 #   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent
 #
-# Downloads this machine's .deb or .rpm package from a GitHub release, checks
-# the release's signature and the package's checksum, installs the package,
-# and runs `deaconguard setup server` or `deaconguard setup agent`. Run it again
-# to upgrade. Nothing is installed when a check fails.
+# Downloads this machine's .deb or .rpm package from a GitHub release over
+# HTTPS, checks its checksum against the release's checksums.txt, installs the
+# package, and runs `deaconguard setup server` or `deaconguard setup agent`.
+# When cosign is installed, it also verifies that checksums.txt was signed by
+# this repository's release workflow. Run it again to upgrade. Nothing is
+# installed when a check fails.
 #
 # Everything is inside main, which runs on the last line, so a download cut
 # short runs nothing.
@@ -16,11 +18,9 @@ set -eu
 
 REPOSITORY="https://github.com/Cloudopsshell/deaconguard"
 
-# The public half of the key that signs each release's checksums.txt. The
-# release workflow refuses to publish when its signing key does not match.
-RELEASE_KEY='-----BEGIN PUBLIC KEY-----
-REPLACE_WITH_RELEASE_PUBLIC_KEY
------END PUBLIC KEY-----'
+# The release workflow that signs checksums.txt, for cosign verify-blob.
+SIGNER="$REPOSITORY/.github/workflows/release.yml"
+SIGNER_ISSUER="https://token.actions.githubusercontent.com"
 
 usage() {
 	cat <<'EOF'
@@ -92,12 +92,9 @@ main() {
 		fail "run the installer as root: curl -fsSL $REPOSITORY/releases/latest/download/install.sh | sudo sh -s -- --$mode"
 	fi
 	[ -d /run/systemd/system ] || fail "DeaconGuard's services need systemd, which is not running on this machine"
-	for tool in curl openssl sha256sum; do
+	for tool in curl sha256sum; do
 		command -v "$tool" >/dev/null 2>&1 || fail "$tool is required; install it with your package manager and run the installer again"
 	done
-	case "$RELEASE_KEY" in
-	*REPLACE_WITH_RELEASE_PUBLIC_KEY*) fail "this copy of the installer has no release key; download it from $REPOSITORY/releases" ;;
-	esac
 
 	case "$(uname -m)" in
 	x86_64 | amd64) arch="amd64" ;;
@@ -159,24 +156,28 @@ main() {
 
 	package="deaconguard_${version}_linux_${arch}.${format}"
 	base="$REPOSITORY/releases/download/v$version"
-	for file in checksums.txt checksums.txt.sig "$package"; do
+	for file in checksums.txt checksums.txt.sigstore.json "$package"; do
 		curl -fsSL --proto '=https' --tlsv1.2 -o "$work/$file" "$base/$file" ||
 			fail "could not download $base/$file"
 	done
 	chmod 0644 "$work/$package"
 	ok "Downloaded $package"
 
-	printf '%s\n' "$RELEASE_KEY" >"$work/release-key.pem"
-	openssl dgst -sha256 -verify "$work/release-key.pem" -signature "$work/checksums.txt.sig" "$work/checksums.txt" >/dev/null 2>&1 ||
-		fail "the signature of checksums.txt for v$version is NOT valid. Nothing was installed. Report this: $REPOSITORY/security"
-	key_id="$(openssl pkey -pubin -in "$work/release-key.pem" -outform DER 2>/dev/null | sha256sum | cut -c1-16)"
-	ok "Signature valid (release key $key_id)"
+	if command -v cosign >/dev/null 2>&1; then
+		cosign verify-blob "$work/checksums.txt" --bundle "$work/checksums.txt.sigstore.json" \
+			--certificate-identity "$SIGNER@refs/tags/v$version" \
+			--certificate-oidc-issuer "$SIGNER_ISSUER" >"$work/cosign.log" 2>&1 ||
+			{ cat "$work/cosign.log" >&2; fail "the signature of checksums.txt for v$version is NOT valid. Nothing was installed. Report this: $REPOSITORY/security"; }
+		ok "Signature valid (signed by the release workflow for v$version)"
+	fi
 
 	expected="$(awk -v name="$package" '$2 == name || $2 == "*" name { print $1 }' "$work/checksums.txt")"
 	actual="$(sha256sum "$work/$package" | cut -d' ' -f1)"
 	[ -n "$expected" ] || fail "checksums.txt for v$version does not list $package"
-	[ "$expected" = "$actual" ] || fail "the checksum of $package does NOT match the signed checksums.txt. Nothing was installed"
+	[ "$expected" = "$actual" ] || fail "the checksum of $package does NOT match the release's checksums.txt. Nothing was installed"
 	ok "Checksum valid"
+	command -v cosign >/dev/null 2>&1 ||
+		printf '    (Install cosign to also verify the release signature: https://docs.sigstore.dev)\n'
 
 	if [ "$format" = "deb" ]; then
 		DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
