@@ -8,12 +8,14 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-06
+
 ### Added
 
-- **Install script**: `curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --server` (or `--agent`) installs the right `.deb` or `.rpm` for the machine, after checking the release's signature and the package's checksum, and sets it up. Running it again upgrades. `--version` installs a specific release.
+- **Install script**: `curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --server` (or `--agent`) installs the right `.deb` or `.rpm` for the machine, after checking the package's checksum and, when cosign is installed, the release's signature, and sets it up. Running it again upgrades. `--version` installs a specific release.
 - **`deaconguard setup server`** creates the first dashboard account, saves `--listen` and `--tls-cert`/`--tls-key` settings in a systemd drop-in that upgrades keep, starts the server, and prints its addresses and certificate fingerprint. `--admin-user` and `--admin-password-file` set it up without prompts.
 - **`deaconguard setup agent`** asks for the enrollment token without showing it, or reads it from `--token-file` or `DEACONGUARD_TOKEN`, enrolls the machine, and starts the agent. An enrolled machine keeps its enrollment unless `--force` is given.
-- Signed releases: `checksums.txt.sig`, made with the DeaconGuard release key, and `checksums.txt.sigstore.json`, a Sigstore signature of the release workflow. See **Verify a release** in the README.
+- Signed releases: `checksums.txt.sigstore.json` is a keyless Sigstore signature showing that the release workflow produced `checksums.txt`. See **Verify a release** in the README.
 
 ### Changed
 
@@ -66,6 +68,7 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Cloudopsshell/deaconguard/releases/tag/v0.1.0

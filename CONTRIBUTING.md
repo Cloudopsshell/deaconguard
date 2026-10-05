@@ -16,7 +16,7 @@ make ui-dev       # web UI with hot reload; run ./deaconguard serve alongside it
 ## Make a change
 
 1. **Open an issue first** for anything larger than a small fix, so the approach can be agreed before you write code.
-2. **Work on a branch.** `main` is protected: nobody, maintainers included, can push to it directly. Name the branch after the change, for example `fix/ssh-timeout` or `feature/csv-export`.
+2. **Work on a branch.** `main` is protected: nobody, maintainers included, can push to it directly. Name the branch after the change, for example `fix/scan-timeout` or `feature/csv-export`.
 3. **Keep the change focused** and match the surrounding code's style. Run `gofmt` on Go files.
 4. **Add or update tests.** Bug fixes should come with a test that fails without the fix.
 5. **Update `CHANGELOG.md`** under `## [Unreleased]` for anything a user would notice, in the Added, Changed, Fixed, or Security group.
