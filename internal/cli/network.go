@@ -144,7 +144,7 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			return err
 		}
 		if len(users) == 0 {
-			fmt.Fprintln(output, "No dashboard accounts. Create one: deaconguard user add USERNAME")
+			fmt.Fprintln(output, noAccountsMessage+" Create one: deaconguard user add USERNAME")
 		}
 		for _, user := range users {
 			fmt.Fprintf(output, "%s  (created %s)\n", user.Username, user.CreatedAt)
@@ -208,11 +208,18 @@ func readNewPassword(input io.Reader, diagnostics io.Writer, fromStdin bool) ([]
 		password := []byte(strings.TrimRight(line, "\r\n"))
 		return password, store.ValidatePassword(password)
 	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	terminal, closeTerminal, err := openTerminal()
+	if err != nil {
 		return nil, fmt.Errorf("run this in a terminal, or pass the password with --password-stdin")
 	}
+	defer closeTerminal()
+	return promptNewPassword(terminal, diagnostics)
+}
+
+// promptNewPassword asks for a new password twice on terminal.
+func promptNewPassword(terminal *os.File, diagnostics io.Writer) ([]byte, error) {
 	fmt.Fprintf(diagnostics, "Password (at least %d characters): ", store.MinPasswordLength)
-	password, err := term.ReadPassword(int(os.Stdin.Fd()))
+	password, err := term.ReadPassword(int(terminal.Fd()))
 	fmt.Fprintln(diagnostics)
 	if err != nil {
 		return nil, err
@@ -221,7 +228,7 @@ func readNewPassword(input io.Reader, diagnostics io.Writer, fromStdin bool) ([]
 		return nil, err
 	}
 	fmt.Fprint(diagnostics, "Repeat the password: ")
-	repeated, err := term.ReadPassword(int(os.Stdin.Fd()))
+	repeated, err := term.ReadPassword(int(terminal.Fd()))
 	fmt.Fprintln(diagnostics)
 	if err != nil {
 		return nil, err
@@ -255,7 +262,8 @@ func runToken(arguments []string, output io.Writer) error {
 	store.Audit(local.Username()+" (cli)", "token.create", token.ID[:8], "for "+serverURL+", expires "+token.ExpiresAt, "")
 	encoded := agentapi.Token{ServerURL: serverURL, Pin: pin, Secret: secret}.Encode()
 	fmt.Fprintf(output, "One-time enrollment token, valid until %s:\n\n  %s\n\n", token.ExpiresAt, encoded)
-	fmt.Fprintf(output, "On the machine to scan, install DeaconGuard and run:\n\n  sudo deaconguard agent enroll %s\n  sudo systemctl enable --now deaconguard-agent\n", encoded)
+	fmt.Fprintf(output, "On the machine to scan, run this and enter the token when asked:\n\n  %s\n\n", buildinfo.InstallCommand("agent"))
+	fmt.Fprintln(output, "If DeaconGuard is already installed there: sudo deaconguard setup agent")
 	return nil
 }
 

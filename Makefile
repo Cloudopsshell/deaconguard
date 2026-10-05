@@ -27,7 +27,7 @@ vet:
 	go vet ./...
 
 release-snapshot:
-	goreleaser release --snapshot --clean
+	goreleaser release --snapshot --clean --skip=sign
 
 docker-build:
 	docker buildx build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t $(IMAGE) --load .

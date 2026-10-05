@@ -26,11 +26,33 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 
 ## Install
 
-Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, and a `checksums.txt` file. Downloads need no GitHub account.
+Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, `install.sh`, and a `checksums.txt` file [signed](#verify-a-release) by the release workflow. Downloads need no GitHub account.
 
-Each method below downloads into `/tmp`, verifies the checksum, and installs. Set `VERSION` to the release you want; the machine's architecture (`amd64` or `arm64`) is detected for you.
+### Install script
 
-### Debian and Ubuntu
+On the server:
+
+```sh
+curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --server
+```
+
+On each machine to scan, run the command shown by the server's **Enroll a machine** dialog, and paste the token when asked:
+
+```sh
+curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent
+```
+
+The script detects the distribution and architecture, downloads the `.deb` or `.rpm` package, checks the signature of `checksums.txt` and the package's checksum, and installs the package. Nothing is installed when a check fails. It then runs `deaconguard setup server`, which creates the first dashboard account and starts the server, or `deaconguard setup agent`, which enrolls the machine and starts the agent. Running it again upgrades DeaconGuard and keeps the existing setup.
+
+- `--version 0.2.0` installs that release instead of the latest.
+- Options after `--server` or `--agent` go to `deaconguard setup`; see [Run the server](#run-the-server) and [the agent](#scan-other-machines-with-the-agent).
+- The script needs `curl`, `openssl`, `sha256sum` and systemd. To read it before running it, download it first: `curl -fsSLO https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh`, then `sudo sh install.sh --server`.
+
+### Install the package yourself
+
+Each method below downloads into `/tmp`, verifies the checksum, and installs. Set `VERSION` to the release you want; the machine's architecture (`amd64` or `arm64`) is detected for you. Then run `sudo deaconguard setup server` or `sudo deaconguard setup agent`.
+
+#### Debian and Ubuntu
 
 ```sh
 VERSION=0.1.1
@@ -43,7 +65,7 @@ sudo apt install "./deaconguard_${VERSION}_linux_${ARCH}.deb"
 deaconguard version
 ```
 
-### RHEL, Fedora, and Amazon Linux
+#### RHEL, Fedora, and Amazon Linux
 
 ```sh
 VERSION=0.1.1
@@ -56,7 +78,7 @@ sudo dnf install "./deaconguard_${VERSION}_linux_${ARCH}.rpm"
 deaconguard version
 ```
 
-### Other Linux systems and macOS
+#### Other Linux systems and macOS
 
 ```sh
 VERSION=0.1.1
@@ -75,7 +97,7 @@ macOS builds can run the server and the CLI but cannot scan the Mac itself. They
 
 With the [GitHub CLI](https://cli.github.com), `gh release download v0.1.1 -R Cloudopsshell/deaconguard -p 'FILE'` downloads a release file instead of `curl`.
 
-### From source
+#### From source
 
 Requires Go 1.26 or later and, for the web UI, Node.js 24 with npm.
 
@@ -123,16 +145,26 @@ This local dashboard is served on the machine's loopback address only, without s
 
 ## Run the server
 
-Install the `.deb` or `.rpm` on the machine that will be the DeaconGuard server. Create a dashboard account, then start the service:
+The [install script](#install-script) with `--server` does this for you. After installing the `.deb` or `.rpm` yourself, run:
 
 ```sh
-sudo -u deaconguard deaconguard user add admin        # asks for a password, at least 12 characters
-sudo systemctl enable --now deaconguard-server
+sudo deaconguard setup server
 ```
 
-Open `https://SERVER:8443` and sign in. On its first start, the server creates a self-signed certificate in `/var/lib/deaconguard/tls/`, so the browser warns about it once. Agents don't rely on that warning being accepted: every enrollment token carries the certificate's fingerprint, and agents trust only that certificate.
+It asks for the first dashboard account (the password needs at least 12 characters), enables and starts the `deaconguard-server` service on port 8443, and prints the dashboard's addresses and the certificate's fingerprint. Running it again keeps the existing accounts and settings.
 
-- **Use your own certificate:** run `sudo systemctl edit deaconguard-server` and set `ExecStart=` to `/usr/bin/deaconguard serve --listen 0.0.0.0:8443 --tls-cert FILE --tls-key FILE`. The `deaconguard` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again.
+Open `https://SERVER:8443` and sign in. On its first start, the server creates a self-signed certificate in `/var/lib/deaconguard/tls/`, so the browser warns about it once; check that the fingerprint matches the one setup printed. Agents don't rely on that warning being accepted: every enrollment token carries the certificate's fingerprint, and agents trust only that certificate.
+
+`deaconguard setup server` options, which the install script passes on:
+
+| Option | Use |
+| --- | --- |
+| `--listen ADDRESS:PORT` | Listen elsewhere than `0.0.0.0:8443`. |
+| `--tls-cert FILE --tls-key FILE` | Use your own certificate. The `deaconguard` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again. |
+| `--admin-user NAME --admin-password-file FILE` | Create the first account without prompts, for automation. Delete the file afterwards. |
+
+Setup saves these settings in `/etc/systemd/system/deaconguard-server.service.d/10-setup.conf`, so package upgrades keep them.
+
 - **Manage accounts:** `deaconguard user add|passwd|remove USERNAME` and `deaconguard user list`, run as the `deaconguard` user. Every account is an administrator. Changing a password or removing an account signs it out everywhere.
 - **Security:** failed sign-ins and enrollments are limited per address, sessions last 12 hours, and the **Audit log** page records sign-ins, tokens, enrollments, scans and removals.
 - **Firewall:** only allow port 8443 from the networks where your admins and agents are.
@@ -142,12 +174,13 @@ To run the server in the foreground without systemd, use `deaconguard serve --li
 ## Scan other machines with the agent
 
 1. On the server's **Agents** page, click **Enroll a machine**. Check the address agents will use to reach the server, then click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same.
-2. On the machine to scan, install the same `.deb` or `.rpm`, then run the two commands the dialog shows:
+2. On the machine to scan, run the install command the dialog shows, and paste the token when asked. The command installs the same version as the server. If DeaconGuard is already installed there, run `sudo deaconguard setup agent` instead.
 
    ```sh
-   sudo deaconguard agent enroll deaconguard1.…
-   sudo systemctl enable --now deaconguard-agent
+   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/vX.Y.Z/install.sh | sudo sh -s -- --agent --version X.Y.Z
    ```
+
+   The token is never typed on the command line, where other users and the shell history could see it. For automation such as cloud-init or Ansible, pass `--token-file FILE` instead of answering the prompt; `--force` enrolls an already enrolled machine again.
 
 3. The machine appears on the **Agents** and **Hosts** pages. Scan it from the dashboard like any other host, or with `deaconguard scan HOST_ID` on the server.
 
@@ -161,11 +194,27 @@ Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.
 
 | Installed with | Update |
 | --- | --- |
+| Install script | Run the same [install script](#install-script) command again; add `--version` for a specific release |
 | `.deb` | Run the [Debian and Ubuntu](#debian-and-ubuntu) steps with the new `VERSION` |
 | `.rpm` | Run the [RHEL, Fedora, and Amazon Linux](#rhel-fedora-and-amazon-linux) steps with the new `VERSION` |
 | Archive | Run the [archive](#other-linux-systems-and-macos) steps with the new `VERSION`; they replace `/usr/local/bin/deaconguard` |
 
 Updating the package restarts running `deaconguard-server` and `deaconguard-agent` services. Stop a foreground `deaconguard serve` before replacing the binary and start it again afterwards. Update the server before its agents. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
+
+## Verify a release
+
+The release workflow signs `checksums.txt`, which lists every file of the release, in two ways. The install script checks the first one itself.
+
+- `checksums.txt.sig`: a signature by the DeaconGuard release key, whose public half is in [`packaging/install.sh`](packaging/install.sh). Save that key as `release-key.pem`, then run `openssl dgst -sha256 -verify release-key.pem -signature checksums.txt.sig checksums.txt`.
+- `checksums.txt.sigstore.json`: a [Sigstore](https://www.sigstore.dev) bundle that proves the release workflow of this repository produced the file:
+
+  ```sh
+  cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
+    --certificate-identity "https://github.com/Cloudopsshell/deaconguard/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  ```
+
+Then check the files you downloaded with `sha256sum --check --ignore-missing checksums.txt`.
 
 ## Back up and restore
 
