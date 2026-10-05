@@ -26,7 +26,7 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 
 ## Install
 
-Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, `install.sh`, and a `checksums.txt` file [signed](#verify-a-release) by the release workflow. Downloads need no GitHub account.
+Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, `install.sh`, and a `checksums.txt` file with a [Sigstore signature](#verify-a-release) from the release workflow. Downloads need no GitHub account.
 
 ### Install script
 
@@ -42,11 +42,11 @@ On each machine to scan, run the command shown by the server's **Enroll a machin
 curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent
 ```
 
-The script detects the distribution and architecture, downloads the `.deb` or `.rpm` package, checks the signature of `checksums.txt` and the package's checksum, and installs the package. Nothing is installed when a check fails. It then runs `deaconguard setup server`, which creates the first dashboard account and starts the server, or `deaconguard setup agent`, which enrolls the machine and starts the agent. Running it again upgrades DeaconGuard and keeps the existing setup.
+The script detects the distribution and architecture, downloads the `.deb` or `.rpm` package from GitHub over HTTPS, checks its checksum against the release's `checksums.txt`, and installs the package. When [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) is installed, it also verifies that `checksums.txt` was signed by this repository's release workflow. Nothing is installed when a check fails. It then runs `deaconguard setup server`, which creates the first dashboard account and starts the server, or `deaconguard setup agent`, which enrolls the machine and starts the agent. Running it again upgrades DeaconGuard and keeps the existing setup.
 
 - `--version 0.2.0` installs that release instead of the latest.
 - Options after `--server` or `--agent` go to `deaconguard setup`; see [Run the server](#run-the-server) and [the agent](#scan-other-machines-with-the-agent).
-- The script needs `curl`, `openssl`, `sha256sum` and systemd. To read it before running it, download it first: `curl -fsSLO https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh`, then `sudo sh install.sh --server`.
+- The script needs `curl`, `sha256sum` and systemd. To read it before running it, download it first: `curl -fsSLO https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh`, then `sudo sh install.sh --server`.
 
 ### Install the package yourself
 
@@ -203,16 +203,13 @@ Updating the package restarts running `deaconguard-server` and `deaconguard-agen
 
 ## Verify a release
 
-The release workflow signs `checksums.txt`, which lists every file of the release, in two ways. The install script checks the first one itself.
+Releases are signed keyless with [Sigstore](https://www.sigstore.dev), like Kubernetes and Flux: `checksums.txt.sigstore.json` proves that this repository's release workflow produced `checksums.txt`, which lists every file of the release. No one holds a signing key that could leak. The install script checks it when cosign is installed; to check it yourself:
 
-- `checksums.txt.sig`: a signature by the DeaconGuard release key, whose public half is in [`packaging/install.sh`](packaging/install.sh). Save that key as `release-key.pem`, then run `openssl dgst -sha256 -verify release-key.pem -signature checksums.txt.sig checksums.txt`.
-- `checksums.txt.sigstore.json`: a [Sigstore](https://www.sigstore.dev) bundle that proves the release workflow of this repository produced the file:
-
-  ```sh
-  cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
-    --certificate-identity "https://github.com/Cloudopsshell/deaconguard/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
-    --certificate-oidc-issuer https://token.actions.githubusercontent.com
-  ```
+```sh
+cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/Cloudopsshell/deaconguard/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 Then check the files you downloaded with `sha256sum --check --ignore-missing checksums.txt`.
 
