@@ -4,6 +4,7 @@ package buildinfo
 
 import (
 	"fmt"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -76,7 +77,24 @@ func String() string {
 	return fmt.Sprintf("deaconguard %s (commit %s, built %s, %s %s/%s)", Version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
 
+// Repository is where DeaconGuard's source and releases are published.
+const Repository = "https://github.com/Cloudopsshell/deaconguard"
+
 // UserAgent identifies DeaconGuard to advisory feed servers.
 func UserAgent() string {
-	return "DeaconGuard/" + Version + " (+https://github.com/Cloudopsshell/deaconguard)"
+	return "DeaconGuard/" + Version + " (+" + Repository + ")"
+}
+
+// releaseVersion matches the versions of published releases, such as 0.2.0 or
+// 0.2.0-rc.1, and not local builds such as 0.1.1-3-gabc1234-dirty or dev.
+var releaseVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)(\.[0-9]+)?)?$`)
+
+// InstallCommand is the command line that installs DeaconGuard with the
+// install script; mode is "server" or "agent". A release build installs its
+// own version, so agents match their server; other builds install the latest.
+func InstallCommand(mode string) string {
+	if releaseVersion.MatchString(Version) {
+		return "curl -fsSL " + Repository + "/releases/download/v" + Version + "/install.sh | sudo sh -s -- --" + mode + " --version " + Version
+	}
+	return "curl -fsSL " + Repository + "/releases/latest/download/install.sh | sudo sh -s -- --" + mode
 }

@@ -36,7 +36,7 @@ export function Agents() {
           <EmptyState
             icon={<RadioTower className="size-6" />}
             title="Agents need the DeaconGuard server"
-            description="This DeaconGuard only serves this machine at localhost. To scan other machines, run it as a server on the network, where agents can reach it: sudo systemctl enable --now deaconguard-server (or deaconguard serve --listen 0.0.0.0:8443)."
+            description="This DeaconGuard only serves this machine at localhost. To scan other machines, run it as a server on the network, where agents can reach it: sudo deaconguard setup server (or deaconguard serve --listen 0.0.0.0:8443)."
           />
         </Card>
       </>
@@ -273,9 +273,15 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
       {created ? (
         <div className="space-y-4 text-sm">
           <p className="text-slate-600 dark:text-slate-300">
-            On the Linux machine to scan, install DeaconGuard (the same .deb or .rpm as this server), then run:
+            1. On the Linux machine to scan, run this. It installs the same DeaconGuard version as this server, checks its
+            signature, and asks for the token:
           </p>
-          <CopyBlock text={`${created.command}\nsudo systemctl enable --now deaconguard-agent`} />
+          <CopyBlock text={created.command} label="Copy the command" />
+          <p className="text-slate-600 dark:text-slate-300">2. When asked, paste this enrollment token:</p>
+          <CopyBlock text={created.token} label="Copy the token" />
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            DeaconGuard already installed there? Run <code className="font-mono">sudo deaconguard setup agent</code> instead.
+          </p>
           <p className="flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200">
             <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
@@ -319,7 +325,7 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
   );
 }
 
-function CopyBlock({ text }: { text: string }) {
+function CopyBlock({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -339,7 +345,7 @@ function CopyBlock({ text }: { text: string }) {
         type="button"
         onClick={copy}
         className="absolute top-2 right-2 rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-        aria-label="Copy the commands"
+        aria-label={label}
         title="Copy"
       >
         {copied ? <Check className="size-4 text-emerald-400" /> : <Copy className="size-4" />}
