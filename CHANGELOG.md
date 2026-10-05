@@ -8,6 +8,11 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Removed
+
+- The last traces of SSH scanning, which DeaconGuard dropped before 0.1.0. Databases from before 0.1.0 lose the hosts registered for SSH scanning and their scan results when they are upgraded; scans still waiting for an SSH answer are marked as interrupted. Hosts on this machine and enrolled agents are not affected. The import of the file-based store (`hosts.json` and `reports/`) used before the database is removed too.
+- `host_key_fingerprint` is no longer part of scans in the API.
+
 ## [0.2.0] - 2026-10-06
 
 ### Added

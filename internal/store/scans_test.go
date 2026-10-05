@@ -2,51 +2,14 @@ package store
 
 import (
 	"database/sql"
-	"os"
 	"path/filepath"
 	"testing"
 )
 
-func TestLegacyJSONStoreIsImportedOnce(t *testing.T) {
-	directory := withTempDataDir(t)
-	hosts := `[{"id":"host-1","address":"legacy.example","username":"scanner","port":22,"key_path":null}]`
-	if err := os.WriteFile(filepath.Join(directory, "hosts.json"), []byte(hosts), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	reportID := "0123456789abcdef0123456789abcdef"
-	report := `{"host_id":"host-1","address":"legacy.example","os":"Debian 13 (trixie)","scanned_at":"2026-01-02T03:04:05Z",
-		"findings":[{"id":"CVE-2026-0001","package":"openssl","installed_version":"1","fixed_version":"2","severity":"HIGH"}]}`
-	if err := os.MkdirAll(filepath.Join(directory, "reports"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(directory, "reports", reportID+".json"), []byte(report), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	listed, err := ListHosts()
-	if err != nil || len(listed) != 1 || listed[0].Address != "legacy.example" {
-		t.Fatalf("ListHosts() = %+v, %v", listed, err)
-	}
-	loaded, err := GetReport(reportID)
-	if err != nil || loaded["os"] != "Debian 13 (trixie)" {
-		t.Fatalf("GetReport() = %+v, %v", loaded, err)
-	}
-	summaries, err := HostSummaries()
-	if err != nil || len(summaries) != 1 || summaries[0].LastReport == nil || summaries[0].LastReport.Severity.High != 1 {
-		t.Fatalf("HostSummaries() = %+v, %v", summaries, err)
-	}
-	if _, err := RemoveHost("host-1"); err != nil {
-		t.Fatal(err)
-	}
-	// hosts.json is still on disk, but the import must not run a second time.
-	if listed, err := ListHosts(); err != nil || len(listed) != 0 {
-		t.Fatalf("removed host came back: %+v, %v", listed, err)
-	}
-}
-
 func TestScanLifecycleAndVulnerabilityQueries(t *testing.T) {
 	withTempDataDir(t)
-	first := addTestHost(t, "a.example", TransportSSH)
-	second := addTestHost(t, "b.example", TransportSSH)
+	first := addTestHost(t, "a.example", TransportLocal)
+	second := addTestHost(t, "b.example", TransportLocal)
 	finding := func(cve, pkg, severity string) map[string]any {
 		return map[string]any{"id": cve, "package": pkg, "installed_version": "1", "fixed_version": "2", "severity": severity}
 	}
@@ -68,10 +31,10 @@ func TestScanLifecycleAndVulnerabilityQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := WaitForInput(failed.ID, ScanNeedsTrust, "", "SHA256:abc"); err != nil {
+	if err := WaitForInput(failed.ID, ScanNeedsSudo, "Wrong password"); err != nil {
 		t.Fatal(err)
 	}
-	if waiting, err := GetScan(failed.ID); err != nil || waiting.HostKeyFingerprint != "SHA256:abc" || waiting.FinishedAt != nil {
+	if waiting, err := GetScan(failed.ID); err != nil || waiting.Error != "Wrong password" || waiting.FinishedAt != nil {
 		t.Fatalf("waiting scan = %+v, %v", waiting, err)
 	}
 	if _, err := GetReport(failed.ID); err == nil {
@@ -82,7 +45,7 @@ func TestScanLifecycleAndVulnerabilityQueries(t *testing.T) {
 	if err != nil || len(summaries) != 2 {
 		t.Fatalf("HostSummaries() = %+v, %v", summaries, err)
 	}
-	if summaries[0].LastScan.Status != ScanNeedsTrust || summaries[0].LastReport.Status != ScanSucceeded {
+	if summaries[0].LastScan.Status != ScanNeedsSudo || summaries[0].LastReport.Status != ScanSucceeded {
 		t.Fatalf("latest scan should be the failure while the report stays the last success: %+v", summaries[0])
 	}
 	if summaries[0].LastReport.UnsupportedCount != 1 {
@@ -165,37 +128,9 @@ func TestCheckResultsAreSummarizedPerCheck(t *testing.T) {
 	}
 }
 
-func TestVersionOneDatabaseIsUpgraded(t *testing.T) {
-	withTempDataDir(t)
-	old, err := sql.Open("sqlite", "file:"+filepath.ToSlash(DatabasePath()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = old.Exec(schemaV1 + `
-		INSERT INTO meta (key, value) VALUES ('legacy_import', 'done');
-		INSERT INTO hosts (id, address, username, port, created_at) VALUES ('h1', 'old.example', 'scanner', 22, '2026-01-01T00:00:00Z');
-		INSERT INTO scans (id, host_id, address, status, started_at, finished_at, finding_count, high, report_json)
-			VALUES ('s1', 'h1', 'old.example', 'succeeded', '2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z', 3, 3, '{}');`)
-	old.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	summaries, err := HostSummaries()
-	if err != nil || len(summaries) != 1 {
-		t.Fatalf("HostSummaries() = %+v, %v", summaries, err)
-	}
-	summary := summaries[0]
-	if summary.AllowSudo || summary.LastReport == nil || summary.LastReport.Checks[0] != CheckPackages {
-		t.Fatalf("upgraded host = %+v", summary)
-	}
-	if packages := summary.Checks[CheckPackages]; packages.ScanID != "s1" || packages.Severity.High != 3 {
-		t.Fatalf("existing scans should be backfilled as package checks: %+v", summary.Checks)
-	}
-}
-
 func TestPruneKeepsNewestAndEachChecksLatestResult(t *testing.T) {
 	withTempDataDir(t)
-	host := addTestHost(t, "prune.example", TransportSSH)
+	host := addTestHost(t, "prune.example", TransportLocal)
 	complete := func(checks []string) Scan {
 		scan, err := CreateScan(host, checks)
 		if err != nil {
@@ -253,5 +188,75 @@ func TestPruneKeepsNewestAndEachChecksLatestResult(t *testing.T) {
 	}
 	if vulnerabilities, err := Vulnerabilities(); err != nil || len(vulnerabilities) != 0 {
 		t.Fatalf("findings of a deleted scan remain: %+v, %v", vulnerabilities, err)
+	}
+}
+
+func openOldDatabase(t *testing.T, statements string) {
+	t.Helper()
+	old, err := sql.Open("sqlite", "file:"+filepath.ToSlash(DatabasePath()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = old.Exec(statements)
+	old.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Hosts in databases from before 0.1.0 were all registered for SSH scanning,
+// which DeaconGuard removed; upgrading deletes them with their scans.
+func TestVersionOneDatabaseIsUpgraded(t *testing.T) {
+	withTempDataDir(t)
+	openOldDatabase(t, schemaV1+`
+		INSERT INTO meta (key, value) VALUES ('legacy_import', 'done');
+		INSERT INTO hosts (id, address, username, port, created_at) VALUES ('h1', 'old.example', 'scanner', 22, '2026-01-01T00:00:00Z');
+		INSERT INTO scans (id, host_id, address, status, started_at, finished_at, finding_count, high, report_json)
+			VALUES ('s1', 'h1', 'old.example', 'succeeded', '2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z', 3, 3, '{}');`)
+	if hosts, err := ListHosts(); err != nil || len(hosts) != 0 {
+		t.Fatalf("SSH hosts survived the upgrade: %+v, %v", hosts, err)
+	}
+	if _, err := GetScan("s1"); err == nil {
+		t.Fatal("the SSH host's scan survived the upgrade")
+	}
+	if host, err := AddLocalHost("build-01", "ops"); err != nil || host.Transport != TransportLocal {
+		t.Fatalf("AddLocalHost after the upgrade = %+v, %v", host, err)
+	}
+}
+
+func TestVersionFiveDatabaseLosesOnlySSHLeftovers(t *testing.T) {
+	withTempDataDir(t)
+	openOldDatabase(t, schemaV1+schemaV2+schemaV3+schemaV4+schemaV5+`
+		INSERT INTO hosts (id, address, username, port, transport, created_at) VALUES
+			('local', 'build-01', 'ops', 0, 'local', '2026-01-01T00:00:00Z'),
+			('agent', 'web-03', 'root', 0, 'agent', '2026-01-01T00:00:00Z'),
+			('ssh', 'old.example', 'ubuntu', 22, 'ssh', '2026-01-01T00:00:00Z');
+		INSERT INTO scans (id, host_id, address, status, started_at, finished_at, report_json) VALUES
+			('kept', 'local', 'build-01', 'succeeded', '2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z', '{}'),
+			('gone', 'ssh', 'old.example', 'succeeded', '2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z', '{}');
+		INSERT INTO scans (id, host_id, address, status, host_key_fingerprint, started_at) VALUES
+			('paused', 'agent', 'web-03', 'needs_trust', 'SHA256:abc', '2026-01-01T00:00:00Z');`)
+	hosts, err := ListHosts()
+	if err != nil || len(hosts) != 2 || hosts[0].ID != "local" || hosts[1].ID != "agent" {
+		t.Fatalf("hosts after the upgrade = %+v, %v", hosts, err)
+	}
+	if scan, err := GetScan("kept"); err != nil || scan.Status != ScanSucceeded {
+		t.Fatalf("a local host's scan = %+v, %v", scan, err)
+	}
+	if _, err := GetScan("gone"); err == nil {
+		t.Fatal("the SSH host's scan survived the upgrade")
+	}
+	if scan, err := GetScan("paused"); err != nil || scan.Status != ScanFailed || scan.FinishedAt == nil {
+		t.Fatalf("a scan paused for an SSH prompt = %+v, %v", scan, err)
+	}
+	db, err := database()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for table, column := range map[string]string{"hosts": "port", "scans": "host_key_fingerprint"} {
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?", table, column).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("%s.%s still exists: %d, %v", table, column, count, err)
+		}
 	}
 }

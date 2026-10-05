@@ -11,24 +11,21 @@ import (
 )
 
 // A running scan can pause in a needs_* status while it waits for the user to
-// approve a host key or enter a passphrase or password, then resumes. A scan of
-// an agent host is queued until its agent picks it up.
+// enter a sudo password, then resumes. A scan of an agent host is queued until
+// its agent picks it up.
 const (
-	ScanQueued          = "queued"
-	ScanRunning         = "running"
-	ScanSucceeded       = "succeeded"
-	ScanFailed          = "failed"
-	ScanNeedsTrust      = "needs_trust"
-	ScanNeedsPassphrase = "needs_passphrase"
-	ScanNeedsPassword   = "needs_password"
-	ScanNeedsSudo       = "needs_sudo"
+	ScanQueued    = "queued"
+	ScanRunning   = "running"
+	ScanSucceeded = "succeeded"
+	ScanFailed    = "failed"
+	ScanNeedsSudo = "needs_sudo"
 )
 
-const unfinishedStatuses = "('queued', 'running', 'needs_trust', 'needs_passphrase', 'needs_password', 'needs_sudo')"
+const unfinishedStatuses = "('queued', 'running', 'needs_sudo')"
 
 // activeStatuses are the unfinished statuses of a scan that some process is
 // working on, as opposed to one queued for an agent.
-const activeStatuses = "('running', 'needs_trust', 'needs_passphrase', 'needs_password', 'needs_sudo')"
+const activeStatuses = "('running', 'needs_sudo')"
 
 // IsUnfinished reports whether a scan may still produce a result.
 func IsUnfinished(status string) bool {
@@ -36,7 +33,7 @@ func IsUnfinished(status string) bool {
 }
 
 func IsWaiting(status string) bool {
-	return status == ScanNeedsTrust || status == ScanNeedsPassphrase || status == ScanNeedsPassword || status == ScanNeedsSudo
+	return status == ScanNeedsSudo
 }
 
 type SeverityCounts struct {
@@ -65,19 +62,18 @@ func (counts *SeverityCounts) add(severity string) {
 // Scan is one scan attempt. Only succeeded scans carry a report; any other
 // status must never be read as a clean result.
 type Scan struct {
-	ID                 string         `json:"id"`
-	HostID             string         `json:"host_id"`
-	Address            string         `json:"address"`
-	Status             string         `json:"status"`
-	Error              string         `json:"error,omitempty"`
-	HostKeyFingerprint string         `json:"host_key_fingerprint,omitempty"`
-	StartedAt          string         `json:"started_at"`
-	FinishedAt         *string        `json:"finished_at"`
-	OS                 string         `json:"os"`
-	FindingCount       int            `json:"finding_count"`
-	UnsupportedCount   int            `json:"unsupported_count"`
-	Severity           SeverityCounts `json:"severity"`
-	FeedStale          bool           `json:"feed_stale"`
+	ID               string         `json:"id"`
+	HostID           string         `json:"host_id"`
+	Address          string         `json:"address"`
+	Status           string         `json:"status"`
+	Error            string         `json:"error,omitempty"`
+	StartedAt        string         `json:"started_at"`
+	FinishedAt       *string        `json:"finished_at"`
+	OS               string         `json:"os"`
+	FindingCount     int            `json:"finding_count"`
+	UnsupportedCount int            `json:"unsupported_count"`
+	Severity         SeverityCounts `json:"severity"`
+	FeedStale        bool           `json:"feed_stale"`
 	// Checks lists the checks this scan ran. Package counts above are only
 	// meaningful when it includes CheckPackages.
 	Checks []string `json:"checks"`
@@ -88,7 +84,7 @@ type Scan struct {
 // CheckPackages is the package vulnerability check every earlier scan ran.
 const CheckPackages = "packages"
 
-const scanColumns = `id, host_id, address, status, error, host_key_fingerprint, started_at, finished_at, os,
+const scanColumns = `id, host_id, address, status, error, started_at, finished_at, os,
 	finding_count, unsupported_count, critical, high, medium, low, unknown, feed_stale, checks, events_json IS NOT NULL`
 
 func encodeChecks(checks []string) string { return "," + strings.Join(checks, ",") + "," }
@@ -108,8 +104,7 @@ func scanScan(row rowScanner) (Scan, error) {
 	var finishedAt sql.NullString
 	var feedStale int
 	var checks string
-	err := row.Scan(&scan.ID, &scan.HostID, &scan.Address, &scan.Status, &scan.Error, &scan.HostKeyFingerprint,
-		&scan.StartedAt, &finishedAt, &scan.OS, &scan.FindingCount, &scan.UnsupportedCount,
+	err := row.Scan(&scan.ID, &scan.HostID, &scan.Address, &scan.Status, &scan.Error, &scan.StartedAt, &finishedAt, &scan.OS, &scan.FindingCount, &scan.UnsupportedCount,
 		&scan.Severity.Critical, &scan.Severity.High, &scan.Severity.Medium, &scan.Severity.Low, &scan.Severity.Unknown,
 		&feedStale, &checks, &scan.HasLog)
 	if err != nil {
@@ -175,23 +170,23 @@ func CompleteScan(id string, report map[string]any) error {
 
 // WaitForInput pauses a running scan until the user responds. message
 // explains why an earlier answer was rejected, if it was.
-func WaitForInput(id, status, message, fingerprint string) error {
+func WaitForInput(id, status, message string) error {
 	if !IsWaiting(status) {
 		return fmt.Errorf("invalid waiting scan status %q", status)
 	}
-	return updateScan(`UPDATE scans SET status = ?, error = ?, host_key_fingerprint = ? WHERE id = ? AND status = ?`,
-		status, message, fingerprint, id, ScanRunning)
+	return updateScan(`UPDATE scans SET status = ?, error = ? WHERE id = ? AND status = ?`,
+		status, message, id, ScanRunning)
 }
 
 // ResumeScan returns a waiting scan to running once the user has responded.
 func ResumeScan(id string) error {
-	return updateScan(`UPDATE scans SET status = ?, error = '', host_key_fingerprint = '' WHERE id = ? AND status IN `+
+	return updateScan(`UPDATE scans SET status = ?, error = '' WHERE id = ? AND status IN `+
 		activeStatuses, ScanRunning, id)
 }
 
 // FailScan records why an unfinished scan stopped without a report.
 func FailScan(id, message string) error {
-	return updateScan(`UPDATE scans SET status = ?, error = ?, host_key_fingerprint = '', finished_at = ?
+	return updateScan(`UPDATE scans SET status = ?, error = ?, finished_at = ?
 		WHERE id = ? AND status IN `+unfinishedStatuses, ScanFailed, message, nowText(), id)
 }
 
@@ -348,7 +343,7 @@ func InterruptRunningScans() error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(`UPDATE scans SET status = ?, error = ?, host_key_fingerprint = '', finished_at = COALESCE(finished_at, ?)
+	_, err = db.Exec(`UPDATE scans SET status = ?, error = ?, finished_at = COALESCE(finished_at, ?)
 		WHERE status IN `+activeStatuses, ScanFailed, "scan was interrupted before it finished", nowText())
 	return err
 }
@@ -837,7 +832,7 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 			feedStale = 1
 		}
 	}
-	result, err := tx.Exec(`UPDATE scans SET status = ?, error = '', host_key_fingerprint = '', finished_at = ?, os = ?,
+	result, err := tx.Exec(`UPDATE scans SET status = ?, error = '', finished_at = ?, os = ?,
 		finding_count = ?, unsupported_count = ?, critical = ?, high = ?, medium = ?, low = ?, unknown = ?,
 		feed_stale = ?, report_json = ? WHERE id = ? AND status = ?`,
 		ScanSucceeded, finishedAt, operatingSystem, len(findings), unsupported,
