@@ -23,7 +23,7 @@ import { useRefreshAll } from "../lib/hooks";
 import { isActive, severityStyle, timeAgo } from "../lib/format";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { ScanDialog } from "../components/ScanDialog";
-import { agentOnline, scannable, shortConnectionLabel } from "../lib/hosts";
+import { agentOnline, shortConnectionLabel } from "../lib/hosts";
 import { RemoveHostDialog } from "./HostDetail";
 
 export function Hosts() {
@@ -165,8 +165,6 @@ function HostRow({ host }: { host: HostSummary }) {
           <Button
             variant="secondary"
             loading={running}
-            disabled={!scannable(host)}
-            title={!scannable(host) ? "SSH hosts cannot be scanned" : undefined}
             onClick={(event) => {
               event.stopPropagation();
               setScanning(true);

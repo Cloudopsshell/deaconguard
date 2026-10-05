@@ -6,8 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -450,14 +448,8 @@ func TestLocalHostRefusedWhereLocalScanningIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestSSHHostsCanNoLongerBeAddedOrScanned(t *testing.T) {
-	directory := t.TempDir()
-	// A profile file from an earlier release is imported as a legacy SSH host.
-	legacy := `[{"id":"0123456789abcdef0123456789abcdef","address":"old.example","username":"ubuntu","port":22,"key_path":null}]`
-	if err := os.WriteFile(filepath.Join(directory, "hosts.json"), []byte(legacy), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("DEACONGUARD_HOME", directory)
+func TestOnlyThisMachineCanBeAdded(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	s, err := New(fstest.MapFS{}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -466,12 +458,7 @@ func TestSSHHostsCanNoLongerBeAddedOrScanned(t *testing.T) {
 	if response := request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "ssh"}); response.Code != http.StatusBadRequest {
 		t.Fatalf("an SSH host was accepted: %d", response.Code)
 	}
-	hosts := decode[[]store.HostSummary](t, request(t, s, http.MethodGet, "/api/hosts", nil))
-	if len(hosts) != 1 || hosts[0].Transport != store.TransportSSH {
-		t.Fatalf("legacy hosts = %+v", hosts)
-	}
-	response := request(t, s, http.MethodPost, "/api/hosts/"+hosts[0].ID+"/scans", map[string]any{"checks": []string{checks.Config}})
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "SSH scanning is not supported") {
-		t.Fatalf("scanning a legacy SSH host = %d %s", response.Code, response.Body.String())
+	if hosts := decode[[]store.HostSummary](t, request(t, s, http.MethodGet, "/api/hosts", nil)); len(hosts) != 0 {
+		t.Fatalf("hosts = %+v", hosts)
 	}
 }
