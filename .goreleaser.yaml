@@ -98,23 +98,10 @@ checksum:
   extra_files:
     - glob: ./packaging/install.sh
 
-# checksums.txt lists every release file, so signing it covers them all.
-# install.sh checks the release-key signature with openssl, which nearly every
-# machine has; the Sigstore bundle lets anyone verify the release with cosign
-# against this repository's release workflow.
+# checksums.txt lists every release file, so signing it covers them all. The
+# signature is keyless: Sigstore records that this repository's release
+# workflow produced the file, so there is no signing key to keep.
 signs:
-  - id: release-key
-    artifacts: checksum
-    cmd: openssl
-    args:
-      - dgst
-      - -sha256
-      - -sign
-      - "{{ .Env.RELEASE_SIGNING_KEY_FILE }}"
-      - -out
-      - "${signature}"
-      - "${artifact}"
-    signature: "${artifact}.sig"
   - id: sigstore
     artifacts: checksum
     cmd: cosign

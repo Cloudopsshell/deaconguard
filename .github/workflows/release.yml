@@ -70,26 +70,6 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Load the release signing key
-        env:
-          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
-        run: |
-          if [ -z "$RELEASE_SIGNING_KEY" ]; then
-            echo "::error::The RELEASE_SIGNING_KEY secret is not set; see RELEASING.md"
-            exit 1
-          fi
-          key="$RUNNER_TEMP/release-signing-key.pem"
-          (umask 077 && printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key")
-          # install.sh verifies releases with the public key it carries; a
-          # release signed with any other key could not be installed.
-          sed -n "/^RELEASE_KEY='/,/END PUBLIC KEY-----'/p" packaging/install.sh \
-            | sed "s/^RELEASE_KEY='//; s/'\$//" > "$RUNNER_TEMP/release-key.pub.pem"
-          if ! openssl pkey -in "$key" -pubout | cmp -s - "$RUNNER_TEMP/release-key.pub.pem"; then
-            echo "::error::RELEASE_SIGNING_KEY does not match the public key in packaging/install.sh"
-            exit 1
-          fi
-          echo "RELEASE_SIGNING_KEY_FILE=$key" >> "$GITHUB_ENV"
-
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
@@ -104,14 +84,8 @@ jobs:
           # may pick the candidate's tag and upload to the wrong release.
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
-      - name: Remove the release signing key
-        if: always()
-        run: rm -f "$RUNNER_TEMP/release-signing-key.pem"
-
       - name: Check the published signature
         run: |
-          openssl dgst -sha256 -verify "$RUNNER_TEMP/release-key.pub.pem" \
-            -signature dist/checksums.txt.sig dist/checksums.txt
           cosign verify-blob dist/checksums.txt \
             --bundle dist/checksums.txt.sigstore.json \
             --certificate-identity "${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}" \
