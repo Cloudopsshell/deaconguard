@@ -177,7 +177,7 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 	}
 	// Agents run the deeper checks as root or through passwordless sudo.
 	host := Host{ID: id, Address: enrollment.Hostname, Username: enrollment.Username, Transport: TransportAgent, AllowSudo: true}
-	if _, err := tx.Exec(`INSERT INTO hosts (id, address, username, port, transport, allow_sudo, created_at) VALUES (?, ?, ?, 0, ?, 1, ?)`,
+	if _, err := tx.Exec(`INSERT INTO hosts (id, address, username, transport, allow_sudo, created_at) VALUES (?, ?, ?, ?, 1, ?)`,
 		host.ID, host.Address, host.Username, host.Transport, now); err != nil {
 		return Host{}, "", err
 	}
