@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"deaconguard/internal/agentapi"
+	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
 	"deaconguard/internal/target"
@@ -349,7 +350,9 @@ func remoteIP(r *http.Request) string {
 // the only copy of the secret.
 type enrollmentTokenResponse struct {
 	store.EnrollmentToken
-	Token   string `json:"token"`
+	Token string `json:"token"`
+	// Command installs DeaconGuard and asks for the token, which stays out of
+	// the command line.
 	Command string `json:"command"`
 }
 
@@ -378,7 +381,7 @@ func (s *Server) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	}
 	encoded := agentapi.Token{ServerURL: request.ServerURL, Pin: s.pin, Secret: secret}.Encode()
 	s.audit(r, "token.create", token.ID[:8], "for "+request.ServerURL+", expires "+token.ExpiresAt)
-	writeJSON(w, http.StatusCreated, enrollmentTokenResponse{EnrollmentToken: token, Token: encoded, Command: "sudo deaconguard agent enroll " + encoded})
+	writeJSON(w, http.StatusCreated, enrollmentTokenResponse{EnrollmentToken: token, Token: encoded, Command: buildinfo.InstallCommand("agent")})
 }
 
 func (s *Server) listEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
