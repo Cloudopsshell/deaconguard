@@ -94,8 +94,12 @@ jobs:
       - name: Check the release notes were published
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The self-hosted runner has no gh CLI; curl and the Node.js set up
+        # above read the release through the API instead.
         run: |
-          length=$(gh release view "$GITHUB_REF_NAME" --json body --jq '.body | length')
+          length=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log((JSON.parse(s).body||"").length))')
           if [ "$length" -lt 20 ]; then
             echo "::error::The GitHub release for $GITHUB_REF_NAME has no release notes"
             exit 1
