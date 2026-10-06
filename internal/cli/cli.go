@@ -84,7 +84,7 @@ func runHost(arguments []string, output io.Writer) error {
 				allowSudo = true
 			case "--local":
 			default:
-				return fmt.Errorf("deaconguard host add registers this machine and takes no address: %w", scan.ErrSSHRemoved)
+				return fmt.Errorf("deaconguard host add registers this machine and takes no address; to scan another machine, install the DeaconGuard agent on it and enroll it with a server")
 			}
 		}
 		if _, err := local.New(); err != nil {
@@ -122,10 +122,6 @@ func runHost(arguments []string, output io.Writer) error {
 			sudo := ""
 			if host.AllowSudo {
 				sudo = "  (sudo allowed)"
-			}
-			if !host.Scannable() {
-				fmt.Fprintf(output, "%s  %s  (SSH host; cannot be scanned, earlier results kept)\n", host.ID, host.Address)
-				continue
 			}
 			if host.Transport == store.TransportAgent {
 				fmt.Fprintf(output, "%s  %s  (agent)\n", host.ID, host.Address)
