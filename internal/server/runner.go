@@ -183,7 +183,7 @@ func (r *runner) finish(host store.Host, scanID string, log *eventLog, report ma
 
 // ask pauses the scan until the user answers prompt in the browser.
 func (r *runner) ask(host store.Host, scanID string, prompt Prompt) ([]byte, error) {
-	if err := store.WaitForInput(scanID, store.ScanNeedsSudo, prompt.Retry, ""); err != nil {
+	if err := store.WaitForInput(scanID, store.ScanNeedsSudo, prompt.Retry); err != nil {
 		return nil, err
 	}
 	prompt.ScanID, prompt.HostID, prompt.Address, prompt.Username = scanID, host.ID, host.Address, host.Username

@@ -25,7 +25,7 @@ import {
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
-import { agentOnline, connectionLabel, scannable } from "../lib/hosts";
+import { agentOnline, connectionLabel } from "../lib/hosts";
 import { AgentStatus } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 
@@ -73,8 +73,6 @@ export function HostDetail() {
             </Button>
             <Button
               loading={running}
-              disabled={!scannable(data)}
-              title={!scannable(data) ? "SSH hosts cannot be scanned" : undefined}
               onClick={() => setScanning({})}
             >
               {!running && <Play className="size-4" />}
@@ -97,19 +95,6 @@ export function HostDetail() {
             <p className="mt-1 text-slate-600 dark:text-slate-300">
               It last checked in {data.agent ? timeAgo(data.agent.last_seen_at) : "never"}. Scans you start wait up to an hour for it to
               reconnect. On the machine, check it with: sudo systemctl status deaconguard-agent
-            </p>
-          </div>
-        </Card>
-      )}
-
-      {data.transport === "ssh" && (
-        <Card className="mb-6 border-l-4 border-slate-400">
-          <div className="p-5 text-sm">
-            <h2 className="font-semibold">This SSH host can no longer be scanned</h2>
-            <p className="mt-1 text-slate-600 dark:text-slate-300">
-              DeaconGuard does not scan over SSH. This host's earlier results and scan history stay available below. To scan it
-              again, install DeaconGuard on it and enroll it as an agent from the Agents page; you can remove this entry when you no longer
-              need its history.
             </p>
           </div>
         </Card>

@@ -25,10 +25,6 @@ const maxConcurrentEvaluations = 2
 
 var evaluationSlots = make(chan struct{}, maxConcurrentEvaluations)
 
-// ErrSSHRemoved is returned for hosts registered for SSH scanning, which was
-// not supported. Their earlier results stay available.
-var ErrSSHRemoved = errors.New("SSH scanning is not supported; this host's earlier results remain available, but to scan it, install the DeaconGuard agent on it and enroll it with this server")
-
 // ErrAgentHost is returned when an agent host is scanned in-process; its
 // agent runs the scan instead.
 var ErrAgentHost = errors.New("this host is scanned by its DeaconGuard agent through the DeaconGuard server")
@@ -55,9 +51,6 @@ func Run(host store.Host, checkIDs []string, options Options) (map[string]any, e
 	}
 	progress := &reporter{emit: options.Progress}
 	started := time.Now()
-	if !host.Scannable() {
-		return nil, ErrSSHRemoved
-	}
 	if host.Transport == store.TransportAgent {
 		return nil, ErrAgentHost
 	}
