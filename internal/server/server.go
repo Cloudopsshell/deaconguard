@@ -22,7 +22,6 @@ import (
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/local"
-	scanpkg "deaconguard/internal/scan"
 	"deaconguard/internal/store"
 )
 
@@ -298,7 +297,7 @@ func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 type addHostRequest struct {
-	// Transport must be "local"; SSH hosts can no longer be added.
+	// Transport must be "local"; other machines enroll as agents.
 	Transport string `json:"transport"`
 	AllowSudo bool   `json:"allow_sudo"`
 }
@@ -436,10 +435,6 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	selected, err := checks.Normalize(request.Checks)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	if !host.Scannable() {
-		writeError(w, http.StatusConflict, scanpkg.ErrSSHRemoved)
 		return
 	}
 	if host.Transport == store.TransportAgent && !s.network {

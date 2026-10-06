@@ -25,8 +25,7 @@ func withTempDataDir(t *testing.T) string {
 	return directory
 }
 
-// addTestHost inserts a host directly; transport is TransportLocal or the
-// legacy TransportSSH, which older databases can still contain.
+// addTestHost inserts a host directly, so tests can add several.
 func addTestHost(t *testing.T, address, transport string) Host {
 	t.Helper()
 	db, err := database()
@@ -51,7 +50,7 @@ func TestLocalHostRoundTripWithPrivatePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := GetHost(host.ID)
-	if err != nil || !reflect.DeepEqual(got, host) || !got.Scannable() {
+	if err != nil || !reflect.DeepEqual(got, host) {
 		t.Fatalf("GetHost() = %+v, %v; want %+v", got, err, host)
 	}
 	if _, err := AddLocalHost("build-01", "ops"); !errors.Is(err, ErrLocalHostExists) {
@@ -63,18 +62,9 @@ func TestLocalHostRoundTripWithPrivatePermissions(t *testing.T) {
 	}
 }
 
-func TestLegacySSHHostsAreKeptButNotScannable(t *testing.T) {
-	withTempDataDir(t)
-	legacy := addTestHost(t, "old.example", TransportSSH)
-	got, err := GetHost(legacy.ID)
-	if err != nil || got.Transport != TransportSSH || got.Scannable() {
-		t.Fatalf("legacy host = %+v, %v", got, err)
-	}
-}
-
 func TestReportsSurviveHostRemoval(t *testing.T) {
 	withTempDataDir(t)
-	host := addTestHost(t, "debian.example", TransportSSH)
+	host := addTestHost(t, "debian.example", TransportLocal)
 	report, err := SaveReport(map[string]any{"host_id": host.ID, "finding_count": 2})
 	if err != nil {
 		t.Fatal(err)
