@@ -3,8 +3,6 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -12,35 +10,15 @@ import (
 	"deaconguard/internal/store"
 )
 
-func TestHostCommandsWithLegacySSHHost(t *testing.T) {
-	directory := t.TempDir()
-	t.Setenv("DEACONGUARD_HOME", directory)
-	// A profile file from an earlier release is imported as a legacy SSH host.
-	legacy := `[{"id":"0123456789abcdef0123456789abcdef","address":"old.example","username":"ubuntu","port":22,"key_path":null}]`
-	if err := os.WriteFile(filepath.Join(directory, "hosts.json"), []byte(legacy), 0o600); err != nil {
-		t.Fatal(err)
-	}
+func TestHostAddTakesNoAddress(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	var output, diagnostics bytes.Buffer
-	if code := Run([]string{"host", "add", "new.example", "--username", "ubuntu"}, nil, &output, &diagnostics); code == 0 ||
-		!strings.Contains(diagnostics.String(), "SSH scanning is not supported") {
-		t.Fatalf("adding an SSH host: code %d, %s", code, diagnostics.String())
+	if code := Run([]string{"host", "add", "new.example"}, nil, &output, &diagnostics); code == 0 ||
+		!strings.Contains(diagnostics.String(), "takes no address") || !strings.Contains(diagnostics.String(), "agent") {
+		t.Fatalf("host add with an address: code %d, %s", code, diagnostics.String())
 	}
-	output.Reset()
-	if code := Run([]string{"host", "list"}, nil, &output, &diagnostics); code != 0 ||
-		!strings.Contains(output.String(), "old.example") || !strings.Contains(output.String(), "cannot be scanned") {
-		t.Fatalf("host list: %s", output.String())
-	}
-	diagnostics.Reset()
-	if code := Run([]string{"scan", "0123456789abcdef0123456789abcdef", "--checks", "config"}, nil, &output, &diagnostics); code == 0 ||
-		!strings.Contains(diagnostics.String(), "SSH scanning is not supported") {
-		t.Fatalf("scanning a legacy SSH host: code %d, %s", code, diagnostics.String())
-	}
-	output.Reset()
-	if code := Run([]string{"host", "remove", "0123456789abcdef0123456789abcdef"}, nil, &output, &diagnostics); code != 0 {
-		t.Fatalf("host remove failed: %s", diagnostics.String())
-	}
-	if remaining, err := store.ListHosts(); err != nil || len(remaining) != 0 {
-		t.Fatalf("remaining hosts = %+v, %v", remaining, err)
+	if hosts, err := store.ListHosts(); err != nil || len(hosts) != 0 {
+		t.Fatalf("hosts = %+v, %v", hosts, err)
 	}
 }
 

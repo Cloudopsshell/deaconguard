@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -33,13 +32,7 @@ const (
 	// TransportAgent is a machine running `deaconguard agent`, enrolled with a
 	// one-time token; Address holds the hostname the agent reported.
 	TransportAgent = "agent"
-	// TransportSSH marks hosts from databases that predate DeaconGuard's
-	// agents. They keep their scan history but cannot be scanned.
-	TransportSSH = "ssh"
 )
-
-// Scannable reports whether DeaconGuard can still scan the host.
-func (h Host) Scannable() bool { return h.Transport == TransportLocal || h.Transport == TransportAgent }
 
 const databaseName = "deaconguard.db"
 
@@ -122,10 +115,6 @@ func database() (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("prepare DeaconGuard database: %w", err)
 	}
-	if err := importLegacy(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("import earlier DeaconGuard data: %w", err)
-	}
 	databases[path] = db
 	return db, nil
 }
@@ -157,6 +146,11 @@ func migrate(db *sql.DB) error {
 	}
 	if version < 5 {
 		if err := execInTx(db, schemaV5); err != nil {
+			return err
+		}
+	}
+	if version < 6 {
+		if err := execInTx(db, schemaV6); err != nil {
 			return err
 		}
 	}
@@ -268,7 +262,7 @@ ALTER TABLE scans ADD COLUMN events_json TEXT;
 PRAGMA user_version = 3;`
 
 // schemaV4 records how each host is reached; hosts from before it were all
-// SSH hosts, which are kept for their history but cannot be scanned.
+// SSH hosts, which schemaV6 removes.
 const schemaV4 = `
 ALTER TABLE hosts ADD COLUMN transport TEXT NOT NULL DEFAULT 'ssh';
 PRAGMA user_version = 4;`
@@ -320,79 +314,22 @@ CREATE TABLE agents (
 );
 PRAGMA user_version = 5;`
 
-// importLegacy copies hosts.json and reports/*.json from the file-based store
-// into the database once. The original files are left untouched.
-func importLegacy(db *sql.DB) error {
-	var done string
-	err := db.QueryRow("SELECT value FROM meta WHERE key = 'legacy_import'").Scan(&done)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	contents, err := os.ReadFile(filepath.Join(DataDir(), "hosts.json"))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err == nil {
-		// Profiles from before the database were all SSH hosts.
-		var hosts []struct {
-			ID       string  `json:"id"`
-			Address  string  `json:"address"`
-			Username string  `json:"username"`
-			Port     int     `json:"port"`
-			KeyPath  *string `json:"key_path"`
-		}
-		if err := json.Unmarshal(contents, &hosts); err != nil {
-			return fmt.Errorf("read host profiles: %w", err)
-		}
-		now := nowText()
-		for _, host := range hosts {
-			if _, err := tx.Exec(`INSERT OR IGNORE INTO hosts (id, address, username, port, key_path, created_at)
-				VALUES (?, ?, ?, ?, ?, ?)`, host.ID, host.Address, host.Username, host.Port, host.KeyPath, now); err != nil {
-				return err
-			}
-		}
-	}
-	entries, err := os.ReadDir(filepath.Join(DataDir(), "reports"))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	for _, entry := range entries {
-		id := strings.TrimSuffix(entry.Name(), ".json")
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || !validID(id) {
-			continue
-		}
-		contents, err := os.ReadFile(filepath.Join(DataDir(), "reports", entry.Name()))
-		if err != nil {
-			return err
-		}
-		var report map[string]any
-		if err := json.Unmarshal(contents, &report); err != nil {
-			// An unreadable legacy report stays on disk; it must not block the rest.
-			continue
-		}
-		var exists int
-		if err := tx.QueryRow("SELECT COUNT(*) FROM scans WHERE id = ?", id).Scan(&exists); err != nil {
-			return err
-		}
-		if exists == 0 {
-			if err := insertReport(tx, id, report); err != nil {
-				return err
-			}
-		}
-	}
-	if _, err := tx.Exec("INSERT INTO meta (key, value) VALUES ('legacy_import', ?)", nowText()); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
+// schemaV6 removes what SSH scanning left behind in databases from before
+// 0.1.0: hosts registered for SSH with their scans, scans paused for SSH
+// prompts, and the columns that described SSH connections. The transport
+// column keeps its old 'ssh' default, which SQLite cannot change in place;
+// every insert sets it.
+const schemaV6 = `
+DELETE FROM scans WHERE host_id IN (SELECT id FROM hosts WHERE transport NOT IN ('local', 'agent'));
+DELETE FROM hosts WHERE transport NOT IN ('local', 'agent');
+UPDATE scans SET status = 'failed', error = 'scan was interrupted before it finished',
+	finished_at = COALESCE(finished_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	WHERE status IN ('needs_trust', 'needs_passphrase', 'needs_password');
+ALTER TABLE hosts DROP COLUMN port;
+ALTER TABLE hosts DROP COLUMN key_path;
+ALTER TABLE scans DROP COLUMN host_key_fingerprint;
+DELETE FROM meta WHERE key = 'legacy_import';
+PRAGMA user_version = 6;`
 
 func ListHosts() ([]Host, error) {
 	db, err := database()
@@ -456,8 +393,7 @@ func AddLocalHost(hostname, username string) (Host, error) {
 }
 
 func insertHost(db *sql.DB, host Host) error {
-	// port and key_path only described SSH hosts and are left empty.
-	_, err := db.Exec(`INSERT INTO hosts (id, address, username, port, transport, created_at) VALUES (?, ?, ?, 0, ?, ?)`,
+	_, err := db.Exec(`INSERT INTO hosts (id, address, username, transport, created_at) VALUES (?, ?, ?, ?, ?)`,
 		host.ID, host.Address, host.Username, host.Transport, nowText())
 	return err
 }
