@@ -8,6 +8,8 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-08
+
 ### Removed
 
 - The last traces of SSH scanning, which DeaconGuard dropped before 0.1.0. Databases from before 0.1.0 lose the hosts registered for SSH scanning and their scan results when they are upgraded; scans still waiting for an SSH answer are marked as interrupted. Hosts on this machine and enrolled agents are not affected. The import of the file-based store (`hosts.json` and `reports/`) used before the database is removed too.
@@ -73,7 +75,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Cloudopsshell/deaconguard/releases/tag/v0.1.0
