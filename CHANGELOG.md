@@ -8,6 +8,17 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-08
+
+### Security
+
+- Updated `source-map-js` to 1.2.2 for [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) (CVE-2026-93749, high severity), an event-loop denial of service through indexed source-map section offsets. It is used only by the web UI's build tools and is not part of the released files, so DeaconGuard installs were not affected.
+
+### Changed
+
+- Updated the SQLite driver (`modernc.org/sqlite`) to 1.60.1.
+- Updated the web UI's libraries: `@tanstack/react-query` 5.104.1, `lucide-react` 1.50.0, and `vite` 8.3.2.
+
 ## [0.3.0] - 2026-10-08
 
 ### Removed
@@ -75,7 +86,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.0...v0.1.1
