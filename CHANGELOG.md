@@ -8,6 +8,8 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-09
+
 ### Changed
 
 - The install script works like k3s's: `curl -fsSL …/install.sh | sh -` installs a server, and `curl -fsSL …/install.sh | DEACONGUARD_TOKEN=… sh -` installs and enrolls an agent. Run it as a normal user; it uses `sudo` for the steps that need root. On a machine that is already an enrolled agent, running it without a token upgrades the agent. `DEACONGUARD_VERSION` picks a release. `--server`, `--agent`, `--version` and pasting the token at a prompt keep working.
@@ -98,7 +100,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.2.0...v0.3.0
