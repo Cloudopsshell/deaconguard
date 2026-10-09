@@ -33,20 +33,22 @@ Releases are published on the [Releases page](https://github.com/Cloudopsshell/d
 On the server:
 
 ```sh
-curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --server
+curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sh -
 ```
 
-On each machine to scan, run the command shown by the server's **Enroll a machine** dialog, and paste the token when asked:
+On each machine to scan, run the command shown by the server's **Enroll a machine** dialog. It carries the machine's one-time enrollment token:
 
 ```sh
-curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent
+curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | DEACONGUARD_TOKEN=deaconguard1.… sh -
 ```
+
+With `DEACONGUARD_TOKEN` the script sets up an agent; without it, a server. On a machine that is already an enrolled agent, it upgrades the agent. Run it as a normal user: it uses `sudo` for the steps that need root, so sudo may ask for your password.
 
 The script detects the distribution and architecture, downloads the `.deb` or `.rpm` package from GitHub over HTTPS, checks its checksum against the release's `checksums.txt`, and installs the package. When [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) is installed, it also verifies that `checksums.txt` was signed by this repository's release workflow. Nothing is installed when a check fails. It then runs `deaconguard setup server`, which creates the first dashboard account and starts the server, or `deaconguard setup agent`, which enrolls the machine and starts the agent. Running it again upgrades DeaconGuard and keeps the existing setup.
 
-- `--version 0.2.0` installs that release instead of the latest.
-- Options after `--server` or `--agent` go to `deaconguard setup`; see [Run the server](#run-the-server) and [the agent](#scan-other-machines-with-the-agent).
-- The script needs `curl`, `sha256sum` and systemd. To read it before running it, download it first: `curl -fsSLO https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh`, then `sudo sh install.sh --server`.
+- `DEACONGUARD_VERSION=0.4.0` (or `sh -s -- --version 0.4.0`) installs that release instead of the latest.
+- `--server` or `--agent` choose the mode explicitly. Other options go to `deaconguard setup`, for example `curl … | sh -s -- --listen 0.0.0.0:9443`; see [Run the server](#run-the-server) and [the agent](#scan-other-machines-with-the-agent).
+- The script needs `curl`, `sha256sum`, systemd, and either root or `sudo`. To read it before running it, download it first: `curl -fsSLO https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh`, then `sh install.sh`.
 
 ### Install the package yourself
 
@@ -145,7 +147,7 @@ This local dashboard is served on the machine's loopback address only, without s
 
 ## Run the server
 
-The [install script](#install-script) with `--server` does this for you. After installing the `.deb` or `.rpm` yourself, run:
+The [install script](#install-script) does this for you. After installing the `.deb` or `.rpm` yourself, run:
 
 ```sh
 sudo deaconguard setup server
@@ -174,13 +176,13 @@ To run the server in the foreground without systemd, use `deaconguard serve --li
 ## Scan other machines with the agent
 
 1. On the server's **Agents** page, click **Enroll a machine**. Check the address agents will use to reach the server, then click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same.
-2. On the machine to scan, run the install command the dialog shows, and paste the token when asked. The command installs the same version as the server. If DeaconGuard is already installed there, run `sudo deaconguard setup agent` instead.
+2. On the machine to scan, run the command the dialog shows. It installs the same version as the server, enrolls the machine with the token, and starts the agent:
 
    ```sh
-   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/vX.Y.Z/install.sh | sudo sh -s -- --agent --version X.Y.Z
+   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/vX.Y.Z/install.sh | DEACONGUARD_VERSION=X.Y.Z DEACONGUARD_TOKEN=deaconguard1.… sh -
    ```
 
-   The token is never typed on the command line, where other users and the shell history could see it. For automation such as cloud-init or Ansible, pass `--token-file FILE` instead of answering the prompt; `--force` enrolls an already enrolled machine again.
+   The token ends up in the shell history, but it enrolls only one machine and expires after 24 hours, so it is useless once used. To keep it out of the history anyway, run the command without `DEACONGUARD_TOKEN=…` and paste the token when asked. On a machine that already has DeaconGuard, `sudo deaconguard setup agent` asks for it. For automation such as cloud-init or Ansible, set `DEACONGUARD_TOKEN` or pass `--token-file FILE`; `--force` enrolls an already enrolled machine again.
 
 3. The machine appears on the **Agents** and **Hosts** pages. Scan it from the dashboard like any other host, or with `deaconguard scan HOST_ID` on the server.
 
@@ -194,7 +196,7 @@ Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.
 
 | Installed with | Update |
 | --- | --- |
-| Install script | Run the same [install script](#install-script) command again; add `--version` for a specific release |
+| Install script | Run `curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh \| sh -` again, on the server and on each agent; `DEACONGUARD_VERSION` picks a specific release |
 | `.deb` | Run the [Debian and Ubuntu](#debian-and-ubuntu) steps with the new `VERSION` |
 | `.rpm` | Run the [RHEL, Fedora, and Amazon Linux](#rhel-fedora-and-amazon-linux) steps with the new `VERSION` |
 | Archive | Run the [archive](#other-linux-systems-and-macos) steps with the new `VERSION`; they replace `/usr/local/bin/deaconguard` |

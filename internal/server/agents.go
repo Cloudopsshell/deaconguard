@@ -351,8 +351,7 @@ func remoteIP(r *http.Request) string {
 type enrollmentTokenResponse struct {
 	store.EnrollmentToken
 	Token string `json:"token"`
-	// Command installs DeaconGuard and asks for the token, which stays out of
-	// the command line.
+	// Command installs the agent and enrolls it with Token, in one line.
 	Command string `json:"command"`
 }
 
@@ -381,7 +380,7 @@ func (s *Server) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	}
 	encoded := agentapi.Token{ServerURL: request.ServerURL, Pin: s.pin, Secret: secret}.Encode()
 	s.audit(r, "token.create", token.ID[:8], "for "+request.ServerURL+", expires "+token.ExpiresAt)
-	writeJSON(w, http.StatusCreated, enrollmentTokenResponse{EnrollmentToken: token, Token: encoded, Command: buildinfo.InstallCommand("agent")})
+	writeJSON(w, http.StatusCreated, enrollmentTokenResponse{EnrollmentToken: token, Token: encoded, Command: buildinfo.AgentInstallCommand(encoded)})
 }
 
 func (s *Server) listEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
