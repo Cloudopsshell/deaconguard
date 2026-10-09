@@ -8,6 +8,11 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Changed
+
+- The install script works like k3s's: `curl -fsSL …/install.sh | sh -` installs a server, and `curl -fsSL …/install.sh | DEACONGUARD_TOKEN=… sh -` installs and enrolls an agent. Run it as a normal user; it uses `sudo` for the steps that need root. On a machine that is already an enrolled agent, running it without a token upgrades the agent. `DEACONGUARD_VERSION` picks a release. `--server`, `--agent`, `--version` and pasting the token at a prompt keep working.
+- The **Enroll a machine** dialog and `deaconguard token create` show one command that installs and enrolls the agent, with the one-time token in it. The token alone stays available for pasting.
+
 ## [0.3.2] - 2026-10-09
 
 ### Security

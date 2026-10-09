@@ -262,8 +262,8 @@ func runToken(arguments []string, output io.Writer) error {
 	store.Audit(local.Username()+" (cli)", "token.create", token.ID[:8], "for "+serverURL+", expires "+token.ExpiresAt, "")
 	encoded := agentapi.Token{ServerURL: serverURL, Pin: pin, Secret: secret}.Encode()
 	fmt.Fprintf(output, "One-time enrollment token, valid until %s:\n\n  %s\n\n", token.ExpiresAt, encoded)
-	fmt.Fprintf(output, "On the machine to scan, run this and enter the token when asked:\n\n  %s\n\n", buildinfo.InstallCommand("agent"))
-	fmt.Fprintln(output, "If DeaconGuard is already installed there: sudo deaconguard setup agent")
+	fmt.Fprintf(output, "On the machine to scan, run:\n\n  %s\n\n", buildinfo.AgentInstallCommand(encoded))
+	fmt.Fprintln(output, "If DeaconGuard is already installed there, run: sudo deaconguard setup agent (it asks for the token)")
 	return nil
 }
 
