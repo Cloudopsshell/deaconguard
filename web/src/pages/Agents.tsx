@@ -273,15 +273,21 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
       {created ? (
         <div className="space-y-4 text-sm">
           <p className="text-slate-600 dark:text-slate-300">
-            1. On the Linux machine to scan, run this. It installs the same DeaconGuard version as this server, checks its
-            signature, and asks for the token:
+            On the Linux machine to scan, run this. It installs the same DeaconGuard version as this server, checks it, enrolls
+            the machine, and starts the agent; it uses sudo where it needs root.
           </p>
           <CopyBlock text={created.command} label="Copy the command" />
-          <p className="text-slate-600 dark:text-slate-300">2. When asked, paste this enrollment token:</p>
-          <CopyBlock text={created.token} label="Copy the token" />
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            DeaconGuard already installed there? Run <code className="font-mono">sudo deaconguard setup agent</code> instead.
-          </p>
+          <details className="text-xs text-slate-500 dark:text-slate-400">
+            <summary className="cursor-pointer">Keep the token out of the shell history, or DeaconGuard is already installed</summary>
+            <p className="mt-2">
+              Run the command without <code className="font-mono">DEACONGUARD_TOKEN=…</code>, or run{" "}
+              <code className="font-mono">sudo deaconguard setup agent</code> on a machine that already has DeaconGuard. Both ask
+              for this token:
+            </p>
+            <div className="mt-2">
+              <CopyBlock text={created.token} label="Copy the token" />
+            </div>
+          </details>
           <p className="flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200">
             <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
