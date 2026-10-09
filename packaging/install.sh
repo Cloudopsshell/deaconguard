@@ -1,8 +1,13 @@
 #!/bin/sh
 # DeaconGuard installer: https://github.com/Cloudopsshell/deaconguard
 #
-#   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --server
-#   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent
+# Server:
+#   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sh -
+# Agent, with the one-time token from the server's Agents page:
+#   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | DEACONGUARD_TOKEN=deaconguard1.... sh -
+#
+# Without a token it sets up a server, or upgrades the agent on a machine that
+# is already enrolled. It uses sudo for the steps that need root.
 #
 # Downloads this machine's .deb or .rpm package from a GitHub release over
 # HTTPS, checks its checksum against the release's checksums.txt, installs the
@@ -24,19 +29,25 @@ SIGNER_ISSUER="https://token.actions.githubusercontent.com"
 
 usage() {
 	cat <<'EOF'
-Usage: install.sh --server | --agent [--version VERSION] [SETUP OPTIONS]
+Usage: install.sh [--server | --agent] [--version VERSION] [SETUP OPTIONS]
 
+  (no option)         a server, or an agent when DEACONGUARD_TOKEN is set or
+                      this machine is already an enrolled agent
   --server            install and start the DeaconGuard server
   --agent             install, enroll, and start the agent; asks for the token
-  --version VERSION   install this release, such as 0.2.0; default: the latest
+                      unless DEACONGUARD_TOKEN is set
+  --version VERSION   install this release, such as 0.4.0; default: the latest
+
+Environment: DEACONGUARD_TOKEN (the agent's one-time enrollment token) and
+DEACONGUARD_VERSION (same as --version).
 
 Setup options are passed to `deaconguard setup server` or `deaconguard setup agent`:
   server: --listen ADDRESS:PORT  --tls-cert FILE --tls-key FILE
           --admin-user NAME  --admin-password-file FILE
   agent:  --token-file FILE  --force
 
-Run it as root, for example:
-  curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent
+For example:
+  curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sh -
 EOF
 }
 
@@ -51,7 +62,11 @@ quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 main() {
 	mode=""
-	version=""
+	version="${DEACONGUARD_VERSION:-}"
+	version="${version#v}"
+	token="${DEACONGUARD_TOKEN:-}"
+	# The token goes to setup in a private file, not through the environment.
+	unset DEACONGUARD_TOKEN
 	setup_options=""
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -73,7 +88,7 @@ main() {
 			exit 0
 			;;
 		deaconguard1.*)
-			fail "do not pass the token on the command line, where other users and the shell history can see it; enter it when asked, or use --token-file FILE"
+			fail "pass the token as DEACONGUARD_TOKEN=... before sh, not as an argument, which every user on this machine can see"
 			;;
 		*)
 			setup_options="$setup_options $(quote "$1")"
@@ -81,16 +96,29 @@ main() {
 		esac
 		shift
 	done
-	if [ -z "$mode" ]; then
-		usage >&2
-		fail "choose --server or --agent"
-	fi
-
 	printf 'DeaconGuard installer\n'
 	[ "$(uname -s)" = "Linux" ] || fail "the installer supports Linux; on other systems, download a release archive from $REPOSITORY/releases"
+
+	# Downloads and checks run as you; installing and setting up need root.
+	SUDO=""
 	if [ "$(id -u)" -ne 0 ]; then
-		fail "run the installer as root: curl -fsSL $REPOSITORY/releases/latest/download/install.sh | sudo sh -s -- --$mode"
+		command -v sudo >/dev/null 2>&1 || fail "installing needs root; run the installer as root, or install sudo"
+		SUDO="sudo"
+		printf '  Installing needs root; sudo may ask for your password.\n'
+		sudo -v || fail "sudo did not grant root"
 	fi
+
+	if [ -n "$token" ]; then
+		[ "$mode" != "server" ] || fail "DEACONGUARD_TOKEN enrolls an agent; leave it out to install a server"
+		mode="agent"
+	elif [ -z "$mode" ]; then
+		mode="server"
+		# Upgrading an agent must not turn it into a server.
+		if $SUDO test -f /etc/deaconguard/agent.json; then
+			mode="agent"
+		fi
+	fi
+
 	[ -d /run/systemd/system ] || fail "DeaconGuard's services need systemd, which is not running on this machine"
 	for tool in curl sha256sum; do
 		command -v "$tool" >/dev/null 2>&1 || fail "$tool is required; install it with your package manager and run the installer again"
@@ -137,6 +165,11 @@ main() {
 		esac
 	fi
 	ok "$os_name, $arch"
+	if [ "$mode" = "agent" ]; then
+		ok "Mode: agent"
+	else
+		ok "Mode: server"
+	fi
 
 	if [ -z "$version" ]; then
 		latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$REPOSITORY/releases/latest")" ||
@@ -180,10 +213,10 @@ main() {
 		printf '    (Install cosign to also verify the release signature: https://docs.sigstore.dev)\n'
 
 	if [ "$format" = "deb" ]; then
-		DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
+		$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
 			{ cat "$work/install.log" >&2; fail "apt-get could not install $package"; }
 	else
-		"$rpm_installer" install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
+		$SUDO "$rpm_installer" install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
 			{ cat "$work/install.log" >&2; fail "$rpm_installer could not install $package"; }
 	fi
 	ok "Installed $(/usr/bin/deaconguard version | cut -d' ' -f1-2)"
@@ -191,9 +224,13 @@ main() {
 		fail "DeaconGuard v$version predates this installer; install 0.2.0 or later, or follow the manual steps in the README"
 	printf '\n'
 
+	if [ -n "$token" ]; then
+		(umask 077 && printf '%s\n' "$token" >"$work/token")
+		setup_options="$setup_options --token-file $(quote "$work/token")"
+	fi
 	# Prompts read from the terminal, not from this script on standard input.
 	eval "set -- $setup_options"
-	/usr/bin/deaconguard setup "$mode" "$@" </dev/null
+	$SUDO /usr/bin/deaconguard setup "$mode" "$@" </dev/null
 }
 
 main "$@"
