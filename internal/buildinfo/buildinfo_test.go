@@ -18,18 +18,20 @@ func TestStringShortensCommitButKeepsDirtyMarker(t *testing.T) {
 	}
 }
 
-func TestInstallCommand(t *testing.T) {
+func TestAgentInstallCommand(t *testing.T) {
 	saved := Version
 	defer func() { Version = saved }()
-	for version, want := range map[string]string{
-		"0.2.0":                  "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/v0.2.0/install.sh | sudo sh -s -- --agent --version 0.2.0",
-		"0.2.0-rc.1":             "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/v0.2.0-rc.1/install.sh | sudo sh -s -- --agent --version 0.2.0-rc.1",
-		"dev":                    "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent",
-		"0.1.1-3-gabc1234-dirty": "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sudo sh -s -- --agent",
+	const download = "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/"
+	const latest = "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | "
+	for _, test := range []struct{ version, token, want string }{
+		{"0.4.0", "deaconguard1.abc.def", download + "v0.4.0/install.sh | DEACONGUARD_VERSION=0.4.0 DEACONGUARD_TOKEN=deaconguard1.abc.def sh -"},
+		{"0.4.0-rc.1", "", download + "v0.4.0-rc.1/install.sh | DEACONGUARD_VERSION=0.4.0-rc.1 sh -s -- --agent"},
+		{"dev", "deaconguard1.abc", latest + "DEACONGUARD_TOKEN=deaconguard1.abc sh -"},
+		{"0.1.1-3-gabc1234-dirty", "", latest + "sh -s -- --agent"},
 	} {
-		Version = version
-		if got := InstallCommand("agent"); got != want {
-			t.Errorf("InstallCommand for %s = %q, want %q", version, got, want)
+		Version = test.version
+		if got := AgentInstallCommand(test.token); got != test.want {
+			t.Errorf("AgentInstallCommand for %s = %q, want %q", test.version, got, test.want)
 		}
 	}
 }
