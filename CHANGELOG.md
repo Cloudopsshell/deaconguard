@@ -8,6 +8,13 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-09
+
+### Security
+
+- Built with Go 1.26.9, which fixes 10 vulnerabilities in the Go standard library that the DeaconGuard server's HTTPS listener and the agent's connection to it use, among them an HTTP/2 server crash ([GO-2026-6617](https://pkg.go.dev/vuln/GO-2026-6617)) and HTTP/2 memory exhaustion through trailer headers ([GO-2026-6603](https://pkg.go.dev/vuln/GO-2026-6603)). The other fixes are GO-2026-6605, GO-2026-6607 to GO-2026-6613, in `net/http`, `crypto/tls` and `net/textproto`. Upgrade servers first, then agents.
+- Updated `golang.org/x/net` to 0.60.0. DeaconGuard does not call the vulnerable code it fixes.
+
 ## [0.3.1] - 2026-10-08
 
 ### Security
@@ -86,7 +93,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.1.1...v0.2.0
