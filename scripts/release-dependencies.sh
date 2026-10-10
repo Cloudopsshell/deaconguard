@@ -31,6 +31,8 @@ for package in procps iproute2 findutils clamav clamav-freshclam procps-ng iprou
 done
 cosign="$(sed -n 's/^COSIGN_VERSION="\(.*\)"$/\1/p' "$script")"
 [ -n "$cosign" ] || { echo "release-dependencies.sh: COSIGN_VERSION not found in $script" >&2; exit 1; }
+yara_x="$(sed -n 's/^YARA_X_VERSION="\(.*\)"$/\1/p' "$script")"
+[ -n "$yara_x" ] || { echo "release-dependencies.sh: YARA_X_VERSION not found in $script" >&2; exit 1; }
 
 cat <<EOF
 
@@ -55,8 +57,11 @@ The install script (\`curl -fsSL https://get.deaconguard.io | sudo sh -\`) insta
 | Malware check (\`ps\`, \`find\`) | \`procps\`, \`findutils\` | \`procps-ng\`, \`findutils\` |
 | Security configuration check (\`ss\`) | \`iproute2\` | \`iproute\` |
 | Pending-reboot check | (not needed) | \`needs-restarting\` (\`dnf-utils\` / \`yum-utils\`) |
-| Antivirus check | \`clamav\`, \`clamav-freshclam\` (signature updates switched on) | \`clamav\`, \`clamav-freshclam\` / \`clamav-update\`; on RHEL from EPEL, which the script enables |
+| Antivirus check (basic scan) | \`clamav\`, \`clamav-freshclam\` (signature updates switched on) | \`clamav\`, \`clamav-freshclam\` / \`clamav-update\`; on RHEL from EPEL, which the script enables |
+| Advanced antivirus scan | YARA-X $yara_x (\`yr\`), downloaded from VirusTotal's GitHub release and checked against a pinned checksum | the same |
 | Release signature check | cosign $cosign, downloaded from Sigstore's GitHub release and checked against a pinned checksum | the same |
+
+The advanced antivirus scan runs the [YARA Forge](https://github.com/YARAHQ/yara-forge) **core** rules. They are not installed on machines: the server downloads the latest weekly package from GitHub, keeps it for 12 hours, and sends it to agents with each advanced scan.
 
 Every dependency of the binary and the web UI, with versions and licenses, is listed in the SBOM files attached to this release (SPDX JSON).
 EOF

@@ -8,6 +8,18 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Advanced antivirus scan.** The antivirus scan is now **Basic** (ClamAV, as before, and still the default) or **Advanced**, which also runs [YARA-X](https://virustotal.github.io/yara-x/) with the [YARA Forge](https://github.com/YARAHQ/yara-forge) core rules for webshells, crypto miners, backdoors, and attacker tools that signature scanners often miss. Choose it in the scan dialog, or add `yara` to `--checks`.
+  - The server downloads the latest weekly rules from GitHub, keeps them for 12 hours, and sends them to agents with each scan, over the agent connection. On the host they are written to a private temporary file and deleted afterwards.
+  - Matches are reported with the rule's name, author, reference, and a severity from the rule's score. A match is a strong lead, not proof: look at the file before acting.
+  - Agents need 0.5.0 or later; the server refuses an Advanced scan on an older agent and says to upgrade it. Basic scans work as before.
+- **The install script installs YARA-X 1.21.0** (`yr`) to `/usr/local/bin`, a pinned version checked against a pinned checksum, and release notes list it with the other dependencies.
+
+### Changed
+
+- The "Antivirus (ClamAV)" check is now called **Antivirus scan**.
+
 ## [0.4.2] - 2026-10-10
 
 ### Changed

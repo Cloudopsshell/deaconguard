@@ -21,7 +21,8 @@
 # It installs what DeaconGuard's checks use, from the distribution's own
 # repositories: procps, iproute2, findutils, needs-restarting (RHEL family) and
 # ClamAV with its signature updater (on RHEL, from EPEL, which it enables).
-# It installs cosign, pinned to a version and checksum, to verify releases.
+# It installs YARA-X (yr), for the advanced antivirus scan, and cosign, to
+# verify releases, each pinned to a version and checksum.
 # Then it downloads this machine's .deb or .rpm package from a GitHub release,
 # verifies that checksums.txt was signed by this repository's release workflow
 # and that the package matches it, installs the package, and runs
@@ -44,6 +45,13 @@ SIGNER_ISSUER="https://token.actions.githubusercontent.com"
 COSIGN_VERSION="3.1.3"
 COSIGN_SHA256_AMD64="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
 COSIGN_SHA256_ARM64="c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a"
+
+# YARA-X, the engine of the advanced antivirus scan, installed to
+# /usr/local/bin. Its releases publish no checksums, so these are of the
+# reviewed downloads; update all three together.
+YARA_X_VERSION="1.21.0"
+YARA_X_SHA256_AMD64="01585181e8979e36ac10ab123fcf8921cf8ba879bf942916413e091e18d64852"
+YARA_X_SHA256_ARM64="8d56947d82c7959a65fd4a7327d339d326649f6208c01c9f7fe7fd249e61c66a"
 
 usage() {
 	cat <<'EOF'
@@ -114,7 +122,7 @@ install_dependencies() {
 			;;
 		esac
 		# File paths, because package names differ between releases.
-		packages="procps-ng iproute findutils /usr/bin/needs-restarting /usr/bin/clamscan /usr/bin/freshclam"
+		packages="procps-ng iproute findutils tar gzip /usr/bin/needs-restarting /usr/bin/clamscan /usr/bin/freshclam"
 		# shellcheck disable=SC2086 # the package list splits into words on purpose
 		"$rpm_installer" install -y -q $packages >"$work/dependencies.log" 2>&1 ||
 			{ cat "$work/dependencies.log" >&2; fail "$rpm_installer could not install the dependencies ($packages)"; }
@@ -150,6 +158,33 @@ install_cosign() {
 		fail "the cosign download does NOT match its pinned checksum. Nothing was installed"
 	install -m 0755 "$work/cosign" /usr/local/bin/cosign
 	ok "Installed cosign $COSIGN_VERSION to /usr/local/bin (verifies release signatures)"
+}
+
+# install_yara_x installs YARA-X's yr to /usr/local/bin, checking the download
+# against the pinned checksum. It replaces an older yr there, and leaves alone
+# one installed elsewhere, such as by a package.
+install_yara_x() {
+	found="$(command -v yr 2>/dev/null || true)"
+	if [ -n "$found" ] && [ "$found" != /usr/local/bin/yr ]; then
+		ok "YARA-X $(yr --version 2>/dev/null | awk '{print $NF}') found at $found"
+		return
+	fi
+	if [ "$(/usr/local/bin/yr --version 2>/dev/null | awk '{print $NF}')" = "$YARA_X_VERSION" ]; then
+		ok "YARA-X $YARA_X_VERSION found"
+		return
+	fi
+	case "$arch" in
+	amd64) expected_yara_x="$YARA_X_SHA256_AMD64" target="x86_64-unknown-linux-gnu" ;;
+	arm64) expected_yara_x="$YARA_X_SHA256_ARM64" target="aarch64-unknown-linux-gnu" ;;
+	esac
+	url="https://github.com/VirusTotal/yara-x/releases/download/v$YARA_X_VERSION/yara-x-v$YARA_X_VERSION-$target.tar.gz"
+	curl -fsSL --proto '=https' --tlsv1.2 -o "$work/yara-x.tar.gz" "$url" || fail "could not download YARA-X from $url"
+	[ "$(sha256sum "$work/yara-x.tar.gz" | cut -d' ' -f1)" = "$expected_yara_x" ] ||
+		fail "the YARA-X download does NOT match its pinned checksum. Nothing was installed"
+	mkdir "$work/yara-x"
+	tar -xzf "$work/yara-x.tar.gz" -C "$work/yara-x" yr || fail "could not unpack YARA-X"
+	install -m 0755 "$work/yara-x/yr" /usr/local/bin/yr
+	ok "Installed YARA-X $YARA_X_VERSION to /usr/local/bin (the advanced antivirus scan)"
 }
 
 # quote prints its argument as a single-quoted shell word, for eval.
@@ -286,6 +321,7 @@ main() {
 	chmod 0755 "$work"
 
 	install_dependencies
+	install_yara_x
 	install_cosign
 
 	package="deaconguard_${version}_linux_${arch}.${format}"
