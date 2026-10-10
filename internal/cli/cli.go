@@ -16,6 +16,7 @@ import (
 	"deaconguard/internal/local"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
+	"deaconguard/internal/yararules"
 )
 
 func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int {
@@ -162,7 +163,7 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			continue
 		}
 		if index+1 >= len(arguments) {
-			return fmt.Errorf("--checks requires a comma-separated list such as packages,integrity,malware,config,antivirus")
+			return fmt.Errorf("--checks requires a comma-separated list such as packages,integrity,malware,config,antivirus (add yara for the advanced antivirus scan)")
 		}
 		index++
 		selected = strings.Split(arguments[index], ",")
@@ -199,6 +200,7 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 	}
 	report, err := scan.Run(host, selected, scan.Options{
 		SudoPassword: terminalSecret(fmt.Sprintf("[sudo] password for %s on %s: ", host.Username, host.Address), diagnostics),
+		YARARules:    yararules.Provider(),
 	})
 	if err != nil {
 		return err
@@ -342,7 +344,8 @@ Scanning:
   deaconguard host list
   deaconguard host sudo HOST_ID on|off
   deaconguard host remove HOST_ID        for an agent host, also revokes its agent
-  deaconguard scan HOST_ID [--checks packages,integrity,malware,config,antivirus] [--json]
+  deaconguard scan HOST_ID [--checks packages,integrity,malware,config,antivirus,yara] [--json]
+                                       yara is the advanced antivirus scan; it runs ClamAV too
   deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   deaconguard report REPORT_ID [--json]
 

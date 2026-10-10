@@ -87,3 +87,14 @@ func TestEnsureReusesTheCertificate(t *testing.T) {
 		t.Fatal("the key changed between starts, which would strand every agent")
 	}
 }
+
+func TestSupportsYARA(t *testing.T) {
+	for version, want := range map[string]bool{
+		"0.5.0": true, "0.5.0-rc.1": true, "0.6.2": true, "1.0.0": true, "dev": true,
+		"0.4.2": false, "0.4.0": false, "0.1.1": false, "": false,
+	} {
+		if got := agentapi.SupportsYARA(version); got != want {
+			t.Errorf("SupportsYARA(%q) = %v, want %v", version, got, want)
+		}
+	}
+}
