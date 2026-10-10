@@ -41,6 +41,8 @@ type agentHub struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+	// presence logs agents connecting and going quiet.
+	presence presence
 }
 
 type agentScan struct {
@@ -53,7 +55,8 @@ type agentScan struct {
 
 func newAgentHub(runner *runner) *agentHub {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &agentHub{runner: runner, wakers: make(map[string]chan struct{}), active: make(map[string]*agentScan), ctx: ctx, cancel: cancel}
+	return &agentHub{runner: runner, wakers: make(map[string]chan struct{}), active: make(map[string]*agentScan), ctx: ctx, cancel: cancel,
+		presence: presence{seen: make(map[string]presenceEntry)}}
 }
 
 // start runs the janitor that fails scans agents never pick up or finish.
@@ -82,7 +85,11 @@ func (h *agentHub) stop() {
 func (h *agentHub) expire() {
 	expired, _ := store.ExpireQueuedScans(time.Now().Add(-queuedScanTimeout),
 		fmt.Sprintf("the agent did not pick up the scan within %s; check that it is running", queuedScanTimeout))
+	h.presence.sweep(time.Now())
 	for _, id := range expired {
+		if record, err := store.GetScan(id); err == nil {
+			serverLog(record.HostID, store.LogWarning, "The agent on %s did not pick up its scan within %s; check that it is running", record.Address, queuedScanTimeout)
+		}
 		if log := h.runner.logFor(id); log != nil {
 			h.runner.publishFailure(id, log, "the agent did not pick up the scan")
 		}
@@ -183,6 +190,7 @@ func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {
 			return
 		}
 		store.Audit("agent", "agent.enroll", host.Address, fmt.Sprintf("%s, DeaconGuard %s", request.OS, request.Version), remote)
+		serverLog(host.ID, store.LogInfo, "Agent enrolled: %s (%s, DeaconGuard %s)", host.Address, limitText(request.OS, 128), limitText(request.Version, 32))
 		writeJSON(w, http.StatusCreated, agentapi.EnrollResponse{HostID: host.ID, Credential: credential})
 	}
 }
@@ -193,6 +201,8 @@ func (h *agentHub) job(w http.ResponseWriter, r *http.Request, host store.Host) 
 		store.UpdateAgentHost(host.ID, hostname, limitText(r.Header.Get(agentapi.HeaderUsername), 64), limitText(r.Header.Get(agentapi.HeaderOS), 128))
 		host.Address = hostname
 	}
+	h.presence.checkIn(host)
+	defer h.presence.checkIn(host)
 	deadline := time.NewTimer(agentapi.JobWait)
 	defer deadline.Stop()
 	for {
@@ -226,6 +236,7 @@ func (h *agentHub) job(w http.ResponseWriter, r *http.Request, host store.Host) 
 func (h *agentHub) begin(host store.Host, record store.Scan) {
 	log := h.runner.attach(host, record)
 	log.add(scan.Event{Kind: "success", Phase: scan.PhaseConnect, Message: fmt.Sprintf("The agent on %s picked up the scan", host.Address)})
+	serverLog(host.ID, store.LogInfo, "The agent on %s picked up scan %s", host.Address, record.ID)
 	started, err := time.Parse(time.RFC3339, record.StartedAt)
 	if err != nil {
 		started = time.Now()
