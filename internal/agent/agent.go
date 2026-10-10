@@ -1,4 +1,4 @@
-// Package agent is `deaconguard agent`: it enrolls this machine with an DeaconGuard
+// Package agent is `deaconguard agent`: it enrolls this machine with a DeaconGuard
 // server using a one-time token, then waits for the server to ask for scans,
 // runs them here, and sends back the results. It only makes outbound HTTPS
 // requests to the server; it opens no port.

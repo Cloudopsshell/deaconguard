@@ -335,7 +335,7 @@ func showCheckResults(report map[string]any, output io.Writer) {
 func usage(output io.Writer) {
 	fmt.Fprintln(output, `DeaconGuard scans Linux machines against official security advisories. It
 scans the machine it runs on, and machines running the DeaconGuard agent that
-have enrolled with an DeaconGuard server.
+have enrolled with a DeaconGuard server.
 
 Scanning:
   deaconguard host add [--allow-sudo]    register this machine (Linux)

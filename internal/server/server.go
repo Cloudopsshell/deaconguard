@@ -326,7 +326,7 @@ func (s *Server) addHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.Transport != "" && request.Transport != store.TransportLocal {
-		writeError(w, http.StatusBadRequest, errors.New("only this machine can be added here; other machines join by enrolling an DeaconGuard agent"))
+		writeError(w, http.StatusBadRequest, errors.New("only this machine can be added here; other machines join by enrolling a DeaconGuard agent"))
 		return
 	}
 	if err := s.localAvailable(); err != nil {

@@ -1,4 +1,4 @@
-// Package agentapi is the protocol between an DeaconGuard server and its agents:
+// Package agentapi is the protocol between a DeaconGuard server and its agents:
 // the enrollment token format, how an agent trusts the server's certificate,
 // and the JSON messages they exchange over HTTPS. The agent always connects to
 // the server; the server never connects to an agent.
@@ -48,7 +48,7 @@ func ParseToken(value string) (Token, error) {
 	rest, found := strings.CutPrefix(value, tokenPrefix)
 	parts := strings.Split(rest, ".")
 	if !found || len(parts) != 3 {
-		return Token{}, errors.New("this is not an DeaconGuard enrollment token; copy it again from the server's Agents page")
+		return Token{}, errors.New("this is not a DeaconGuard enrollment token; copy it again from the server's Agents page")
 	}
 	serverURL, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
