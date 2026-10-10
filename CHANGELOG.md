@@ -8,6 +8,20 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-11
+
+### Added
+
+- **The server's own machine is scanned as root, by an agent of its own.** The server runs without root, as the `deaconguard` user, and systemd's `NoNewPrivileges` keeps it from using sudo, so scans of its own machine were always partial. `deaconguard setup server`, which the install script runs, now installs and enrolls an agent on the server's machine over `127.0.0.1`. It appears on the Hosts page as **This server**, and its scans have full coverage, scheduled or not. The server still runs without root, and the agent listens on nothing.
+- `--no-agent` skips it (and is remembered by later runs); `--with-agent` adds it later.
+- Setup ends by saying what runs on the machine, and how.
+- A host the server scans itself shows why its results are partial and how to fix it.
+
+### Changed
+
+- **The server never scans anything itself.** In the dashboard on a server, **Add this machine** gives way to **Enroll a machine**; the local dashboard (`deaconguard serve`) keeps it.
+- **Upgrading:** running the install script on a server adds the agent. If this machine was added as a host earlier, its scans, log entries, and schedules move to the agent host. The install script now recognizes a server's machine as a server even though it also has an agent.
+
 ## [0.8.1] - 2026-10-11
 
 ### Fixed
@@ -225,7 +239,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.0...v0.7.1

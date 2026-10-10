@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -49,6 +50,9 @@ const (
 type serverSetup struct {
 	listen, certificate, key string
 	adminUser, passwordFile  string
+	// noAgent and withAgent decide whether the server's own machine gets
+	// an agent; without either, the earlier choice stands.
+	noAgent, withAgent bool
 }
 
 type agentSetup struct {
@@ -79,13 +83,21 @@ func runSetup(arguments []string, output, diagnostics io.Writer) error {
 }
 
 const (
-	serverSetupUsage = "usage: deaconguard setup server [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE] [--admin-user NAME] [--admin-password-file FILE]"
+	serverSetupUsage = "usage: deaconguard setup server [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE] [--admin-user NAME] [--admin-password-file FILE] [--no-agent | --with-agent]"
 	agentSetupUsage  = "usage: deaconguard setup agent [--token-file FILE] [--force]"
 )
 
 func parseServerSetup(arguments []string) (serverSetup, error) {
 	var options serverSetup
 	for index := 0; index < len(arguments); index++ {
+		switch arguments[index] {
+		case "--no-agent":
+			options.noAgent = true
+			continue
+		case "--with-agent":
+			options.withAgent = true
+			continue
+		}
 		if index+1 >= len(arguments) {
 			return options, errors.New(serverSetupUsage)
 		}
@@ -108,6 +120,9 @@ func parseServerSetup(arguments []string) (serverSetup, error) {
 	}
 	if (options.certificate == "") != (options.key == "") {
 		return options, fmt.Errorf("--tls-cert and --tls-key go together")
+	}
+	if options.noAgent && options.withAgent {
+		return options, fmt.Errorf("choose --no-agent or --with-agent, not both")
 	}
 	for _, path := range []string{options.certificate, options.key} {
 		if path != "" && !filepath.IsAbs(path) {
@@ -318,8 +333,118 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 	if options.certificate == "" && strings.HasPrefix(certificate, store.SystemDataDir) {
 		fmt.Fprintln(output, "The certificate is self-signed, so the browser warns about it once. Agents trust it\nthrough this fingerprint, which every enrollment token carries.")
 	}
-	fmt.Fprintf(output, "\nAdd machines on the dashboard's Agents page. Only allow port %s from the\nnetworks of your administrators and agents.\n", port)
+	state, err := setupServerAgent(account, listen, options, output)
+	if err != nil {
+		fmt.Fprintf(output, "\nWarning: could not add the agent on this machine: %v\nThe server is running. Try again with: sudo deaconguard setup server --with-agent\n", err)
+		state = serverAgentFailed
+	}
+	describeServerMachine(output, port, state)
+	fmt.Fprintf(output, "\nAdd other machines on the dashboard's Agents page. Only allow port %s from the\nnetworks of your administrators and agents.\n", port)
 	return nil
+}
+
+// What the server's own machine runs besides the server.
+const (
+	serverAgentRunning   = "agent"
+	serverAgentDeclined  = "declined"
+	serverAgentElsewhere = "elsewhere"
+	serverAgentFailed    = "failed"
+)
+
+// noAgentMarker records that the server's own machine is to have no agent,
+// so a later upgrade does not add one.
+var noAgentMarker = filepath.Join(store.SystemDataDir, "no-agent")
+
+// tokenPattern finds an enrollment token in deaconguard token create's output.
+var tokenPattern = regexp.MustCompile(regexp.QuoteMeta("deaconguard1.") + `[A-Za-z0-9_.-]+`)
+
+// setupServerAgent gives the server's own machine an agent of its own, so it
+// is scanned as root like every other machine while the server, which faces
+// the network, keeps running without root. The agent enrolls with this server
+// over the loopback address. The server's earlier "this machine" host, which
+// the server scanned without root, is merged into the agent host.
+func setupServerAgent(account *user.User, listen string, options serverSetup, output io.Writer) (string, error) {
+	switch {
+	case options.noAgent:
+		if err := os.WriteFile(noAgentMarker, []byte("Remove this file, or run deaconguard setup server --with-agent, to add the agent.\n"), 0o600); err != nil {
+			return "", err
+		}
+		return serverAgentDeclined, nil
+	case options.withAgent:
+		if err := os.Remove(noAgentMarker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	default:
+		if _, err := os.Stat(noAgentMarker); err == nil {
+			return serverAgentDeclined, nil
+		}
+	}
+	path := agent.SystemConfigPath
+	if config, err := agent.LoadConfig(path); err == nil {
+		if !loopbackURL(config.ServerURL) {
+			return serverAgentElsewhere, nil
+		}
+		// Enrolled with this server on an earlier run: keep it, unless the
+		// server no longer knows it.
+		if _, err := runAsService(account, nil, "host", "this-server", config.HostID); err == nil {
+			return serverAgentRunning, startService(agentUnit, false, output)
+		}
+	}
+	_, port, _ := net.SplitHostPort(listen)
+	serverURL := "https://" + net.JoinHostPort(loopbackFor(listen), port)
+	created, err := runAsService(account, nil, "token", "create", "--server-url", serverURL)
+	if err != nil {
+		return "", err
+	}
+	token := tokenPattern.FindString(created)
+	if token == "" {
+		return "", errors.New("deaconguard token create printed no token")
+	}
+	config, err := agent.Enroll(context.Background(), token, path, true)
+	if err != nil {
+		return "", err
+	}
+	if _, err := runAsService(account, nil, "host", "this-server", config.HostID); err != nil {
+		return "", err
+	}
+	return serverAgentRunning, startService(agentUnit, true, output)
+}
+
+// loopbackFor is the address this machine's agent reaches a server listening
+// on listen at.
+func loopbackFor(listen string) string {
+	host, _, _ := net.SplitHostPort(listen)
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		return "127.0.0.1"
+	}
+	return host
+}
+
+func loopbackURL(serverURL string) bool {
+	parsed, err := url.Parse(serverURL)
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	ip := net.ParseIP(host)
+	return host == "localhost" || (ip != nil && ip.IsLoopback())
+}
+
+// describeServerMachine says what runs where, the same way the docs do.
+func describeServerMachine(output io.Writer, port, state string) {
+	fmt.Fprintf(output, "\nWhat runs on this machine:\n")
+	fmt.Fprintf(output, "  deaconguard-server  the dashboard and API on port %s, as the %s user, without root\n", port, serviceAccount)
+	switch state {
+	case serverAgentRunning:
+		fmt.Fprintln(output, "  deaconguard-agent   scans this machine as root and reports to this server; listens on nothing")
+		fmt.Fprintln(output, "\nThe server never scans anything itself: every machine, this one included, is scanned")
+		fmt.Fprintln(output, "by its own agent. This machine appears on the Hosts page as \"This server\".")
+	case serverAgentElsewhere:
+		fmt.Fprintln(output, "  deaconguard-agent   enrolled with another DeaconGuard server; left as it is")
+	default:
+		fmt.Fprintln(output, "  (no agent)          this machine is not scanned as root. Add one with:")
+		fmt.Fprintln(output, "                      sudo deaconguard setup server --with-agent")
+	}
 }
 
 // createFirstAccount asks for, or reads, the first dashboard account and
