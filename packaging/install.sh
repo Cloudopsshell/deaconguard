@@ -6,13 +6,17 @@
 # merged, and it installs the latest release: keep it working with that
 # release's packages.
 #
+# It installs a system package and service, so it runs as root:
+#
 # Server:
-#   curl -fsSL https://get.deaconguard.io | sh -
-# Agent, with the one-time token from the server's Agents page:
-#   curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.... sh -
+#   curl -fsSL https://get.deaconguard.io | sudo sh -
+# Agent, with the one-time token from the server's Agents page (-E passes the
+# token to sudo without putting it on a command line other users can see):
+#   curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.... sudo -E sh -
 #
 # Without a token it sets up a server, or upgrades the agent on a machine that
-# is already enrolled. It uses sudo for the steps that need root.
+# is already enrolled. Started without root, it stops before doing anything
+# and shows the command to use; it never asks for a password itself.
 #
 # Downloads this machine's .deb or .rpm package from a GitHub release over
 # HTTPS, checks its checksum against the release's checksums.txt, installs the
@@ -51,8 +55,9 @@ Setup options are passed to `deaconguard setup server` or `deaconguard setup age
           --admin-user NAME  --admin-password-file FILE
   agent:  --token-file FILE  --force
 
-For example:
-  curl -fsSL https://get.deaconguard.io | sh -
+Run it as root, for example with sudo:
+  Server:  curl -fsSL https://get.deaconguard.io | sudo sh -
+  Agent:   curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=<token> sudo -E sh -
 EOF
 }
 
@@ -104,13 +109,16 @@ main() {
 	printf 'DeaconGuard installer\n'
 	[ "$(uname -s)" = "Linux" ] || fail "the installer supports Linux; on other systems, download a release archive from $REPOSITORY/releases"
 
-	# Downloads and checks run as you; installing and setting up need root.
-	SUDO=""
+	# Installing a package and a service needs root. Say so plainly instead of
+	# asking for a password part-way through.
 	if [ "$(id -u)" -ne 0 ]; then
-		command -v sudo >/dev/null 2>&1 || fail "installing needs root; run the installer as root, or install sudo"
-		SUDO="sudo"
-		printf '  Installing needs root; sudo may ask for your password.\n'
-		sudo -v || fail "sudo did not grant root"
+		if [ -n "$token" ] || [ "$mode" = "agent" ]; then
+			example="curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=<your token> sudo -E sh -"
+		else
+			example="curl -fsSL https://get.deaconguard.io | sudo sh -"
+		fi
+		printf '\nThe installer needs root: it installs a system package and a service.\nRun it again with sudo (or as root, without sudo):\n\n  %s\n\nNothing was installed.\n' "$example" >&2
+		exit 1
 	fi
 
 	if [ -n "$token" ]; then
@@ -119,7 +127,7 @@ main() {
 	elif [ -z "$mode" ]; then
 		mode="server"
 		# Upgrading an agent must not turn it into a server.
-		if $SUDO test -f /etc/deaconguard/agent.json; then
+		if [ -f /etc/deaconguard/agent.json ]; then
 			mode="agent"
 		fi
 	fi
@@ -218,10 +226,10 @@ main() {
 		printf '    (Install cosign to also verify the release signature: https://docs.sigstore.dev)\n'
 
 	if [ "$format" = "deb" ]; then
-		$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
+		DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
 			{ cat "$work/install.log" >&2; fail "apt-get could not install $package"; }
 	else
-		$SUDO "$rpm_installer" install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
+		"$rpm_installer" install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
 			{ cat "$work/install.log" >&2; fail "$rpm_installer could not install $package"; }
 	fi
 	ok "Installed $(/usr/bin/deaconguard version | cut -d' ' -f1-2)"
@@ -235,7 +243,7 @@ main() {
 	fi
 	# Prompts read from the terminal, not from this script on standard input.
 	eval "set -- $setup_options"
-	$SUDO /usr/bin/deaconguard setup "$mode" "$@" </dev/null
+	/usr/bin/deaconguard setup "$mode" "$@" </dev/null
 }
 
 main "$@"

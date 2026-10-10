@@ -96,15 +96,17 @@ const InstallURL = "https://get.deaconguard.io"
 // AgentInstallCommand is the command line that installs the DeaconGuard agent
 // and enrolls it with token, a one-time enrollment token; an empty token makes
 // the installer ask for it. A release build pins its own version, so agents
-// match their server; other builds install the latest release.
+// match their server; other builds install the latest release. The installer
+// needs root; `sudo -E` passes the variables to it through the environment,
+// so the token is not on a command line other users can see.
 func AgentInstallCommand(token string) string {
 	environment := ""
 	if releaseVersion.MatchString(Version) {
 		environment = "DEACONGUARD_VERSION=" + Version + " "
 	}
 	if token == "" {
-		return "curl -fsSL " + InstallURL + " | " + environment + "sh -s -- --agent"
+		return "curl -fsSL " + InstallURL + " | " + environment + "sudo -E sh -s -- --agent"
 	}
 	// Tokens are base64url and dots, so they need no shell quoting.
-	return "curl -fsSL " + InstallURL + " | " + environment + "DEACONGUARD_TOKEN=" + token + " sh -"
+	return "curl -fsSL " + InstallURL + " | " + environment + "DEACONGUARD_TOKEN=" + token + " sudo -E sh -"
 }
