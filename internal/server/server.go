@@ -106,6 +106,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		agentMux.HandleFunc("GET "+agentapi.PathPrefix+"job", s.agents.authenticated(s.agents.job))
 		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"scans/{id}/events", s.agents.authenticated(s.agents.events))
 		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"scans/{id}/result", s.agents.authenticated(s.agents.result))
+		agentMux.HandleFunc("GET "+agentapi.PathPrefix+agentapi.PathYARARules, s.agents.authenticated(s.agents.yaraRules))
 		agentMux.HandleFunc(agentapi.PathPrefix, func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("unknown agent API endpoint"))
 		})
@@ -439,6 +440,10 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	}
 	if host.Transport == store.TransportAgent && !s.network {
 		writeError(w, http.StatusConflict, errors.New("agent hosts are scanned when DeaconGuard serves on the network (deaconguard serve --listen 0.0.0.0:8443)"))
+		return
+	}
+	if err := checkAgentVersion(host, selected); err != nil {
+		writeError(w, http.StatusConflict, err)
 		return
 	}
 	scan, err := s.runner.start(host, selected)
