@@ -20,7 +20,8 @@ make ui-dev       # web UI with hot reload; run ./deaconguard serve alongside it
 3. **Keep the change focused** and match the surrounding code's style. Run `gofmt` on Go files.
 4. **Add or update tests.** Bug fixes should come with a test that fails without the fix.
 5. **Update `CHANGELOG.md`** under `## [Unreleased]` for anything a user would notice, in the Added, Changed, Fixed, or Security group.
-6. **Update the README** when behavior, commands, or setup change.
+6. **Update the README** when behavior, commands, or setup change, and the documentation at [docs.deaconguard.io](https://docs.deaconguard.io) (the `deaconguard-website` repository) in the same release.
+7. **`packaging/install.sh` goes live on merge.** `get.deaconguard.io` serves it from `main`, and it installs the *latest release*. A change to it must work with that release's packages; anything that needs a newer binary must check for it first, as the script does for `deaconguard setup`.
 
 ## Open a pull request
 
