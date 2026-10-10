@@ -1,6 +1,8 @@
 package advisory
 
 import (
+	"io"
+	"strings"
 	"testing"
 
 	"deaconguard/internal/inventory"
@@ -44,4 +46,41 @@ func TestEvaluateUbuntuOVALSurfacesUnknownTests(t *testing.T) {
 		t.Fatalf("unknown OVAL test was not surfaced: %+v", result)
 	}
 	_ = platform.Ubuntu
+}
+
+func TestOVALParserKeepsOnlyWhatTheEvaluationReads(t *testing.T) {
+	root, err := parseOVALTree(strings.NewReader(`<oval_definitions>
+  <definitions>
+    <definition id="oval:1" class="vulnerability" version="3">
+      <metadata><title>  CVE-2026-1 in example  </title><description>a very long text</description></metadata>
+      <criteria operator="AND"><criterion test_ref="oval:2" comment="a long comment"/></criteria>
+    </definition>
+  </definitions>
+</oval_definitions>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := root.child("definitions").child("definition")
+	if definition.attr("id") != "oval:1" || definition.attr("version") != "" {
+		t.Fatalf("attributes = %+v", definition.Attrs)
+	}
+	metadata := definition.child("metadata")
+	if metadata.child("title").value() != "CVE-2026-1 in example" || metadata.child("description") != nil || metadata.Text != "" {
+		t.Fatalf("metadata = %+v", metadata)
+	}
+	criterion := definition.child("criteria").child("criterion")
+	if criterion.attr("test_ref") != "oval:2" || criterion.attr("comment") != "" {
+		t.Fatalf("criterion = %+v", criterion.Attrs)
+	}
+}
+
+func TestOVALDataLargerThanTheLimitIsRefused(t *testing.T) {
+	limited := &limitedReader{reader: strings.NewReader(strings.Repeat("x", 100)), remaining: 10}
+	if _, err := io.ReadAll(limited); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	exact := &limitedReader{reader: strings.NewReader(strings.Repeat("x", 10)), remaining: 10}
+	if data, err := io.ReadAll(exact); err != nil || len(data) != 10 {
+		t.Fatalf("ReadAll() = %d bytes, %v", len(data), err)
+	}
 }
