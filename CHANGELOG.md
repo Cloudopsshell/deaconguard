@@ -17,7 +17,7 @@ under **Changed** with upgrade notes.
   - choose all hosts (including hosts added later) or specific hosts, and the checks, including the advanced antivirus scan;
   - **Run now**, **Turn off** and **Turn on**, edit and delete.
 - The server starts each run's scans like Scan now. It skips a host that is already being scanned, or whose agent is too old for a chosen check, and says why in the Logs page. A run missed while the server was stopped happens once when it starts again.
-- Scheduled scans never wait for a sudo password, since nobody is there to type it: checks that would need one run without sudo and report partial coverage. Agents run as root and are unaffected.
+- **Schedules run with root privileges by default.** Agents run as root; the server's own machine uses sudo where it needs no password, since a scheduled scan never waits for one. A schedule can turn root off, and the dialog then reminds you that results will show partial coverage.
 - Each host's page shows its next scheduled scan, or that it is not on a schedule. The dashboard flags hosts whose latest results are more than 7 days old.
 - The audit log records creating, changing, running and deleting schedules, and names the schedule that started each scan. It now also names viewing and downloading the log.
 

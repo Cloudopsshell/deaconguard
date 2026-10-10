@@ -36,7 +36,7 @@ func TestSchedulesStartScansWhenDue(t *testing.T) {
 		"days": []int{0, 1, 2, 3, 4, 5, 6}, "time": "02:30", "timezone": "Europe/Stockholm",
 	}})
 	view := decode[scheduleView](t, created)
-	if created.Code != http.StatusCreated || view.Description != "Every day at 02:30 (Europe/Stockholm)" || view.NextRunAt == "" ||
+	if created.Code != http.StatusCreated || view.Description != "Every day at 02:30 (Europe/Stockholm)" || view.NextRunAt == "" || !view.RunAsRoot ||
 		strings.Join(view.Checks, ",") != "packages,antivirus,yara" {
 		t.Fatalf("create: %d %+v", created.Code, view)
 	}
@@ -77,9 +77,9 @@ func TestSchedulesStartScansWhenDue(t *testing.T) {
 	// Turning it off clears the next run; deleting it removes it.
 	off := false
 	updated := decode[scheduleView](t, do(t, s, call{method: http.MethodPatch, path: "/api/schedules/" + view.ID, cookie: cookie, body: scheduleRequest{
-		Name: "Nightly", Enabled: &off, Checks: []string{"packages"}, AllHosts: true, Days: []int{1}, Time: "03:00", Timezone: "UTC",
+		Name: "Nightly", Enabled: &off, RunAsRoot: &off, Checks: []string{"packages"}, AllHosts: true, Days: []int{1}, Time: "03:00", Timezone: "UTC",
 	}}))
-	if updated.Enabled || updated.NextRunAt != "" {
+	if updated.Enabled || updated.NextRunAt != "" || updated.RunAsRoot {
 		t.Fatalf("disabled schedule = %+v", updated)
 	}
 	if deleted := do(t, s, call{method: http.MethodDelete, path: "/api/schedules/" + view.ID, cookie: cookie}); deleted.Code != http.StatusNoContent {
@@ -89,6 +89,13 @@ func TestSchedulesStartScansWhenDue(t *testing.T) {
 	actions := map[string]bool{}
 	for _, entry := range audit {
 		actions[entry.Action+" "+entry.Actor] = true
+	}
+	details := map[string]string{}
+	for _, entry := range audit {
+		details[entry.Action] = entry.Detail
+	}
+	if !strings.HasSuffix(details["schedule.create"], ", with root") || !strings.Contains(details["schedule.update"], ", without root") {
+		t.Errorf("audit details = %q / %q", details["schedule.create"], details["schedule.update"])
 	}
 	for _, want := range []string{"schedule.create admin", "schedule.update admin", "schedule.delete admin", "scan.start schedule: Nightly"} {
 		if !actions[want] {

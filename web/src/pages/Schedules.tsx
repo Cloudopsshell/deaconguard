@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CalendarClock, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarClock, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { api, type CheckId, type Schedule, type ScheduleInput } from "../api";
 import { Button, Card, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, cx } from "../components/ui";
 import { checkMeta } from "../lib/checks";
@@ -69,7 +69,7 @@ export function Schedules() {
     <>
       <PageHeader
         title="Schedules"
-        description="Scan hosts automatically on chosen days. Scheduled scans run like Scan now, without waiting for anyone: checks that need a sudo password run without sudo and say so."
+        description="Scan hosts automatically on chosen days. Scheduled scans run like Scan now, with root privileges unless a schedule turns them off."
         action={
           <Button onClick={() => setEditing("new")}>
             <Plus className="size-4" /> New schedule
@@ -119,6 +119,8 @@ export function Schedules() {
                       ? "All hosts, including hosts added later"
                       : schedule.host_ids.map((id) => hostNames.get(id) ?? "removed host").join(", ")}
                     {" · "}
+                    {schedule.run_as_root ? "with root" : <span className="text-amber-700 dark:text-amber-400">without root: partial coverage</span>}
+                    {" · "}
                     {schedule.checks
                       .filter((check) => check !== "antivirus" || !schedule.checks.includes("yara"))
                       .map((check) => (check === "yara" ? "Antivirus (advanced)" : checkMeta[check].label))
@@ -166,6 +168,7 @@ function ScheduleDialog({ schedule, onClose }: { schedule: Schedule | null; onCl
       name: "Nightly scan",
       enabled: true,
       checks: ["packages"],
+      run_as_root: true,
       all_hosts: true,
       host_ids: [],
       days: everyDay,
@@ -324,6 +327,30 @@ function ScheduleDialog({ schedule, onClose }: { schedule: Schedule | null; onCl
               />
               Advanced antivirus scan (adds YARA rules; agents 0.5.0 or later)
             </label>
+          )}
+        </fieldset>
+
+        <fieldset>
+          <legend className="text-sm font-medium">Privileges</legend>
+          <label className="mt-2 flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={input.run_as_root}
+              onChange={(event) => set("run_as_root", event.target.checked)}
+              className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+            />
+            <span>
+              Run with root privileges (sudo)
+              <span className="block text-xs text-slate-500 dark:text-slate-400">
+                Every check sees everything: other users' processes, protected files and firewall rules. Agents run as root.
+              </span>
+            </span>
+          </label>
+          {!input.run_as_root && (
+            <p className="mt-2 flex gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-600/20 ring-inset dark:bg-amber-500/10 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              Without root, checks cannot see other users' processes, protected files or firewall rules, so results show partial coverage.
+            </p>
           )}
         </fieldset>
 
