@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"deaconguard/internal/agent"
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/buildinfo"
+	checkspkg "deaconguard/internal/checks"
 	"deaconguard/internal/local"
 	"deaconguard/internal/server"
 	"deaconguard/internal/store"
@@ -327,6 +329,15 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 // scanThroughAgent queues a scan for an agent host and waits for the server,
 // which must be running, to hand it to the agent and store the result.
 func scanThroughAgent(host store.Host, checks []string, asJSON bool, output, diagnostics io.Writer) error {
+	if slices.Contains(checks, checkspkg.YARA) {
+		agents, err := store.Agents()
+		if err != nil {
+			return err
+		}
+		if version := agents[host.ID].Version; !agentapi.SupportsYARA(version) {
+			return agentapi.ErrNeedsNewerAgent(host.Address, version)
+		}
+	}
 	if _, busy, err := store.UnfinishedScan(host.ID); err != nil {
 		return err
 	} else if busy {

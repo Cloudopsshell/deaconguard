@@ -157,6 +157,16 @@ type Result struct {
 // MaxResultBytes bounds a result, which holds the whole package database.
 const MaxResultBytes = 80 << 20
 
+// PathYARARules serves the advanced antivirus scan's rules, gzip-compressed,
+// with their version in HeaderRulesVersion. Agents fetch them for each
+// advanced scan, so they need no internet access of their own.
+const (
+	PathYARARules      = "yara-rules"
+	HeaderRulesVersion = "X-DeaconGuard-Rules-Version"
+	// MaxYARARulesBytes bounds the compressed rules; the core package is about 2 MB.
+	MaxYARARulesBytes = 32 << 20
+)
+
 // Headers the agent sends with every request.
 const (
 	HeaderVersion  = "X-DeaconGuard-Agent-Version"
@@ -164,3 +174,23 @@ const (
 	HeaderUsername = "X-DeaconGuard-Agent-Username"
 	HeaderOS       = "X-DeaconGuard-Agent-OS"
 )
+
+// SupportsYARA reports whether an agent of version runs the advanced
+// antivirus scan, which arrived in 0.5.0. Builds without a release version,
+// such as "dev", are assumed to.
+func SupportsYARA(version string) bool {
+	var major, minor int
+	if _, err := fmt.Sscanf(version, "%d.%d.", &major, &minor); err != nil {
+		return version != ""
+	}
+	return major > 0 || minor >= 5
+}
+
+// ErrNeedsNewerAgent explains why an advanced scan was refused for an agent.
+func ErrNeedsNewerAgent(address, version string) error {
+	if version == "" {
+		version = "an unknown version"
+	}
+	return fmt.Errorf("the advanced antivirus scan needs the DeaconGuard agent 0.5.0 or later on %s, which runs %s; "+
+		"upgrade it there with: curl -fsSL https://get.deaconguard.io | sudo sh -", address, version)
+}

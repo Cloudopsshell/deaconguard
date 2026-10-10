@@ -69,6 +69,21 @@ func (e *Executor) RunPrivileged(command string, limit int, timeout time.Duratio
 	return output, code, true, err
 }
 
+// RunPrivilegedInput is RunPrivileged with input on the command's standard
+// input. Through sudo with a password, the password line comes first; sudo
+// reads only that line and passes the rest on to the command.
+func (e *Executor) RunPrivilegedInput(command string, input []byte, limit int, timeout time.Duration) (output []byte, code int, privileged bool, err error) {
+	if !e.sudo() || e.mode == runningAsRoot {
+		output, code, err = exitCode(e.commander.Run(command, input, limit, timeout))
+		return output, code, e.mode == runningAsRoot, err
+	}
+	wrapped, stdin := e.wrap(command)
+	stdin = append(stdin, input...)
+	output, code, err = exitCode(e.commander.Run(wrapped, stdin, limit, timeout))
+	clear(stdin)
+	return output, code, true, err
+}
+
 // Privileged reports whether sudo is usable, asking for a password if needed.
 func (e *Executor) Privileged() bool { return e.sudo() }
 
