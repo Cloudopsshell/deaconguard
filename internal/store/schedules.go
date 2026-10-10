@@ -14,6 +14,10 @@ type Schedule struct {
 	Name    string   `json:"name"`
 	Enabled bool     `json:"enabled"`
 	Checks  []string `json:"checks"`
+	// RunAsRoot gives the scans full access: agents always run as root, and
+	// the server's own machine uses sudo where it needs no password.
+	// Without it, scans of the server's own machine have partial coverage.
+	RunAsRoot bool `json:"run_as_root"`
 	// AllHosts includes every host, including those added later; otherwise
 	// HostIDs lists the hosts.
 	AllHosts bool     `json:"all_hosts"`
@@ -32,12 +36,12 @@ type Schedule struct {
 // ErrScheduleNotFound means no schedule has the ID.
 var ErrScheduleNotFound = errors.New("unknown schedule")
 
-const scheduleColumns = `id, name, enabled, checks, all_hosts, host_ids, days, time, timezone, next_run_at, last_run_at, created_at, created_by`
+const scheduleColumns = `id, name, enabled, checks, run_as_root, all_hosts, host_ids, days, time, timezone, next_run_at, last_run_at, created_at, created_by`
 
 func scanSchedule(row rowScanner) (Schedule, error) {
 	var schedule Schedule
 	var checks, hosts, days string
-	if err := row.Scan(&schedule.ID, &schedule.Name, &schedule.Enabled, &checks, &schedule.AllHosts, &hosts, &days,
+	if err := row.Scan(&schedule.ID, &schedule.Name, &schedule.Enabled, &checks, &schedule.RunAsRoot, &schedule.AllHosts, &hosts, &days,
 		&schedule.Time, &schedule.Timezone, &schedule.NextRunAt, &schedule.LastRunAt, &schedule.CreatedAt, &schedule.CreatedBy); err != nil {
 		return Schedule{}, err
 	}
@@ -110,13 +114,13 @@ func SaveSchedule(schedule Schedule) (Schedule, error) {
 			return Schedule{}, err
 		}
 		schedule.CreatedAt = nowText()
-		_, err = db.Exec("INSERT INTO schedules ("+scheduleColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			schedule.ID, schedule.Name, schedule.Enabled, encodeChecks(schedule.Checks), schedule.AllHosts, encodeChecks(schedule.HostIDs),
+		_, err = db.Exec("INSERT INTO schedules ("+scheduleColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			schedule.ID, schedule.Name, schedule.Enabled, encodeChecks(schedule.Checks), schedule.RunAsRoot, schedule.AllHosts, encodeChecks(schedule.HostIDs),
 			encodeDays(schedule.Days), schedule.Time, schedule.Timezone, schedule.NextRunAt, schedule.LastRunAt, schedule.CreatedAt, schedule.CreatedBy)
 	} else {
 		var result sql.Result
-		result, err = db.Exec(`UPDATE schedules SET name = ?, enabled = ?, checks = ?, all_hosts = ?, host_ids = ?, days = ?, time = ?,
-			timezone = ?, next_run_at = ? WHERE id = ?`, schedule.Name, schedule.Enabled, encodeChecks(schedule.Checks), schedule.AllHosts,
+		result, err = db.Exec(`UPDATE schedules SET name = ?, enabled = ?, checks = ?, run_as_root = ?, all_hosts = ?, host_ids = ?, days = ?, time = ?,
+			timezone = ?, next_run_at = ? WHERE id = ?`, schedule.Name, schedule.Enabled, encodeChecks(schedule.Checks), schedule.RunAsRoot, schedule.AllHosts,
 			encodeChecks(schedule.HostIDs), encodeDays(schedule.Days), schedule.Time, schedule.Timezone, schedule.NextRunAt, schedule.ID)
 		if err == nil {
 			if changed, _ := result.RowsAffected(); changed == 0 {
