@@ -89,7 +89,7 @@ export function Layout() {
         {session.data?.username && <SignedInAs username={session.data.username} />}
         <p className="hidden px-5 pt-6 text-xs leading-relaxed text-slate-400 lg:block">
           {network
-            ? "Server · scans this machine and enrolled agents against official distribution advisories."
+            ? "Server · checks what its agents, this machine's included, read as root against official distribution advisories."
             : "Local only · scans this machine against official distribution advisories."}
         </p>
         <VersionLabel />
