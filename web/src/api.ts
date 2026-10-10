@@ -156,6 +156,23 @@ export interface CheckResult {
   findings: CheckFinding[] | null;
 }
 
+/** How the previous run of the server ended. */
+export interface ServerStop {
+  kind: "stopped" | "reboot" | "out_of_memory" | "crashed" | "killed" | "unknown";
+  message: string;
+  started_at: string;
+  /** When the next run found out; close to the restart. */
+  detected_at: string;
+  stopped_at?: string;
+  version?: string;
+  /** The start of a crash report. */
+  detail?: string;
+}
+
+export interface ServerStatus {
+  last_stop: ServerStop | null;
+}
+
 export interface CheckDefinition {
   id: CheckId;
   name: string;
@@ -323,6 +340,7 @@ export const api = {
   removeHost: (id: string) => request<Host>("DELETE", `/api/hosts/${id}`),
   checks: () => request<CheckDefinition[]>("GET", "/api/checks"),
   capabilities: () => request<Capabilities>("GET", "/api/capabilities"),
+  serverStatus: () => request<ServerStatus>("GET", "/api/server-status"),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
