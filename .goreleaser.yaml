@@ -98,6 +98,24 @@ checksum:
   extra_files:
     - glob: ./packaging/install.sh
 
+# One SBOM (SPDX JSON) for the release: Syft reads go.mod and
+# web/package-lock.json, so it lists every Go module and npm package with
+# versions and licenses. checksums.txt lists it, so the signature covers it too.
+sboms:
+  - id: source
+    artifacts: any
+    documents:
+      - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
+    cmd: syft
+    # GoReleaser runs this in dist/, so the repository root is "..".
+    args:
+      - "dir:.."
+      - "--source-name={{ .ProjectName }}"
+      - "--source-version={{ .Version }}"
+      - "--exclude=./dist/**"
+      - "--exclude=./web/node_modules/**"
+      - "--output=spdx-json=$document"
+
 # checksums.txt lists every release file, so signing it covers them all. The
 # signature is keyless: Sigstore records that this repository's release
 # workflow produced the file, so there is no signing key to keep.
