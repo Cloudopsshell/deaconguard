@@ -298,6 +298,20 @@ When sudo needs a password, the scan pauses and the browser asks for it. The ans
 
 CentOS Stream 9/10 is recognized but deliberately rejected: the official repositories checked here publish no `updateinfo` metadata, and RHEL OVAL is not assumed to be compatible. RHEL 10 is not enabled because no official RHEL 10 feed was present in the verified Red Hat feed index. Amazon Linux 2, other RPM distributions, and end-of-life releases are not supported.
 
+### What clears each finding
+
+Every package finding says what clears it, on every supported distribution:
+
+| Fix | Meaning | What to do |
+| --- | --- | --- |
+| Update available | The distribution published a fixed package. | `sudo apt update && sudo apt upgrade`, or `sudo dnf upgrade` (Amazon Linux 2023: `sudo dnf upgrade --releasever=latest`, because each machine stays on the release it was installed from) |
+| Restart needed | The running kernel is vulnerable, and a fixed kernel is already installed. | `sudo reboot` |
+| Old kernel | An older kernel that is installed but not running, kept as a fallback. | `sudo apt autoremove --purge` or `sudo dnf remove --oldinstallonly` |
+| Ubuntu Pro | Ubuntu publishes the fix only in Ubuntu Pro (ESM). | `sudo pro attach` |
+| No fix yet | The distribution knows about it but has not published a fix (Ubuntu's "needs fixing", Debian's open, no-dsa, and postponed). Updating cannot help until it does. | Nothing yet; it clears once a fix ships and you update. |
+
+The dashboard leads with **To fix now** (updates and restarts) and lists the rest by what clears them, never as clean. Severity is the distribution's own rating: Ubuntu's priority, Debian's urgency, Red Hat's and Amazon's advisory severity. For Ubuntu, the generic CVSS rating is shown beside it when it differs, since Ubuntu's priority accounts for how the package is built and used on Ubuntu. Red Hat's and Amazon Linux's feeds only list issues that have a fix, so their findings are never "No fix yet".
+
 Package reports cover the installed DPKG/RPM packages and the running kernel where the platform's feed supports it; they do not cover applications outside the system package manager or containers. The optional checks look for common signs of tampering and misconfiguration, not every possible compromise. No report is a claim that a machine is secure. Missing, invalid, stale-without-cache, or unsupported advisory data must not be interpreted as zero vulnerabilities.
 
 ## Versioning

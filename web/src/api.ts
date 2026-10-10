@@ -93,6 +93,8 @@ export interface Scan {
   finding_count: number;
   unsupported_count: number;
   severity: SeverityCounts;
+  /** Set when the scan checked packages. */
+  fixes?: FixSummary;
   feed_stale: boolean;
   checks: CheckId[];
   has_log: boolean;
@@ -107,6 +109,8 @@ export interface CheckSummary {
   summary: string;
   finding_count: number;
   severity: SeverityCounts;
+  /** Set for the package check. */
+  fixes?: FixSummary;
 }
 
 export interface HostSummary extends Host {
@@ -123,12 +127,27 @@ export interface HostDetail extends HostSummary {
   scans: Scan[];
 }
 
+/** What clears a package finding. */
+export type FixState = "available" | "reboot" | "old_kernel" | "ubuntu_pro" | "none";
+
+/** Package findings summed by what clears them. */
+export interface FixSummary {
+  counts: Partial<Record<FixState, number>>;
+  /** By severity, the findings that installing updates or restarting fixes. */
+  actionable: SeverityCounts;
+}
+
 export interface Finding {
   id: string;
   package: string;
   installed_version: string;
   fixed_version: string;
+  /** Missing in reports from before 0.7.0. */
+  fix?: FixState;
+  /** The distribution's own rating. */
   severity: Severity;
+  /** The generic CVSS rating, when the distribution publishes it too. */
+  cvss_severity?: string;
   url: string;
   title: string;
 }
@@ -242,6 +261,7 @@ export interface Report {
   check_results?: Partial<Record<CheckId, CheckResult>>;
   finding_count: number;
   findings: Finding[] | null;
+  fix_counts?: Partial<Record<FixState, number>>;
   unsupported_count: number;
   unsupported_cves: UnsupportedRule[] | null;
   coverage: string;
@@ -267,6 +287,8 @@ export interface Vulnerability {
   title: string;
   url: string;
   host_count: number;
+  /** Hosts where installing updates or restarting fixes it. */
+  fixable_host_count: number;
   packages: string[];
 }
 
@@ -278,6 +300,7 @@ export interface AffectedPackage {
   package: string;
   installed_version: string;
   fixed_version: string;
+  fix: FixState;
   severity: Severity;
   url: string;
   title: string;
@@ -292,6 +315,9 @@ export interface Summary {
   unsupported: number;
   stale_feeds: number;
   severity: SeverityCounts;
+  fixes: FixSummary;
+  /** Hosts where updating or restarting fixes something. */
+  hosts_to_update: number;
   host_summaries: HostSummary[];
   top_vulnerabilities: Vulnerability[];
   checks: Partial<Record<CheckId, CheckTotals>>;

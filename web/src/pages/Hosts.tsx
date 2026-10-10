@@ -12,7 +12,6 @@ import {
   ErrorMessage,
   Loading,
   PageHeader,
-  SeverityCountsInline,
   StatusBadge,
   Table,
   Td,
@@ -22,6 +21,7 @@ import {
 import { useRefreshAll } from "../lib/hooks";
 import { isActive, severityStyle, timeAgo } from "../lib/format";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
+import { PackageCountsInline } from "../lib/fixes";
 import { ScanDialog } from "../components/ScanDialog";
 import { agentOnline, shortConnectionLabel } from "../lib/hosts";
 import { RemoveHostDialog } from "./HostDetail";
@@ -152,7 +152,7 @@ function HostRow({ host }: { host: HostSummary }) {
       <Td>
         {host.last_report ? (
           <div className="space-y-1">
-            <SeverityCountsInline counts={host.last_report.severity} />
+            <PackageCountsInline summary={host.last_report} />
             <CoverageNotes scan={host.last_report} />
           </div>
         ) : (

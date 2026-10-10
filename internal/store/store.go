@@ -161,6 +161,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 8 {
+		if err := execInTx(db, schemaV8); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -351,6 +356,37 @@ CREATE TABLE logs (
 );
 CREATE INDEX logs_host ON logs (host_id, id);
 PRAGMA user_version = 7;`
+
+// schemaV8 records what clears each package finding (an update, a restart,
+// removing old kernels, Ubuntu Pro, or no fix yet) and its CVSS rating, and
+// sums them per scan. Findings from before only knew whether a fixed version
+// existed, which is what the backfill uses.
+const schemaV8 = `
+ALTER TABLE findings ADD COLUMN fix TEXT NOT NULL DEFAULT '';
+ALTER TABLE findings ADD COLUMN cvss_severity TEXT NOT NULL DEFAULT '';
+ALTER TABLE scans ADD COLUMN fix_summary TEXT NOT NULL DEFAULT '';
+ALTER TABLE scan_checks ADD COLUMN fix_summary TEXT NOT NULL DEFAULT '';
+` + backfillV8 + `
+PRAGMA user_version = 8;`
+
+// backfillV8 sets the fix state and per-scan fix summaries of findings saved
+// before schema 8.
+const backfillV8 = `
+UPDATE findings SET fix = CASE WHEN fixed_version = '' THEN 'none' ELSE 'available' END;
+UPDATE scans SET fix_summary = json_object(
+	'counts', json_object(
+		'available', (SELECT COUNT(*) FROM findings f WHERE f.scan_id = scans.id AND f.fix = 'available'),
+		'reboot', 0, 'old_kernel', 0, 'ubuntu_pro', 0,
+		'none', (SELECT COUNT(*) FROM findings f WHERE f.scan_id = scans.id AND f.fix = 'none')),
+	'actionable', json_object(
+		'critical', (SELECT COUNT(*) FROM findings f WHERE f.scan_id = scans.id AND f.fix = 'available' AND f.severity = 'CRITICAL'),
+		'high', (SELECT COUNT(*) FROM findings f WHERE f.scan_id = scans.id AND f.fix = 'available' AND f.severity = 'HIGH'),
+		'medium', (SELECT COUNT(*) FROM findings f WHERE f.scan_id = scans.id AND f.fix = 'available' AND f.severity = 'MEDIUM'),
+		'low', (SELECT COUNT(*) FROM findings f WHERE f.scan_id = scans.id AND f.fix = 'available' AND f.severity = 'LOW'),
+		'unknown', (SELECT COUNT(*) FROM findings f WHERE f.scan_id = scans.id AND f.fix = 'available' AND f.severity NOT IN ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW'))))
+	WHERE status = 'succeeded' AND checks LIKE '%,packages,%';
+UPDATE scan_checks SET fix_summary = (SELECT fix_summary FROM scans WHERE scans.id = scan_checks.scan_id)
+	WHERE check_id = 'packages';`
 
 func ListHosts() ([]Host, error) {
 	db, err := database()
