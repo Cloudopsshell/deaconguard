@@ -529,6 +529,8 @@ type HostSummary struct {
 	Agent *Agent `json:"agent,omitempty"`
 	// NextScan is the host's next scheduled scan, if any.
 	NextScan *NextScan `json:"next_scan,omitempty"`
+	// ThisServer marks the agent host that is the server's own machine.
+	ThisServer bool `json:"this_server"`
 }
 
 // CheckSummary is one check's result within a scan.
@@ -564,12 +566,17 @@ func HostSummaries() ([]HostSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	serverHost, err := ThisServerHost()
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]HostSummary, 0, len(hosts))
 	for _, host := range hosts {
 		summary := HostSummary{Host: host}
 		if next, ok := upcoming[host.ID]; ok {
 			summary.NextScan = &next
 		}
+		summary.ThisServer = serverHost != "" && host.ID == serverHost
 		if agent, ok := agents[host.ID]; ok {
 			summary.Agent = &agent
 		}

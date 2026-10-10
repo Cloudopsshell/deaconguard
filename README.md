@@ -8,16 +8,32 @@
 
 DeaconGuard is a Linux security scanner written in Go. It runs fixed, read-only commands on a Linux machine and evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and an antivirus scan: Basic with ClamAV, or Advanced with ClamAV and YARA rules. The matching, checks, and scan orchestration are DeaconGuard code. Scans never install or change software; the only third-party engines they run are ClamAV and YARA-X, for the antivirus scan. The [install script](#install-script) installs them and the other tools the checks use, once, when it installs DeaconGuard.
 
-One binary does two jobs:
+## How it works
 
-- **Server:** an HTTPS dashboard with sign-in and an audit log. It scans the machine it runs on and the machines running the agent.
-- **Agent:** runs on each machine to scan. It enrolls once with a one-time token from the server, which is valid for 24 hours. After that it connects out to the server, runs the scans the server asks for, and sends back the results. Target machines need no open ports and no internet access, because the server evaluates their packages against the advisories.
+One binary does two jobs, and they are kept apart on purpose:
+
+- **Server:** the HTTPS dashboard, with sign-in and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
+- **Agent:** runs on each machine to scan, **as root**, so every check sees everything. It listens on nothing: it connects out to the server, runs the scans the server asks for, and sends back the results.
+
+**The server never scans anything itself.** Every machine, the server's own included, is scanned by its own agent. The install script gives the server's machine an agent too.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/docs/architecture-dark.svg">
+  <img src="assets/docs/architecture-light.svg" alt="The server runs without root and serves the dashboard. Every machine, the server's own included, runs an agent as root that asks the server for work and sends back results. The server downloads the distributions' advisories." width="100%">
+</picture>
+
+| Component | Runs as | Listens on | Reaches |
+| --- | --- | --- | --- |
+| `deaconguard-server` | `deaconguard` user, no root | `0.0.0.0:8443` (HTTPS) | the distributions' advisory feeds |
+| `deaconguard-agent` | root | nothing | only its server |
+
+Agents enroll once with a one-time token from the server, valid for 24 hours. Machines to scan need no open ports and no internet access, because the server evaluates their packages against the advisories. More on how they trust each other: [Architecture](https://docs.deaconguard.io/architecture).
 
 For a single machine, `deaconguard serve` gives a local dashboard without accounts.
 
 **Website:** [deaconguard.io](https://deaconguard.io) · **Documentation:** [docs.deaconguard.io](https://docs.deaconguard.io) · **Quick start:** [docs.deaconguard.io/quick-start](https://docs.deaconguard.io/quick-start)
 
-- [Install](#install) · [Getting started](#getting-started) · [Run the server](#run-the-server) · [Scan other machines with the agent](#scan-other-machines-with-the-agent) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
+- [How it works](#how-it-works) · [Install](#install) · [Getting started](#getting-started) · [Run the server](#run-the-server) · [Scan other machines with the agent](#scan-other-machines-with-the-agent) · [Update](#update) · [Back up and restore](#back-up-and-restore) · [Uninstall](#uninstall)
 - [Checks](#checks) · [Web UI](#web-ui) · [Supported distributions](#supported-distributions) · [Versioning](#versioning) · [Development](#development) · [Security](#security)
 
 ## Requirements
@@ -173,7 +189,9 @@ The [install script](#install-script) does this for you. After installing the `.
 sudo deaconguard setup server
 ```
 
-It asks for the first dashboard account (the password needs at least 12 characters), enables and starts the `deaconguard-server` service on port 8443, and prints the dashboard's addresses and the certificate's fingerprint. Running it again keeps the existing accounts and settings.
+It asks for the first dashboard account (the password needs at least 12 characters), enables and starts the `deaconguard-server` service on port 8443, gives this machine an agent of its own (see [How it works](#how-it-works)), and prints the dashboard's addresses, the certificate's fingerprint, and what runs on the machine. Running it again keeps the existing accounts and settings.
+
+The server's own agent enrolls with the server over `127.0.0.1` and appears on the **Hosts** page as **This server**. On a server set up before 0.9.0, where this machine was added as a host scanned by the server itself (without root, so its results were partial), running setup again moves that host's scans, log entries, and schedules to the agent host.
 
 Open `https://SERVER:8443` and sign in. On its first start, the server creates a self-signed certificate in `/var/lib/deaconguard/tls/`, so the browser warns about it once; check that the fingerprint matches the one setup printed. Agents don't rely on that warning being accepted: every enrollment token carries the fingerprint of the certificate's key, and an agent accepts the server only with that key, or with a certificate its system's certificate authorities trust for the server's name (so you can switch to your own certificate later).
 
@@ -184,6 +202,8 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 | `--listen ADDRESS:PORT` | Listen elsewhere than `0.0.0.0:8443`. |
 | `--tls-cert FILE --tls-key FILE` | Use your own certificate. The `deaconguard` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again. |
 | `--admin-user NAME --admin-password-file FILE` | Create the first account without prompts, for automation. Delete the file afterwards. |
+| `--no-agent` | Give this machine no agent. It is then not scanned as root: adding it on the Hosts page has the server scan it without root, with partial coverage. Later runs remember the choice. |
+| `--with-agent` | Add the agent after an earlier `--no-agent`. |
 
 Setup saves these settings in `/etc/systemd/system/deaconguard-server.service.d/10-setup.conf`, so package upgrades keep them.
 

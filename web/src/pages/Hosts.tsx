@@ -23,7 +23,7 @@ import { isActive, severityStyle, timeAgo } from "../lib/format";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { PackageCountsInline } from "../lib/fixes";
 import { ScanDialog } from "../components/ScanDialog";
-import { agentOnline, shortConnectionLabel } from "../lib/hosts";
+import { ThisServerBadge, agentOnline, shortConnectionLabel } from "../lib/hosts";
 import { RemoveHostDialog } from "./HostDetail";
 
 export function Hosts() {
@@ -45,14 +45,16 @@ export function Hosts() {
         title="Hosts"
         description={
           network
-            ? "This server's own machine and the machines running the DeaconGuard agent."
+            ? "Every machine running the DeaconGuard agent, this server's own machine included. Each is scanned as root by its own agent."
             : "The machine DeaconGuard runs on. Run it as a server to scan other machines with the agent."
         }
         action={
           <>
-            <Button variant={network ? "secondary" : "primary"} onClick={() => setAdding(true)}>
-              <Plus className="size-4" /> Add this machine
-            </Button>
+            {!network && (
+              <Button onClick={() => setAdding(true)}>
+                <Plus className="size-4" /> Add this machine
+              </Button>
+            )}
             {network && (
               <Link
                 to="/agents?enroll=1"
@@ -77,13 +79,22 @@ export function Hosts() {
             title="No hosts yet"
             description={
               network
-                ? "Add this server's machine, or enroll other machines with the DeaconGuard agent."
+                ? "Enroll machines with the DeaconGuard agent. The install script gives this server's own machine an agent too; if it is missing, run: sudo deaconguard setup server --with-agent"
                 : "Register the Linux machine DeaconGuard runs on to scan it."
             }
             action={
-              <Button onClick={() => setAdding(true)}>
-                <Plus className="size-4" /> Add this machine
-              </Button>
+              network ? (
+                <Link
+                  to="/agents?enroll=1"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold whitespace-nowrap text-white shadow-sm hover:bg-indigo-500"
+                >
+                  <RadioTower className="size-4" /> Enroll a machine
+                </Link>
+              ) : (
+                <Button onClick={() => setAdding(true)}>
+                  <Plus className="size-4" /> Add this machine
+                </Button>
+              )
             }
           />
         ) : (
@@ -127,6 +138,7 @@ function HostRow({ host }: { host: HostSummary }) {
         <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
           {host.address}
         </Link>
+        {host.this_server && <ThisServerBadge />}
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {host.transport === "agent" && (
             <span
