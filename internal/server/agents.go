@@ -402,4 +402,4 @@ func (s *Server) revokeEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, token)
 }
 
-var errNeedsNetworkMode = errors.New("agents enroll with an DeaconGuard server on the network: run deaconguard serve --listen 0.0.0.0:8443")
+var errNeedsNetworkMode = errors.New("agents enroll with a DeaconGuard server on the network: run deaconguard serve --listen 0.0.0.0:8443")

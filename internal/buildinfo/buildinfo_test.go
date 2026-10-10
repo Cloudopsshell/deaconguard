@@ -21,13 +21,12 @@ func TestStringShortensCommitButKeepsDirtyMarker(t *testing.T) {
 func TestAgentInstallCommand(t *testing.T) {
 	saved := Version
 	defer func() { Version = saved }()
-	const download = "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/download/"
-	const latest = "curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | "
+	const get = "curl -fsSL https://get.deaconguard.io | "
 	for _, test := range []struct{ version, token, want string }{
-		{"0.4.0", "deaconguard1.abc.def", download + "v0.4.0/install.sh | DEACONGUARD_VERSION=0.4.0 DEACONGUARD_TOKEN=deaconguard1.abc.def sh -"},
-		{"0.4.0-rc.1", "", download + "v0.4.0-rc.1/install.sh | DEACONGUARD_VERSION=0.4.0-rc.1 sh -s -- --agent"},
-		{"dev", "deaconguard1.abc", latest + "DEACONGUARD_TOKEN=deaconguard1.abc sh -"},
-		{"0.1.1-3-gabc1234-dirty", "", latest + "sh -s -- --agent"},
+		{"0.4.1", "deaconguard1.abc.def", get + "DEACONGUARD_VERSION=0.4.1 DEACONGUARD_TOKEN=deaconguard1.abc.def sh -"},
+		{"0.5.0-rc.1", "", get + "DEACONGUARD_VERSION=0.5.0-rc.1 sh -s -- --agent"},
+		{"dev", "deaconguard1.abc", get + "DEACONGUARD_TOKEN=deaconguard1.abc sh -"},
+		{"0.1.1-3-gabc1234-dirty", "", get + "sh -s -- --agent"},
 	} {
 		Version = test.version
 		if got := AgentInstallCommand(test.token); got != test.want {

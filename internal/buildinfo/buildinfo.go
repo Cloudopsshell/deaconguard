@@ -89,20 +89,22 @@ func UserAgent() string {
 // 0.2.0-rc.1, and not local builds such as 0.1.1-3-gabc1234-dirty or dev.
 var releaseVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)(\.[0-9]+)?)?$`)
 
+// InstallURL serves the install script: install.sh from the repository's
+// main branch, as plain text.
+const InstallURL = "https://get.deaconguard.io"
+
 // AgentInstallCommand is the command line that installs the DeaconGuard agent
 // and enrolls it with token, a one-time enrollment token; an empty token makes
-// the installer ask for it. A release build installs its own version, so
-// agents match their server; other builds install the latest release.
+// the installer ask for it. A release build pins its own version, so agents
+// match their server; other builds install the latest release.
 func AgentInstallCommand(token string) string {
-	url := Repository + "/releases/latest/download/install.sh"
 	environment := ""
 	if releaseVersion.MatchString(Version) {
-		url = Repository + "/releases/download/v" + Version + "/install.sh"
 		environment = "DEACONGUARD_VERSION=" + Version + " "
 	}
 	if token == "" {
-		return "curl -fsSL " + url + " | " + environment + "sh -s -- --agent"
+		return "curl -fsSL " + InstallURL + " | " + environment + "sh -s -- --agent"
 	}
 	// Tokens are base64url and dots, so they need no shell quoting.
-	return "curl -fsSL " + url + " | " + environment + "DEACONGUARD_TOKEN=" + token + " sh -"
+	return "curl -fsSL " + InstallURL + " | " + environment + "DEACONGUARD_TOKEN=" + token + " sh -"
 }
