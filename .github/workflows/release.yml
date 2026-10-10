@@ -67,6 +67,13 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # Go, Node.js and web/package-lock.json give the exact versions.
+      - name: Add the dependency tables to the release notes
+        run: sh scripts/release-dependencies.sh >> "${{ runner.temp }}/release-notes.md"
+
+      - name: Install Syft for the SBOM
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+
       - name: Test
         run: go test ./...
 

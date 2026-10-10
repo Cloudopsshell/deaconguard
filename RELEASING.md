@@ -3,6 +3,7 @@
 Releases are built by the [release workflow](.github/workflows/release.yml) when a `v*` tag is pushed. It checks that the tag is a semantic version, runs the tests, and publishes:
 
 - Linux and macOS archives, `.deb` and `.rpm` packages, `install.sh`, and `checksums.txt` on the GitHub release, with the notes from the matching `CHANGELOG.md` section.
+- `deaconguard_X.Y.Z_sbom.spdx.json`, the SBOM (Syft), and a "Dependencies" section appended to the notes by `scripts/release-dependencies.sh`. That script fails the release if its table names a package `install.sh` no longer installs.
 - `checksums.txt.sigstore.json`, a keyless [Sigstore](https://www.sigstore.dev) signature of `checksums.txt`. GitHub vouches that this workflow, for this tag, produced it, so there is no signing key to create or keep.
 
 ## Choose the version
@@ -40,3 +41,7 @@ A tag that fails the workflow can be deleted with `git push --delete origin TAG`
 ## Test the packaging locally
 
 `make release-snapshot` builds all archives and packages into `dist/` without publishing or signing (requires [GoReleaser](https://goreleaser.com)).
+
+## Updating cosign in the install script
+
+`packaging/install.sh` pins `COSIGN_VERSION` and the SHA-256 of `cosign-linux-amd64` and `cosign-linux-arm64`. To update, take the new values from that cosign release's `cosign_checksums.txt` and change all three together.

@@ -18,12 +18,15 @@
 # is already enrolled. Started without root, it stops before doing anything
 # and shows the command to use; it never asks for a password itself.
 #
-# Downloads this machine's .deb or .rpm package from a GitHub release over
-# HTTPS, checks its checksum against the release's checksums.txt, installs the
-# package, and runs `deaconguard setup server` or `deaconguard setup agent`.
-# When cosign is installed, it also verifies that checksums.txt was signed by
-# this repository's release workflow. Run it again to upgrade. Nothing is
-# installed when a check fails.
+# It installs what DeaconGuard's checks use, from the distribution's own
+# repositories: procps, iproute2, findutils, needs-restarting (RHEL family) and
+# ClamAV with its signature updater (on RHEL, from EPEL, which it enables).
+# It installs cosign, pinned to a version and checksum, to verify releases.
+# Then it downloads this machine's .deb or .rpm package from a GitHub release,
+# verifies that checksums.txt was signed by this repository's release workflow
+# and that the package matches it, installs the package, and runs
+# `deaconguard setup server` or `deaconguard setup agent`. Run it again to
+# upgrade. DeaconGuard is not installed when a check fails.
 #
 # Everything is inside main, which runs on the last line, so a download cut
 # short runs nothing.
@@ -35,6 +38,12 @@ REPOSITORY="https://github.com/Cloudopsshell/deaconguard"
 # The release workflow that signs checksums.txt, for cosign verify-blob.
 SIGNER="$REPOSITORY/.github/workflows/release.yml"
 SIGNER_ISSUER="https://token.actions.githubusercontent.com"
+
+# cosign, installed to /usr/local/bin when missing. The checksums are from the
+# release's cosign_checksums.txt; update all three together.
+COSIGN_VERSION="3.1.3"
+COSIGN_SHA256_AMD64="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+COSIGN_SHA256_ARM64="c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a"
 
 usage() {
 	cat <<'EOF'
@@ -65,6 +74,82 @@ ok() { printf '  \342\234\223 %s\n' "$*"; }
 fail() {
 	printf '\ndeaconguard install: %s\n' "$*" >&2
 	exit 1
+}
+
+# install_dependencies installs, from the distribution's signed repositories,
+# the tools DeaconGuard's checks run, and ClamAV with its signature updater.
+# Packages that are already installed are left as they are.
+install_dependencies() {
+	if [ "$format" = "deb" ]; then
+		packages="procps iproute2 findutils clamav clamav-freshclam"
+		# DeaconGuard runs clamscan and needs no ClamAV daemon, so tell the
+		# updater not to notify one; otherwise it logs an error after each update.
+		printf 'clamav-freshclam clamav-freshclam/NotifyClamd boolean false\n' | debconf-set-selections 2>/dev/null || true
+		# shellcheck disable=SC2086 # the package list splits into words on purpose
+		{
+			apt-get update -q &&
+				DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends $packages
+		} >"$work/dependencies.log" 2>&1 ||
+			{ cat "$work/dependencies.log" >&2; fail "apt-get could not install the dependencies ($packages)"; }
+	else
+		# ClamAV is in EPEL on RHEL and its rebuilds; Amazon Linux and Fedora have
+		# it. Decide by ID: rebuilds list "fedora" in ID_LIKE too.
+		# shellcheck disable=SC1091
+		case "$(. /etc/os-release && printf '%s' "$ID")" in
+		amzn | fedora) ;;
+		*)
+			if ! rpm -q epel-release >/dev/null 2>&1; then
+				# Rebuilds such as Rocky carry epel-release; plain RHEL installs it
+				# from the Fedora project, signed with the EPEL key.
+				epel="epel-release"
+				# shellcheck disable=SC1091
+				if [ "$(. /etc/os-release && printf '%s' "$ID")" = "rhel" ]; then
+					# shellcheck disable=SC1091
+					epel="https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(. /etc/os-release && printf '%s' "${VERSION_ID%%.*}").noarch.rpm"
+				fi
+				"$rpm_installer" install -y -q "$epel" >"$work/epel.log" 2>&1 ||
+					{ cat "$work/epel.log" >&2; fail "could not enable EPEL, which provides ClamAV on $os_name"; }
+				ok "Enabled EPEL (it provides ClamAV on $os_name)"
+			fi
+			;;
+		esac
+		# File paths, because package names differ between releases.
+		packages="procps-ng iproute findutils /usr/bin/needs-restarting /usr/bin/clamscan /usr/bin/freshclam"
+		# shellcheck disable=SC2086 # the package list splits into words on purpose
+		"$rpm_installer" install -y -q $packages >"$work/dependencies.log" 2>&1 ||
+			{ cat "$work/dependencies.log" >&2; fail "$rpm_installer could not install the dependencies ($packages)"; }
+	fi
+	ok "Dependencies installed: procps, iproute2, findutils, ClamAV$([ "$format" = "rpm" ] && printf ', needs-restarting')"
+}
+
+# start_signature_updates switches on ClamAV's signature updater, which the
+# packages install but leave off. It downloads the signatures in the
+# background, then checks for new ones several times a day.
+start_signature_updates() {
+	if systemctl enable --now clamav-freshclam.service >"$work/freshclam.log" 2>&1; then
+		ok "ClamAV signature updates on (clamav-freshclam; the first download runs in the background)"
+	else
+		printf '  ! ClamAV signature updates could not be switched on; see: systemctl status clamav-freshclam\n'
+	fi
+}
+
+# install_cosign installs cosign to /usr/local/bin unless it is already on the
+# PATH, checking the download against the pinned checksum.
+install_cosign() {
+	if command -v cosign >/dev/null 2>&1; then
+		ok "cosign $(cosign version 2>/dev/null | awk '/GitVersion/{print $2}') found"
+		return
+	fi
+	case "$arch" in
+	amd64) expected_cosign="$COSIGN_SHA256_AMD64" ;;
+	arm64) expected_cosign="$COSIGN_SHA256_ARM64" ;;
+	esac
+	url="https://github.com/sigstore/cosign/releases/download/v$COSIGN_VERSION/cosign-linux-$arch"
+	curl -fsSL --proto '=https' --tlsv1.2 -o "$work/cosign" "$url" || fail "could not download cosign from $url"
+	[ "$(sha256sum "$work/cosign" | cut -d' ' -f1)" = "$expected_cosign" ] ||
+		fail "the cosign download does NOT match its pinned checksum. Nothing was installed"
+	install -m 0755 "$work/cosign" /usr/local/bin/cosign
+	ok "Installed cosign $COSIGN_VERSION to /usr/local/bin (verifies release signatures)"
 }
 
 # quote prints its argument as a single-quoted shell word, for eval.
@@ -200,6 +285,9 @@ main() {
 	# apt reads local packages as its own unprivileged user.
 	chmod 0755 "$work"
 
+	install_dependencies
+	install_cosign
+
 	package="deaconguard_${version}_linux_${arch}.${format}"
 	base="$REPOSITORY/releases/download/v$version"
 	for file in checksums.txt checksums.txt.sigstore.json "$package"; do
@@ -209,21 +297,17 @@ main() {
 	chmod 0644 "$work/$package"
 	ok "Downloaded $package"
 
-	if command -v cosign >/dev/null 2>&1; then
-		cosign verify-blob "$work/checksums.txt" --bundle "$work/checksums.txt.sigstore.json" \
-			--certificate-identity "$SIGNER@refs/tags/v$version" \
-			--certificate-oidc-issuer "$SIGNER_ISSUER" >"$work/cosign.log" 2>&1 ||
-			{ cat "$work/cosign.log" >&2; fail "the signature of checksums.txt for v$version is NOT valid. Nothing was installed. Report this: $REPOSITORY/security"; }
-		ok "Signature valid (signed by the release workflow for v$version)"
-	fi
+	cosign verify-blob "$work/checksums.txt" --bundle "$work/checksums.txt.sigstore.json" \
+		--certificate-identity "$SIGNER@refs/tags/v$version" \
+		--certificate-oidc-issuer "$SIGNER_ISSUER" >"$work/cosign.log" 2>&1 ||
+		{ cat "$work/cosign.log" >&2; fail "the signature of checksums.txt for v$version is NOT valid. DeaconGuard was not installed. Report this: $REPOSITORY/security"; }
+	ok "Signature valid (signed by the release workflow for v$version)"
 
 	expected="$(awk -v name="$package" '$2 == name || $2 == "*" name { print $1 }' "$work/checksums.txt")"
 	actual="$(sha256sum "$work/$package" | cut -d' ' -f1)"
 	[ -n "$expected" ] || fail "checksums.txt for v$version does not list $package"
-	[ "$expected" = "$actual" ] || fail "the checksum of $package does NOT match the release's checksums.txt. Nothing was installed"
+	[ "$expected" = "$actual" ] || fail "the checksum of $package does NOT match the release's checksums.txt. DeaconGuard was not installed"
 	ok "Checksum valid"
-	command -v cosign >/dev/null 2>&1 ||
-		printf '    (Install cosign to also verify the release signature: https://docs.sigstore.dev)\n'
 
 	if [ "$format" = "deb" ]; then
 		DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
@@ -233,6 +317,7 @@ main() {
 			{ cat "$work/install.log" >&2; fail "$rpm_installer could not install $package"; }
 	fi
 	ok "Installed $(/usr/bin/deaconguard version | cut -d' ' -f1-2)"
+	start_signature_updates
 	/usr/bin/deaconguard help 2>/dev/null | grep -q "deaconguard setup $mode" ||
 		fail "DeaconGuard v$version predates this installer; install 0.2.0 or later, or follow the manual steps in the README"
 	printf '\n'

@@ -17,6 +17,13 @@ under **Changed** with upgrade notes.
   - Agent: `curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=… sudo -E sh -`. `-E` passes the token through the environment, so it never appears in the process list other users can read.
 
   Started without root, the installer stops before doing anything and shows the command to use; it no longer calls sudo itself. As root, run the commands without `sudo`. The **Enroll a machine** dialog, `deaconguard token create` and the README show the new commands.
+- **The install script installs what DeaconGuard's checks use**, on servers and agents, from the distribution's own repositories: `procps`, `iproute2` / `iproute`, `findutils`, `needs-restarting` (RHEL family), and ClamAV with its signature updater, which it switches on. On RHEL it enables EPEL, which provides ClamAV there. On minimal systems the malware, configuration and antivirus checks previously had only partial coverage.
+- **Every install verifies the release signature.** The script installs cosign (a pinned version with a pinned checksum) when it is missing, instead of skipping the signature check.
+
+### Added
+
+- Release notes list the Go version and main libraries a release was built with, and what the install script installs on each machine.
+- Each release carries an SBOM, `deaconguard_X.Y.Z_sbom.spdx.json`, listing every Go module and web UI package with versions and licenses.
 
 ## [0.4.1] - 2026-10-10
 
