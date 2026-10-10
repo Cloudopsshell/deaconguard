@@ -527,6 +527,8 @@ type HostSummary struct {
 	Checks map[string]CheckSummary `json:"checks"`
 	// Agent describes the agent of an agent host.
 	Agent *Agent `json:"agent,omitempty"`
+	// NextScan is the host's next scheduled scan, if any.
+	NextScan *NextScan `json:"next_scan,omitempty"`
 }
 
 // CheckSummary is one check's result within a scan.
@@ -558,9 +560,16 @@ func HostSummaries() ([]HostSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	upcoming, err := nextScans(hosts)
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]HostSummary, 0, len(hosts))
 	for _, host := range hosts {
 		summary := HostSummary{Host: host}
+		if next, ok := upcoming[host.ID]; ok {
+			summary.NextScan = &next
+		}
 		if agent, ok := agents[host.ID]; ok {
 			summary.Agent = &agent
 		}

@@ -97,7 +97,7 @@ export function Dashboard() {
         description={`Latest results from ${data.scanned_hosts} of ${data.hosts} registered host${data.hosts === 1 ? "" : "s"}.`}
       />
 
-      {(attention.length > 0 || data.stale_feeds > 0 || data.unsupported > 0) && (
+      {(attention.length > 0 || data.stale_feeds > 0 || data.unsupported > 0 || (data.stale_hosts?.length ?? 0) > 0) && (
         <div className="mb-6 space-y-2">
           {attention.length > 0 && (
             <Notice>
@@ -111,6 +111,31 @@ export function Dashboard() {
                 </span>
               ))}
               . Their earlier results may be out of date.
+            </Notice>
+          )}
+          {data.stale_hosts && data.stale_hosts.length > 0 && (
+            <Notice>
+              {data.stale_hosts.length} host{data.stale_hosts.length === 1 ? " has" : "s have"} no results from the last 7 days, so
+              {data.stale_hosts.length === 1 ? " its" : " their"} findings may be out of date:{" "}
+              {data.stale_hosts.map((host, index) => (
+                <span key={host.id}>
+                  {index > 0 && ", "}
+                  <Link to={`/hosts/${host.id}`} className="font-semibold underline">
+                    {host.address}
+                  </Link>
+                </span>
+              ))}
+              .{" "}
+              {data.stale_hosts.some((host) => !host.scheduled) ? (
+                <>
+                  <Link to="/schedules" className="font-semibold underline">
+                    Add a schedule
+                  </Link>{" "}
+                  to keep results current.
+                </>
+              ) : (
+                "Their schedules have not produced a result; check the Logs page."
+              )}
             </Notice>
           )}
           {data.stale_feeds > 0 && (
