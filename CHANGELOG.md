@@ -8,6 +8,17 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-10
+
+### Fixed
+
+- **Checking an Ubuntu machine's packages needs about 450 MB on the server instead of 1.6 GB**, so the server no longer runs out of memory on small machines mid-scan. The Ubuntu feed is now parsed as it is decompressed, and only the parts the evaluation reads are kept. Results are unchanged: on a real Ubuntu 24.04 package list, all 20,568 findings are identical before and after.
+- The server checks one machine's packages at a time instead of two, so its memory stays the same however many agents report together. Each check takes a few seconds.
+
+### Changed
+
+- The server needs at least **1 GB of memory** (RAM plus swap), down from 2 GB.
+
 ## [0.5.1] - 2026-10-10
 
 ### Fixed
@@ -157,7 +168,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.1...v0.4.2
