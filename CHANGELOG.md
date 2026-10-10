@@ -8,6 +8,8 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-10
+
 ### Fixed
 
 - **A scan cut short by a server restart now says why**, instead of "scan was interrupted before it finished": the machine restarted, it ran out of memory and the kernel stopped the server, DeaconGuard crashed (with the crash report), or it was stopped by a signal. For example: "The DeaconGuard server stopped while this scan was running. The machine ran out of memory and the kernel stopped the DeaconGuard server. Run the scan again."
@@ -155,7 +157,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.0...v0.4.1
