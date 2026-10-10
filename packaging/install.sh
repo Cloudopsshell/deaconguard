@@ -1,10 +1,15 @@
 #!/bin/sh
-# DeaconGuard installer: https://github.com/Cloudopsshell/deaconguard
+# DeaconGuard installer: https://deaconguard.io
+# Documentation: https://docs.deaconguard.io/installation/install-script
+#
+# get.deaconguard.io serves this file from the main branch as soon as it is
+# merged, and it installs the latest release: keep it working with that
+# release's packages.
 #
 # Server:
-#   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sh -
+#   curl -fsSL https://get.deaconguard.io | sh -
 # Agent, with the one-time token from the server's Agents page:
-#   curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | DEACONGUARD_TOKEN=deaconguard1.... sh -
+#   curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.... sh -
 #
 # Without a token it sets up a server, or upgrades the agent on a machine that
 # is already enrolled. It uses sudo for the steps that need root.
@@ -47,7 +52,7 @@ Setup options are passed to `deaconguard setup server` or `deaconguard setup age
   agent:  --token-file FILE  --force
 
 For example:
-  curl -fsSL https://github.com/Cloudopsshell/deaconguard/releases/latest/download/install.sh | sh -
+  curl -fsSL https://get.deaconguard.io | sh -
 EOF
 }
 

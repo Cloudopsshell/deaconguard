@@ -8,6 +8,19 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-10
+
+### Changed
+
+- The install command is now `curl -fsSL https://get.deaconguard.io | sh -`. The **Enroll a machine** dialog and `deaconguard token create` show the agent command with `get.deaconguard.io`, still pinned to the server's version with `DEACONGUARD_VERSION`. The GitHub release URLs keep working.
+- The README links to the new website and documentation at [deaconguard.io](https://deaconguard.io) and [docs.deaconguard.io](https://docs.deaconguard.io).
+- `SECURITY.md` describes the supported versions (the latest minor version) and how the server, agents and releases limit risk.
+
+### Fixed
+
+- Messages and help text said "an DeaconGuard"; they now say "a DeaconGuard".
+- The README said agents trust only the server's pinned certificate. They also accept a certificate their system's certificate authorities trust for the server's name, which lets a server switch to its own certificate without enrolling agents again.
+
 ## [0.4.0] - 2026-10-09
 
 ### Changed
@@ -100,7 +113,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.0...v0.3.1
