@@ -8,6 +8,12 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-11
+
+### Fixed
+
+- **Editing a schedule, and turning it off or on, failed** with "invalid request body: json: unknown field "id"". The dashboard sent the whole schedule back, including read-only fields the server rightly refuses; it now sends only the fields you can change.
+
 ## [0.8.0] - 2026-10-10
 
 ### Added
@@ -219,7 +225,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.6.0...v0.7.0
