@@ -166,6 +166,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 9 {
+		if err := execInTx(db, schemaV9); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -368,6 +373,25 @@ ALTER TABLE scans ADD COLUMN fix_summary TEXT NOT NULL DEFAULT '';
 ALTER TABLE scan_checks ADD COLUMN fix_summary TEXT NOT NULL DEFAULT '';
 ` + backfillV8 + `
 PRAGMA user_version = 8;`
+
+// schemaV9 adds scheduled scans.
+const schemaV9 = `
+CREATE TABLE schedules (
+	id          TEXT PRIMARY KEY,
+	name        TEXT NOT NULL,
+	enabled     INTEGER NOT NULL DEFAULT 1,
+	checks      TEXT NOT NULL,
+	all_hosts   INTEGER NOT NULL DEFAULT 1,
+	host_ids    TEXT NOT NULL DEFAULT '',
+	days        TEXT NOT NULL,
+	time        TEXT NOT NULL,
+	timezone    TEXT NOT NULL,
+	next_run_at TEXT NOT NULL DEFAULT '',
+	last_run_at TEXT NOT NULL DEFAULT '',
+	created_at  TEXT NOT NULL,
+	created_by  TEXT NOT NULL
+);
+PRAGMA user_version = 9;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.
