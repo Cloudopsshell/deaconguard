@@ -8,6 +8,23 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-10
+
+### Added
+
+- **Scheduled scans.** A new **Schedules** page scans hosts automatically, so results no longer go stale when nobody presses Scan now:
+  - choose the days (every day, weekdays, or any days of the week), a time and a time zone; daylight saving changes are handled, and a schedule runs once per day even when the clocks go back;
+  - choose all hosts (including hosts added later) or specific hosts, and the checks, including the advanced antivirus scan;
+  - **Run now**, **Turn off** and **Turn on**, edit and delete.
+- The server starts each run's scans like Scan now. It skips a host that is already being scanned, or whose agent is too old for a chosen check, and says why in the Logs page. A run missed while the server was stopped happens once when it starts again.
+- **Schedules run with root privileges by default.** Agents run as root; the server's own machine uses sudo where it needs no password, since a scheduled scan never waits for one. A schedule can turn root off, and the dialog then reminds you that results will show partial coverage.
+- Each host's page shows its next scheduled scan, or that it is not on a schedule. The dashboard flags hosts whose latest results are more than 7 days old.
+- The audit log records creating, changing, running and deleting schedules, and names the schedule that started each scan. It now also names viewing and downloading the log.
+
+### Changed
+
+- **Upgrading:** the database gains a schedules table (schema 9). No schedule exists until you create one.
+
 ## [0.7.1] - 2026-10-10
 
 ### Fixed
@@ -202,7 +219,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.2...v0.6.0
