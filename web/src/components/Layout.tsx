@@ -2,6 +2,7 @@ import { Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { LayoutDashboard, LogOut, RadioTower, ScrollText, Server } from "lucide-react";
 import { Logo } from "./Logo";
 import { PromptDialog } from "./PromptDialog";
+import { RestartNotice } from "./RestartNotice";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { Loading, cx } from "./ui";
@@ -93,6 +94,7 @@ export function Layout() {
       </aside>
       <main className="flex-1 lg:pl-60">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+          {session.data?.authenticated !== false && <RestartNotice />}
           <Outlet />
         </div>
       </main>
