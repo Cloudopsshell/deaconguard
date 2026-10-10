@@ -167,6 +167,25 @@ const (
 	MaxYARARulesBytes = 32 << 20
 )
 
+// PathLogs receives the agent's own log lines, which the dashboard shows on
+// the host's page. Agents send at most MaxLogLines at a time.
+const (
+	PathLogs    = "logs"
+	MaxLogLines = 500
+)
+
+// LogLine is one line of the agent's log. Level is info, warning, or error.
+type LogLine struct {
+	At      time.Time `json:"at"`
+	Level   string    `json:"level"`
+	Message string    `json:"message"`
+}
+
+// Logs carries log lines to POST /agent/v1/logs.
+type Logs struct {
+	Lines []LogLine `json:"lines"`
+}
+
 // Headers the agent sends with every request.
 const (
 	HeaderVersion  = "X-DeaconGuard-Agent-Version"

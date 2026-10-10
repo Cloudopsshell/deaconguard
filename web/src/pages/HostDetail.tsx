@@ -25,6 +25,7 @@ import {
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
+import { HostLog } from "../components/HostLog";
 import { agentOnline, connectionLabel } from "../lib/hosts";
 import { AgentStatus } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
@@ -214,6 +215,8 @@ export function HostDetail() {
           </Table>
         )}
       </Card>
+
+      <HostLog host={data} />
 
       <ScanDialog host={data} open={scanning !== null} initial={scanning?.initial} onClose={() => setScanning(null)} />
       <ScanConsole host={data} requested={logScan} onRequestClosed={() => setLogScan(null)} />

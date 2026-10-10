@@ -162,9 +162,13 @@ func (r *runner) finish(host store.Host, scanID string, log *eventLog, report ma
 	}
 	elapsed := time.Since(started).Round(time.Second)
 	done := scan.Event{Kind: "done", Status: store.ScanSucceeded, Message: fmt.Sprintf("Scan finished in %s", elapsed)}
+	logScanProblems(host, log.snapshot())
 	if err != nil {
 		_ = store.FailScan(scanID, err.Error())
 		done = scan.Event{Kind: "done", Status: store.ScanFailed, Message: fmt.Sprintf("Scan failed after %s: %s", elapsed, err)}
+		serverLog(host.ID, store.LogError, "Scan of %s failed after %s: %s", host.Address, elapsed, err)
+	} else {
+		serverLog(host.ID, store.LogInfo, "Scan of %s finished in %s", host.Address, elapsed)
 	}
 	// Everything is saved before "done" is published, so a page that refreshes
 	// on seeing it already reads the final status, the saved log, and the
