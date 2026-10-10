@@ -20,12 +20,14 @@ type Report struct {
 	Findings         []advisory.Finding     `json:"findings"`
 	UnsupportedCount int                    `json:"unsupported_count"`
 	Unsupported      []advisory.Unsupported `json:"unsupported_cves"`
-	Coverage         string                 `json:"coverage"`
-	AdvisoryDatabase advisory.FeedMetadata  `json:"advisory_database"`
-	Maintenance      string                 `json:"maintenance"`
-	PackageManager   string                 `json:"package_manager"`
-	PackageCount     int                    `json:"package_count"`
-	Evaluator        string                 `json:"evaluator"`
+	// FixCounts counts findings by what clears them; see advisory.Classify.
+	FixCounts        map[string]int        `json:"fix_counts"`
+	Coverage         string                `json:"coverage"`
+	AdvisoryDatabase advisory.FeedMetadata `json:"advisory_database"`
+	Maintenance      string                `json:"maintenance"`
+	PackageManager   string                `json:"package_manager"`
+	PackageCount     int                   `json:"package_count"`
+	Evaluator        string                `json:"evaluator"`
 }
 
 func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, now time.Time) (Report, error) {
@@ -88,7 +90,16 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 	if err != nil {
 		return Report{}, fmt.Errorf("scan %s %s advisory data: %w", target.Family, target.VersionID, err)
 	}
+	advisory.Classify(evaluation.Findings, target.Family, packages, kernel)
+	fixCounts := make(map[string]int, len(advisory.FixStates))
+	for _, state := range advisory.FixStates {
+		fixCounts[state] = 0
+	}
+	for _, finding := range evaluation.Findings {
+		fixCounts[finding.Fix]++
+	}
 	return Report{
+		FixCounts:        fixCounts,
 		OS:               PlatformName(target),
 		ScannedAt:        now.UTC().Format(time.RFC3339),
 		FindingCount:     len(evaluation.Findings),
