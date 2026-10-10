@@ -214,6 +214,26 @@ func checkServiceHost(unit string) error {
 	return nil
 }
 
+// startService enables unit and makes sure it runs this setup's
+// configuration. A service that is already running is left alone unless
+// changed: on an upgrade, the package has just restarted it with the new
+// version, and a second restart would only interrupt it again.
+func startService(unit string, changed bool, output io.Writer) error {
+	if err := systemctl("enable", unit); err != nil {
+		return err
+	}
+	if !changed && serviceActive(unit) {
+		fmt.Fprintf(output, "%s is running the installed version; no restart needed.\n", unit)
+		return nil
+	}
+	return systemctl("restart", unit)
+}
+
+// serviceActive reports whether unit is running.
+func serviceActive(unit string) bool {
+	return exec.Command("systemctl", "is-active", "--quiet", unit).Run() == nil
+}
+
 func systemctl(arguments ...string) error {
 	combined, err := exec.Command("systemctl", arguments...).CombinedOutput()
 	if err != nil {
@@ -243,7 +263,11 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 	if options.certificate != "" {
 		certificate, key = options.certificate, options.key
 	}
+	// changed is whether this setup changed something the running server
+	// must restart to pick up.
+	changed := false
 	if dropIn := renderServerDropIn(listen, certificate, key); dropIn != string(existing) {
+		changed = true
 		if dropIn == "" {
 			err = os.Remove(serverDropIn)
 		} else if err = os.MkdirAll(filepath.Dir(serverDropIn), 0o755); err == nil {
@@ -266,14 +290,12 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 		if err := createFirstAccount(account, options, output, diagnostics); err != nil {
 			return err
 		}
+		changed = true
 	} else {
 		fmt.Fprintln(output, "Dashboard accounts already exist; keeping them.")
 	}
 
-	if err := systemctl("enable", serverUnit); err != nil {
-		return err
-	}
-	if err := systemctl("restart", serverUnit); err != nil {
+	if err := startService(serverUnit, changed, output); err != nil {
 		return err
 	}
 	if err := waitForServer(listen); err != nil {
@@ -471,6 +493,9 @@ func setupAgent(options agentSetup, output, diagnostics io.Writer) error {
 	}
 	current, loadErr := agent.LoadConfig(path)
 	enrolled := loadErr == nil
+	// changed is whether this setup enrolled the machine, which the running
+	// agent must restart to pick up.
+	changed := false
 	switch {
 	case enrolled && token == "" && !options.force:
 		fmt.Fprintf(output, "Already enrolled with %s as host %s; keeping it.\n", current.ServerURL, current.HostID)
@@ -498,12 +523,10 @@ func setupAgent(options agentSetup, output, diagnostics io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\n", local.Hostname(), config.ServerURL, config.HostID)
+		changed = true
 	}
 
-	if err := systemctl("enable", agentUnit); err != nil {
-		return err
-	}
-	if err := systemctl("restart", agentUnit); err != nil {
+	if err := startService(agentUnit, changed, output); err != nil {
 		return err
 	}
 	// The agent exits soon if the server rejects it; give it a moment.
