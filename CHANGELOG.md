@@ -8,6 +8,12 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-10
+
+### Fixed
+
+- **Upgrading restarts each service once instead of twice.** The package already restarts a running service with the new version; `deaconguard setup`, which the install script runs next, restarted it again, so the Logs page showed "started, stopped, started" and the agent's start line twice. Setup now restarts a running service only when it changed something the service must pick up: the server's address or certificate, its first account, or a new enrollment. It says so when it leaves the service running.
+
 ## [0.7.0] - 2026-10-10
 
 ### Added
@@ -196,7 +202,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.1...v0.5.2
