@@ -120,10 +120,20 @@ func startRun(output io.Writer) *runstate.Run {
 		if previous.Detail != "" {
 			fmt.Fprintln(output, previous.Detail)
 		}
+		level := store.LogError
+		if previous.Kind == runstate.KindReboot {
+			level = store.LogWarning
+		}
+		message := "The previous run ended unexpectedly: " + previous.Message
+		if previous.Detail != "" {
+			message += "\n" + previous.Detail
+		}
+		store.Log(store.LogServer, "", level, message)
 	}
 	if err := store.SetLastStop(previous); err != nil {
 		fmt.Fprintf(output, "Warning: cannot store how the previous run ended: %v\n", err)
 	}
+	store.Log(store.LogServer, "", store.LogInfo, fmt.Sprintf("DeaconGuard %s server started", buildinfo.Version))
 	return run
 }
 
@@ -161,6 +171,7 @@ func serveUntilStopped(handler *server.Server, listener net.Listener, output io.
 	}
 	fmt.Fprintln(output, "Waiting for running scans to finish (press Ctrl+C again to quit now)...")
 	handler.Close()
+	store.Log(store.LogServer, "", store.LogInfo, "DeaconGuard server stopped")
 	if run != nil {
 		if err := run.Stopped(time.Now()); err != nil {
 			fmt.Fprintf(output, "Warning: cannot record the stop: %v\n", err)

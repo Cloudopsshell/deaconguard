@@ -136,7 +136,8 @@ func Run(ctx context.Context, config Config, logf func(format string, arguments 
 	if err != nil {
 		return err
 	}
-	logf("DeaconGuard agent %s for %s, host %s", buildinfo.Version, config.ServerURL, config.HostID)
+	log := &agentLog{journal: logf}
+	log.info("DeaconGuard agent %s for %s, host %s", buildinfo.Version, config.ServerURL, config.HostID)
 	backoff := time.Duration(0)
 	connected := false
 	for ctx.Err() == nil {
@@ -147,6 +148,9 @@ func Run(ctx context.Context, config Config, logf func(format string, arguments 
 			case <-time.After(backoff):
 			}
 		}
+		// Before waiting for work, so lines kept while the server could not be
+		// reached arrive as soon as it answers again.
+		log.send(ctx, client)
 		var job agentapi.Job
 		err := client.call(ctx, http.MethodGet, "job", nil, &job, agentapi.JobWait+30*time.Second)
 		switch {
@@ -157,23 +161,25 @@ func Run(ctx context.Context, config Config, logf func(format string, arguments 
 		case err != nil:
 			connected = false
 			backoff = min(max(2*backoff, 5*time.Second), time.Minute)
-			logf("Cannot reach the server, retrying in %s: %v", backoff, err)
+			log.warn("Cannot reach the server, retrying in %s: %v", backoff, err)
 			continue
 		}
 		backoff = 0
 		if !connected {
 			connected = true
-			logf("Connected to %s; waiting for scans", config.ServerURL)
+			log.info("Connected to %s; waiting for scans", config.ServerURL)
 		}
+		log.send(ctx, client)
 		if job.ScanID == "" {
 			continue
 		}
-		logf("Scan %s: running %s", job.ScanID, strings.Join(job.Checks, ", "))
+		log.info("Scan %s: running %s", job.ScanID, strings.Join(job.Checks, ", "))
 		if err := runJob(ctx, client, config, job); err != nil {
-			logf("Scan %s: %v", job.ScanID, err)
+			log.fail("Scan %s: %v", job.ScanID, err)
 		} else {
-			logf("Scan %s: sent the results", job.ScanID)
+			log.info("Scan %s: sent the results", job.ScanID)
 		}
+		log.send(ctx, client)
 	}
 	return nil
 }
