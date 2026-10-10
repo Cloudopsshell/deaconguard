@@ -262,7 +262,7 @@ func runToken(arguments []string, output io.Writer) error {
 	store.Audit(local.Username()+" (cli)", "token.create", token.ID[:8], "for "+serverURL+", expires "+token.ExpiresAt, "")
 	encoded := agentapi.Token{ServerURL: serverURL, Pin: pin, Secret: secret}.Encode()
 	fmt.Fprintf(output, "One-time enrollment token, valid until %s:\n\n  %s\n\n", token.ExpiresAt, encoded)
-	fmt.Fprintf(output, "On the machine to scan, run:\n\n  %s\n\n", buildinfo.AgentInstallCommand(encoded))
+	fmt.Fprintf(output, "On the machine to scan, run this as a user with sudo rights (as root, leave out \"sudo -E\"):\n\n  %s\n\n", buildinfo.AgentInstallCommand(encoded))
 	fmt.Fprintln(output, "If DeaconGuard is already installed there, run: sudo deaconguard setup agent (it asks for the token)")
 	return nil
 }
