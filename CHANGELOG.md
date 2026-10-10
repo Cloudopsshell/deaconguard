@@ -8,6 +8,15 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Checking an Ubuntu machine's packages needs about 450 MB on the server instead of 1.6 GB**, so the server no longer runs out of memory on small machines mid-scan. The Ubuntu feed is now parsed as it is decompressed, and only the parts the evaluation reads are kept. Results are unchanged: on a real Ubuntu 24.04 package list, all 20,568 findings are identical before and after.
+- The server checks one machine's packages at a time instead of two, so its memory stays the same however many agents report together. Each check takes a few seconds.
+
+### Changed
+
+- The server needs at least **1 GB of memory** (RAM plus swap), down from 2 GB.
+
 ## [0.5.1] - 2026-10-10
 
 ### Fixed

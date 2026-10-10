@@ -19,15 +19,56 @@ const maxUbuntuOVALBytes = 384 << 20
 type ovalNode struct {
 	Name     string
 	Text     string
-	Attrs    map[string]string
+	Attrs    []ovalAttr
 	Children []*ovalNode
 }
+
+type ovalAttr struct{ Name, Value string }
 
 func (node *ovalNode) attr(name string) string {
 	if node == nil {
 		return ""
 	}
-	return node.Attrs[name]
+	for _, attribute := range node.Attrs {
+		if attribute.Name == name {
+			return attribute.Value
+		}
+	}
+	return ""
+}
+
+// ovalAttributes are the attributes the evaluation reads. The parser keeps
+// only these, which leaves out the long comment attribute on every test and
+// criterion: each feed is hundreds of megabytes of XML.
+var ovalAttributes = map[string]string{}
+
+func init() {
+	for _, name := range []string{
+		"id", "class", "source", "ref_id", "ref_url", "priority", "cvss_severity",
+		"operator", "negate", "test_ref", "definition_ref", "check", "check_existence",
+		"object_ref", "state_ref", "var_ref", "operation", "datatype", "pattern", "item_field",
+	} {
+		ovalAttributes[name] = name
+	}
+}
+
+// ovalSkipped are elements the evaluation never reads, mostly long
+// descriptions; the parser skips them with everything inside.
+var ovalSkipped = map[string]bool{
+	"description": true, "bug": true, "rights": true, "generator": true, "affected": true,
+	"public_date": true, "assigned_to": true, "discovered_by": true,
+}
+
+// ovalNames holds one copy of each element name, so millions of elements
+// share a few dozen strings.
+type ovalNames map[string]string
+
+func (names ovalNames) intern(name string) string {
+	if interned, ok := names[name]; ok {
+		return interned
+	}
+	names[name] = name
+	return name
 }
 
 func (node *ovalNode) child(name string) *ovalNode {
@@ -89,18 +130,35 @@ func EvaluateUbuntuOVAL(compressed []byte, target platform.Platform, packages []
 	if target.Family != platform.Ubuntu {
 		return DebianEvaluation{}, fmt.Errorf("Canonical OVAL cannot evaluate %s", target.Family)
 	}
-	reader := io.LimitReader(bzip2.NewReader(bytes.NewReader(compressed)), maxUbuntuOVALBytes+1)
-	contents, err := io.ReadAll(reader)
-	if err != nil {
-		return DebianEvaluation{}, fmt.Errorf("decompress Canonical OVAL data: %w", err)
-	}
-	if len(contents) == 0 || len(contents) > maxUbuntuOVALBytes {
-		return DebianEvaluation{}, fmt.Errorf("Canonical OVAL data is empty or exceeds %d bytes", maxUbuntuOVALBytes)
-	}
-	return evaluateUbuntuOVALXML(contents, packages, kernel)
+	// The XML is parsed as it is decompressed, never held whole in memory.
+	limited := &limitedReader{reader: bzip2.NewReader(bytes.NewReader(compressed)), remaining: maxUbuntuOVALBytes}
+	return evaluateUbuntuOVALReader(limited, packages, kernel)
 }
 
 func evaluateUbuntuOVALXML(contents []byte, packages []inventory.Package, kernel string) (DebianEvaluation, error) {
+	return evaluateUbuntuOVALReader(bytes.NewReader(contents), packages, kernel)
+}
+
+// limitedReader fails, where io.LimitReader would quietly stop, when the
+// data is larger than allowed.
+type limitedReader struct {
+	reader    io.Reader
+	remaining int64
+}
+
+func (r *limitedReader) Read(buffer []byte) (int, error) {
+	if int64(len(buffer)) > r.remaining+1 {
+		buffer = buffer[:r.remaining+1]
+	}
+	read, err := r.reader.Read(buffer)
+	r.remaining -= int64(read)
+	if r.remaining < 0 {
+		return 0, fmt.Errorf("Canonical OVAL data exceeds %d bytes", maxUbuntuOVALBytes)
+	}
+	return read, err
+}
+
+func evaluateUbuntuOVALReader(contents io.Reader, packages []inventory.Package, kernel string) (DebianEvaluation, error) {
 	root, err := parseOVALTree(contents)
 	if err != nil {
 		return DebianEvaluation{}, fmt.Errorf("parse Canonical OVAL XML: %w", err)
@@ -178,8 +236,9 @@ func evaluateUbuntuOVALXML(contents []byte, packages []inventory.Package, kernel
 	return result, nil
 }
 
-func parseOVALTree(contents []byte) (*ovalNode, error) {
-	decoder := xml.NewDecoder(bytes.NewReader(contents))
+func parseOVALTree(contents io.Reader) (*ovalNode, error) {
+	decoder := xml.NewDecoder(contents)
+	names := ovalNames{}
 	var root *ovalNode
 	stack := make([]*ovalNode, 0, 32)
 	count := 0
@@ -197,9 +256,17 @@ func parseOVALTree(contents []byte) (*ovalNode, error) {
 			if count > 4_000_000 || len(stack) > 256 {
 				return nil, fmt.Errorf("OVAL XML exceeds structural limits")
 			}
-			node := &ovalNode{Name: value.Name.Local, Attrs: make(map[string]string)}
+			if len(stack) != 0 && ovalSkipped[value.Name.Local] {
+				if err := decoder.Skip(); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			node := &ovalNode{Name: names.intern(value.Name.Local)}
 			for _, attribute := range value.Attr {
-				node.Attrs[attribute.Name.Local] = attribute.Value
+				if name, kept := ovalAttributes[attribute.Name.Local]; kept {
+					node.Attrs = append(node.Attrs, ovalAttr{Name: name, Value: attribute.Value})
+				}
 			}
 			if len(stack) == 0 {
 				if root != nil {
@@ -212,7 +279,8 @@ func parseOVALTree(contents []byte) (*ovalNode, error) {
 			}
 			stack = append(stack, node)
 		case xml.CharData:
-			if len(stack) != 0 {
+			// Whitespace between elements is never a value.
+			if len(stack) != 0 && len(bytes.TrimSpace(value)) != 0 {
 				stack[len(stack)-1].Text += string(value)
 			}
 		case xml.EndElement:
