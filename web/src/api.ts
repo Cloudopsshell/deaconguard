@@ -8,7 +8,7 @@ export type ScanStatus =
   | "failed"
   | "needs_sudo";
 
-export type CheckId = "packages" | "integrity" | "malware" | "config" | "antivirus";
+export type CheckId = "packages" | "integrity" | "malware" | "config" | "antivirus" | "yara";
 export type CheckStatus = "completed" | "partial" | "skipped" | "failed";
 
 export interface SeverityCounts {

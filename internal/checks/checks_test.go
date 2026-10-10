@@ -160,7 +160,8 @@ type fakeAnswer struct {
 
 func (h *fakeHost) Run(command string, stdin []byte, _ int, _ time.Duration) ([]byte, error) {
 	h.commands = append(h.commands, command)
-	h.stdin = append(h.stdin, stdin)
+	// A copy, as a real command reads it: the executor wipes its buffer afterwards.
+	h.stdin = append(h.stdin, append([]byte(nil), stdin...))
 	if answer, ok := h.answers[command]; ok {
 		return []byte(answer.output), answer.err
 	}
@@ -220,7 +221,7 @@ func TestShellQuoteSurvivesSingleQuotes(t *testing.T) {
 
 func TestAntivirusSkipsWhenClamAVIsMissing(t *testing.T) {
 	host := &fakeHost{answers: map[string]fakeAnswer{clamDetectCommand: {"", nil}}}
-	result := Run(Antivirus, NewExecutor(host, false, nil), platform.Platform{Family: platform.Ubuntu}, time.Now())
+	result := Run(Antivirus, NewExecutor(host, false, nil), platform.Platform{Family: platform.Ubuntu}, time.Now(), Inputs{})
 	if result.Status != StatusSkipped || len(host.commands) != 1 {
 		t.Fatalf("result = %+v, commands = %v", result, host.commands)
 	}
@@ -244,7 +245,7 @@ func TestAntivirusSkipsWhenMemoryIsLow(t *testing.T) {
 		clamDetectCommand: {"/usr/bin/clamscan\n", nil},
 		memInfoCommand:    {"MemAvailable:     412000 kB\nSwapFree:              0 kB\n", nil},
 	}}
-	result := Run(Antivirus, NewExecutor(host, false, nil), platform.Platform{Family: platform.Ubuntu}, time.Now())
+	result := Run(Antivirus, NewExecutor(host, false, nil), platform.Platform{Family: platform.Ubuntu}, time.Now(), Inputs{})
 	if result.Status != StatusSkipped || !strings.Contains(result.Summary, "memory") {
 		t.Fatalf("result = %+v", result)
 	}

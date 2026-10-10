@@ -1,9 +1,9 @@
 import type { ComponentType } from "react";
-import { Bug, FileCheck2, ScanSearch, SlidersHorizontal, Skull } from "lucide-react";
+import { Bug, FileCheck2, Radar, ScanSearch, SlidersHorizontal, Skull } from "lucide-react";
 import type { CheckId, CheckStatus, SeverityCounts } from "../api";
 import { severityOrder } from "./format";
 
-export const checkOrder: CheckId[] = ["packages", "integrity", "malware", "config", "antivirus"];
+export const checkOrder: CheckId[] = ["packages", "integrity", "malware", "config", "antivirus", "yara"];
 
 export const checkMeta: Record<CheckId, { label: string; short: string; icon: ComponentType<{ className?: string }> }> = {
   packages: { label: "Vulnerabilities", short: "CVEs", icon: Bug },
@@ -11,6 +11,7 @@ export const checkMeta: Record<CheckId, { label: string; short: string; icon: Co
   malware: { label: "Malware indicators", short: "Malware", icon: Skull },
   config: { label: "Configuration", short: "Config", icon: SlidersHorizontal },
   antivirus: { label: "Antivirus", short: "ClamAV", icon: ScanSearch },
+  yara: { label: "Advanced antivirus", short: "YARA", icon: Radar },
 };
 
 export const checkStatusStyle: Record<CheckStatus, { label: string; className: string }> = {

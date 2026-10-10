@@ -1,6 +1,6 @@
 // Package checks implements the optional host checks that run alongside the
 // package vulnerability scan: file integrity, malware indicators, security
-// configuration, and ClamAV. Every command is a fixed, read-only string
+// configuration, ClamAV, and the advanced scan with YARA-X. Every command is a fixed, read-only string
 // defined here; nothing from the user or the host is interpolated into it.
 package checks
 
@@ -18,6 +18,8 @@ const (
 	Malware   = "malware"
 	Config    = "config"
 	Antivirus = "antivirus"
+	// YARA is the advanced antivirus scan. It always runs with Antivirus.
+	YARA = "yara"
 )
 
 const (
@@ -61,9 +63,14 @@ var definitions = []Definition{
 		Description: "Checks SSH server settings, services listening on all interfaces, pending reboots, automatic updates, and the host firewall.",
 	},
 	{
-		ID: Antivirus, Name: "Antivirus (ClamAV)", Sudo: "recommended",
-		Description: "Runs the host's own ClamAV on temporary, home, and application directories. Skipped when ClamAV is not installed; DeaconGuard never installs software.",
+		ID: Antivirus, Name: "Antivirus scan", Sudo: "recommended",
+		Description: "Scans temporary, home, and application directories for malware. Basic runs ClamAV, which the install script sets up; Advanced adds YARA rules.",
 		Warning:     "ClamAV loads its signatures on the host, using about 1 GB of memory, and can take several minutes.",
+	},
+	{
+		ID: YARA, Name: "Advanced antivirus scan (YARA)", Sudo: "recommended",
+		Description: "Adds YARA-X with the YARA Forge core rules to the antivirus scan, for webshells, crypto miners, backdoors, and attacker tools that signature scanners often miss. Always runs together with ClamAV.",
+		Warning:     "Reads the same directories as ClamAV again, which can take several more minutes.",
 	},
 }
 
@@ -82,6 +89,10 @@ func Normalize(ids []string) ([]string, error) {
 			return nil, fmt.Errorf("unknown check %q", id)
 		}
 		wanted[id] = true
+	}
+	// The advanced antivirus scan adds YARA to ClamAV; it never replaces it.
+	if wanted[YARA] {
+		wanted[Antivirus] = true
 	}
 	ordered := make([]string, 0, len(wanted))
 	for _, definition := range definitions {
@@ -151,8 +162,13 @@ func (result *Result) finish(partial bool) Result {
 	return *result
 }
 
+// Inputs carries what some checks need besides the host: the YARA rules.
+type Inputs struct {
+	YARA YARAInput
+}
+
 // Run executes one check. The package check is run by the scan itself.
-func Run(id string, executor *Executor, target platform.Platform, now time.Time) Result {
+func Run(id string, executor *Executor, target platform.Platform, now time.Time, inputs Inputs) Result {
 	var result Result
 	switch id {
 	case Integrity:
@@ -163,6 +179,8 @@ func Run(id string, executor *Executor, target platform.Platform, now time.Time)
 		result = runConfig(executor, target)
 	case Antivirus:
 		result = runAntivirus(executor, now)
+	case YARA:
+		result = runYARA(executor, inputs.YARA)
 	default:
 		return Result{Status: StatusFailed, Error: fmt.Sprintf("unknown check %q", id), Findings: []Finding{}, Notes: []string{}}
 	}

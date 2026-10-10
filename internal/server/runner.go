@@ -11,6 +11,7 @@ import (
 
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
+	"deaconguard/internal/yararules"
 )
 
 const promptTimeout = 10 * time.Minute
@@ -146,7 +147,8 @@ func (r *runner) run(host store.Host, scanID string, checks []string, log *event
 		SudoPassword: func(retry error) ([]byte, error) {
 			return r.ask(host, scanID, Prompt{Kind: PromptSudo, Retry: errorText(retry)})
 		},
-		Progress: log.add,
+		Progress:  log.add,
+		YARARules: yararules.Provider(),
 	}
 	report, err := r.scan(host, checks, options)
 	r.finish(host, scanID, log, report, err, started)

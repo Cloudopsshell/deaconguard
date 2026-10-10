@@ -6,6 +6,7 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,12 +22,14 @@ import (
 
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/checks"
 	"deaconguard/internal/local"
 	"deaconguard/internal/platform"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/scanner"
 	"deaconguard/internal/store"
 	"deaconguard/internal/target"
+	"deaconguard/internal/yararules"
 )
 
 // Config is what enrollment gives the agent. It holds a credential, so it is
@@ -197,6 +200,7 @@ func runJob(ctx context.Context, client *client, config Config, job agentapi.Job
 	report, scanErr := scan.Run(host, job.Checks, scan.Options{
 		Progress:         events.add,
 		CollectInventory: func(collected target.Inventory) { inventory = &collected },
+		YARARules:        func() checks.YARAInput { return client.yaraRules(ctx) },
 	})
 	stopFlushing()
 	<-flushDone
@@ -276,17 +280,27 @@ func newClient(config Config) (*client, error) {
 func (c *client) call(ctx context.Context, method, path string, body, response any, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	contents, _, err := c.exchange(ctx, method, path, body, 1<<20)
+	if err != nil || response == nil || len(contents) == 0 {
+		return err
+	}
+	return json.Unmarshal(contents, response)
+}
+
+// exchange sends one request and returns the body of a successful reply,
+// reading at most limit bytes of it.
+func (c *client) exchange(ctx context.Context, method, path string, body any, limit int64) ([]byte, http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		reader = bytes.NewReader(encoded)
 	}
 	request, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
@@ -301,22 +315,23 @@ func (c *client) call(ctx context.Context, method, path string, body, response a
 	}
 	reply, err := c.http.Do(request)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	defer reply.Body.Close()
-	contents, err := io.ReadAll(io.LimitReader(reply.Body, 1<<20))
+	contents, err := io.ReadAll(io.LimitReader(reply.Body, limit+1))
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	switch {
 	case reply.StatusCode == http.StatusNoContent || reply.StatusCode == http.StatusAccepted:
-		return nil
+		return nil, reply.Header, nil
 	case reply.StatusCode >= 200 && reply.StatusCode < 300:
-		if response == nil {
-			return nil
+		if int64(len(contents)) > limit {
+			return nil, nil, fmt.Errorf("the server's reply is larger than %d bytes", limit)
 		}
-		return json.Unmarshal(contents, response)
+		return contents, reply.Header, nil
 	}
+	contents = contents[:min(int64(len(contents)), 1<<20)]
 	var failure struct {
 		Error string `json:"error"`
 	}
@@ -325,12 +340,39 @@ func (c *client) call(ctx context.Context, method, path string, body, response a
 		message = failure.Error
 	}
 	if reply.StatusCode == http.StatusUnauthorized && c.config.HostID != "" {
-		return fmt.Errorf("%w: %s", errUnauthorized, message)
+		return nil, nil, fmt.Errorf("%w: %s", errUnauthorized, message)
 	}
 	if reply.StatusCode >= 400 && reply.StatusCode < 500 {
-		return fmt.Errorf("%w (HTTP %d): %s", errRejected, reply.StatusCode, message)
+		return nil, nil, fmt.Errorf("%w (HTTP %d): %s", errRejected, reply.StatusCode, message)
 	}
-	return fmt.Errorf("HTTP %d: %s", reply.StatusCode, message)
+	return nil, nil, fmt.Errorf("HTTP %d: %s", reply.StatusCode, message)
+}
+
+// yaraRules fetches the advanced antivirus scan's rules from the server. A
+// failure becomes the reason the report gives for skipping that scan.
+func (c *client) yaraRules(ctx context.Context) checks.YARAInput {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	compressed, header, err := c.exchange(ctx, http.MethodGet, agentapi.PathYARARules, nil, agentapi.MaxYARARulesBytes)
+	if err != nil {
+		return checks.YARAInput{Unavailable: "the server could not provide the YARA rules: " + err.Error()}
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return checks.YARAInput{Unavailable: "the server's YARA rules are not gzip data: " + err.Error()}
+	}
+	rules, err := io.ReadAll(io.LimitReader(reader, 64<<20))
+	if err != nil {
+		return checks.YARAInput{Unavailable: "read the server's YARA rules: " + err.Error()}
+	}
+	input, err := yararules.Parse(rules)
+	if err != nil {
+		return checks.YARAInput{Unavailable: err.Error()}
+	}
+	if version := header.Get(agentapi.HeaderRulesVersion); version != "" {
+		input.Version = version
+	}
+	return input
 }
 
 func osName() string {
