@@ -15,6 +15,7 @@ import { Login } from "./pages/Login";
 import { Agents } from "./pages/Agents";
 import { Audit } from "./pages/Audit";
 import { Logs } from "./pages/Logs";
+import { Schedules } from "./pages/Schedules";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
           { path: "/vulnerabilities", element: <Vulnerabilities /> },
           { path: "/vulnerabilities/:cve", element: <VulnerabilityDetail /> },
           { path: "/agents", element: <Agents /> },
+          { path: "/schedules", element: <Schedules /> },
           { path: "/logs", element: <Logs /> },
           { path: "/audit", element: <Audit /> },
           { path: "*", element: <NotFound /> },
