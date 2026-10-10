@@ -156,6 +156,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 7 {
+		if err := execInTx(db, schemaV7); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -332,6 +337,20 @@ ALTER TABLE hosts DROP COLUMN key_path;
 ALTER TABLE scans DROP COLUMN host_key_fingerprint;
 DELETE FROM meta WHERE key = 'legacy_import';
 PRAGMA user_version = 6;`
+
+// schemaV7 adds the log the dashboard shows: what the server and each agent
+// did, kept for 7 days.
+const schemaV7 = `
+CREATE TABLE logs (
+	id      INTEGER PRIMARY KEY AUTOINCREMENT,
+	at      TEXT NOT NULL,
+	source  TEXT NOT NULL,
+	host_id TEXT NOT NULL DEFAULT '',
+	level   TEXT NOT NULL,
+	message TEXT NOT NULL
+);
+CREATE INDEX logs_host ON logs (host_id, id);
+PRAGMA user_version = 7;`
 
 func ListHosts() ([]Host, error) {
 	db, err := database()
