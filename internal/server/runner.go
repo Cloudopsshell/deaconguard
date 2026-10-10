@@ -70,7 +70,10 @@ func newRunner(scanner scanFunc) *runner {
 	}
 }
 
-func (r *runner) start(host store.Host, checks []string) (store.Scan, error) {
+// start begins a scan of host. Unattended scans, such as scheduled ones,
+// never wait for a sudo password: nobody is there to type it, so their checks
+// run without sudo and say so.
+func (r *runner) start(host store.Host, checks []string, unattended bool) (store.Scan, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, busy := r.running[host.ID]; busy {
@@ -88,7 +91,7 @@ func (r *runner) start(host store.Host, checks []string) (store.Scan, error) {
 	log := newEventLog(host, record, checks)
 	r.logs[record.ID] = log
 	r.wg.Add(1)
-	go r.run(host, record.ID, checks, log)
+	go r.run(host, record.ID, checks, log, unattended)
 	return record, nil
 }
 
@@ -135,7 +138,7 @@ func (r *runner) publishFailure(scanID string, log *eventLog, message string) {
 	log.finish(store.ScanFailed)
 }
 
-func (r *runner) run(host store.Host, scanID string, checks []string, log *eventLog) {
+func (r *runner) run(host store.Host, scanID string, checks []string, log *eventLog, unattended bool) {
 	started := time.Now()
 	defer r.wg.Done()
 	defer func() {
@@ -149,6 +152,9 @@ func (r *runner) run(host store.Host, scanID string, checks []string, log *event
 		},
 		Progress:  log.add,
 		YARARules: yararules.Provider(),
+	}
+	if unattended {
+		options.SudoPassword = nil
 	}
 	report, err := r.scan(host, checks, options)
 	r.finish(host, scanID, log, report, err, started)
