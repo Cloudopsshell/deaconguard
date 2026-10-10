@@ -121,6 +121,8 @@ export interface HostSummary extends Host {
   checks: Partial<Record<CheckId, CheckSummary>> | null;
   /** Set for agent hosts. */
   agent?: AgentInfo;
+  /** The host's next scheduled scan, if a schedule covers it. */
+  next_scan?: NextScan;
 }
 
 export interface HostDetail extends HostSummary {
@@ -173,6 +175,36 @@ export interface CheckResult {
   notes: string[] | null;
   error?: string;
   findings: CheckFinding[] | null;
+}
+
+/** Runs scans of its hosts on chosen days at a time of day. */
+export interface Schedule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  checks: CheckId[];
+  /** Every host, including those added later. */
+  all_hosts: boolean;
+  host_ids: string[];
+  /** Days of the week, Sunday being 0. */
+  days: number[];
+  time: string;
+  timezone: string;
+  /** Empty while the schedule is off. */
+  next_run_at: string;
+  last_run_at: string;
+  created_at: string;
+  created_by: string;
+  /** Such as "Every day at 02:30 (Europe/Stockholm)". */
+  description: string;
+}
+
+export type ScheduleInput = Pick<Schedule, "name" | "enabled" | "checks" | "all_hosts" | "host_ids" | "days" | "time" | "timezone">;
+
+export interface NextScan {
+  schedule_id: string;
+  schedule: string;
+  at: string;
 }
 
 export type LogLevel = "info" | "warning" | "error";
@@ -318,6 +350,8 @@ export interface Summary {
   fixes: FixSummary;
   /** Hosts where updating or restarting fixes something. */
   hosts_to_update: number;
+  /** Hosts whose latest package results are older than 7 days. */
+  stale_hosts?: { id: string; address: string; scanned_at: string; scheduled: boolean }[];
   host_summaries: HostSummary[];
   top_vulnerabilities: Vulnerability[];
   checks: Partial<Record<CheckId, CheckTotals>>;
@@ -409,6 +443,11 @@ export const api = {
   capabilities: () => request<Capabilities>("GET", "/api/capabilities"),
   serverStatus: () => request<ServerStatus>("GET", "/api/server-status"),
   logs: (filters: LogFilters) => request<LogPage>("GET", `/api/logs?${logParameters(filters)}`),
+  schedules: () => request<Schedule[]>("GET", "/api/schedules"),
+  createSchedule: (input: ScheduleInput) => request<Schedule>("POST", "/api/schedules", input),
+  updateSchedule: (id: string, input: ScheduleInput) => request<Schedule>("PATCH", `/api/schedules/${id}`, input),
+  deleteSchedule: (id: string) => request<null>("DELETE", `/api/schedules/${id}`),
+  runSchedule: (id: string) => request<{ started: number; skipped: number }>("POST", `/api/schedules/${id}/run`),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),

@@ -18,6 +18,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/buildinfo"
@@ -40,6 +41,8 @@ type Server struct {
 	network bool
 	pin     string
 	limiter *failureLimiter
+	// scheduler runs scheduled scans once StartScheduler is called.
+	scheduler *scheduler
 }
 
 // New builds the local-mode handler. ui holds the built web app; scan may be
@@ -71,7 +74,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		return nil, err
 	}
 	s := &Server{
-		runner: newRunner(scan), ui: ui, network: network, pin: pin, limiter: newFailureLimiter(),
+		runner: newRunner(scan), ui: ui, network: network, pin: pin, limiter: newFailureLimiter(), scheduler: &scheduler{},
 		localAvailable: func() error { _, err := local.New(); return err },
 	}
 	s.agents = newAgentHub(s.runner)
@@ -94,6 +97,11 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/capabilities", s.capabilities)
 	mux.HandleFunc("GET /api/server-status", s.serverStatus)
 	mux.HandleFunc("GET /api/logs", s.listLogs)
+	mux.HandleFunc("GET /api/schedules", s.listSchedules)
+	mux.HandleFunc("POST /api/schedules", s.createSchedule)
+	mux.HandleFunc("PATCH /api/schedules/{id}", s.updateSchedule)
+	mux.HandleFunc("DELETE /api/schedules/{id}", s.deleteSchedule)
+	mux.HandleFunc("POST /api/schedules/{id}/run", s.runScheduleNow)
 	mux.HandleFunc("GET /api/logs/download", s.downloadLogs)
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.startScan)
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
@@ -136,9 +144,13 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.handler.ServeHTTP(w, r) }
 
+// StartScheduler starts the scheduled scans; Close stops them.
+func (s *Server) StartScheduler() { s.startScheduler() }
+
 // Close cancels questions waiting for an answer and blocks until background
 // scans finish.
 func (s *Server) Close() {
+	s.stopScheduler()
 	s.agents.stop()
 	s.runner.close()
 }
@@ -222,10 +234,25 @@ type summary struct {
 	Fixes store.FixSummary `json:"fixes"`
 	// HostsToUpdate counts hosts where updating or restarting fixes
 	// something.
-	HostsToUpdate    int                     `json:"hosts_to_update"`
+	HostsToUpdate int `json:"hosts_to_update"`
+	// StaleHosts lists hosts whose latest package results are older than
+	// staleAfter, so their findings may be out of date.
+	StaleHosts       []staleHost             `json:"stale_hosts"`
 	HostSummaries    []store.HostSummary     `json:"host_summaries"`
 	Checks           map[string]*checkTotals `json:"checks"`
 	TopVulnerability []store.Vulnerability   `json:"top_vulnerabilities"`
+}
+
+// staleAfter is how old a host's latest package results may be before the
+// dashboard says so.
+const staleAfter = 7 * 24 * time.Hour
+
+type staleHost struct {
+	ID        string `json:"id"`
+	Address   string `json:"address"`
+	ScannedAt string `json:"scanned_at"`
+	// Scheduled reports whether a schedule covers the host.
+	Scheduled bool `json:"scheduled"`
 }
 
 // checkTotals aggregates each host's latest result for one check.
@@ -250,7 +277,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := summary{Hosts: len(hosts), UniqueCVEs: len(vulnerabilities), HostSummaries: hosts, Checks: make(map[string]*checkTotals),
-		Fixes: store.FixSummary{Counts: make(map[string]int)}}
+		Fixes: store.FixSummary{Counts: make(map[string]int)}, StaleHosts: make([]staleHost, 0)}
 	for _, host := range hosts {
 		for id, check := range host.Checks {
 			totals := result.Checks[id]
@@ -284,6 +311,9 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		report := host.LastReport
+		if started, err := time.Parse(time.RFC3339, report.StartedAt); err == nil && time.Since(started) > staleAfter {
+			result.StaleHosts = append(result.StaleHosts, staleHost{ID: host.ID, Address: host.Address, ScannedAt: report.StartedAt, Scheduled: host.NextScan != nil})
+		}
 		result.ScannedHosts++
 		result.Findings += report.FindingCount
 		result.Unsupported += report.UnsupportedCount
@@ -479,7 +509,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, err)
 		return
 	}
-	scan, err := s.runner.start(host, selected)
+	scan, err := s.runner.start(host, selected, false)
 	if errors.Is(err, errScanInProgress) {
 		writeError(w, http.StatusConflict, err)
 		return

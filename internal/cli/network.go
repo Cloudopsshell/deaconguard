@@ -69,6 +69,7 @@ func runServe(arguments []string, output io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(output, "DeaconGuard %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
+		handler.StartScheduler()
 		return serveUntilStopped(handler, listener, output, run)
 	}
 
@@ -103,6 +104,7 @@ func runServe(arguments []string, output io.Writer) error {
 		fmt.Fprintln(output, "agents trust it through the fingerprint in their enrollment token.")
 	}
 	fmt.Fprintf(output, "Certificate public key (SHA-256): %s\nData: %s\nPress Ctrl+C to stop.\n", pin, store.DatabasePath())
+	handler.StartScheduler()
 	return serveUntilStopped(handler, listener, output, run)
 }
 
