@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+
+	"deaconguard/internal/runstate"
 )
 
 func TestScanLifecycleAndVulnerabilityQueries(t *testing.T) {
@@ -64,10 +66,11 @@ func TestScanLifecycleAndVulnerabilityQueries(t *testing.T) {
 		t.Fatalf("VulnerabilityHosts() = %+v, %v", affected, err)
 	}
 
-	if err := InterruptRunningScans(); err != nil {
+	if err := InterruptRunningScans(&runstate.Stop{Message: "The machine restarted."}); err != nil {
 		t.Fatal(err)
 	}
-	if interrupted, err := GetScan(failed.ID); err != nil || interrupted.Status != ScanFailed || interrupted.FinishedAt == nil {
+	if interrupted, err := GetScan(failed.ID); err != nil || interrupted.Status != ScanFailed || interrupted.FinishedAt == nil ||
+		interrupted.Error != "The DeaconGuard server stopped while this scan was running. The machine restarted. Run the scan again." {
 		t.Fatalf("a scan waiting for input when the server stopped must be failed: %+v, %v", interrupted, err)
 	}
 	if err := CompleteScan(failed.ID, map[string]any{}); err == nil {
