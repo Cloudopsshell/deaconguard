@@ -20,8 +20,10 @@ import (
 )
 
 // maxConcurrentEvaluations bounds the memory-heavy advisory evaluation when
-// several hosts are scanned at once.
-const maxConcurrentEvaluations = 2
+// several hosts are scanned at once. One evaluation of Ubuntu's feed peaks at
+// about 450 MB and takes seconds, so hosts take turns: the server's memory
+// stays the same however many agents report together.
+const maxConcurrentEvaluations = 1
 
 var evaluationSlots = make(chan struct{}, maxConcurrentEvaluations)
 
