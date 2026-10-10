@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Play, ShieldCheck, TerminalSquare, Trash2, XCircle } from "lucide-react";
+import { ArrowLeft, CalendarClock, FileText, Play, ShieldCheck, TerminalSquare, Trash2, XCircle } from "lucide-react";
 import { api, type CheckId, type Host, type HostDetail as HostDetailData, type Scan } from "../api";
 import { CheckResultView } from "../components/CheckResultView";
 import { ScanConsole } from "../components/ScanConsole";
@@ -65,6 +65,24 @@ export function HostDetail() {
                 <AgentStatus online={agentOnline(data)} lastSeen={data.agent?.last_seen_at} />
               </span>
             )}
+            <span className="mt-1 flex items-center gap-1.5 text-sm">
+              <CalendarClock className="size-4 text-slate-400" aria-hidden />
+              {data.next_scan ? (
+                <span>
+                  Next scheduled scan {dateTime(data.next_scan.at)} ·{" "}
+                  <Link to="/schedules" className="text-indigo-600 hover:underline dark:text-indigo-400">
+                    {data.next_scan.schedule}
+                  </Link>
+                </span>
+              ) : (
+                <span>
+                  Not on a schedule; scanned only when someone presses Scan now.{" "}
+                  <Link to="/schedules" className="text-indigo-600 hover:underline dark:text-indigo-400">
+                    Add a schedule
+                  </Link>
+                </span>
+              )}
+            </span>
           </>
         }
         action={

@@ -21,6 +21,12 @@ const actionLabels: Record<string, string> = {
   "scan.start": "Started scan",
   "scan.cancel": "Cancelled queued scan",
   "scan.delete": "Deleted scan",
+  "schedule.create": "Created schedule",
+  "schedule.update": "Changed schedule",
+  "schedule.delete": "Deleted schedule",
+  "schedule.run": "Ran schedule now",
+  "logs.view": "Viewed the log",
+  "logs.download": "Downloaded the log",
 };
 
 export function Audit() {
