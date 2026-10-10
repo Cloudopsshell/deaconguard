@@ -13,6 +13,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"deaconguard/internal/runstate"
 )
 
 type Host struct {
@@ -470,6 +472,36 @@ func SetMeta(key, value string) error {
 	}
 	_, err = db.Exec("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", key, value)
 	return err
+}
+
+// metaLastStop holds how the previous run of the server ended, as JSON.
+const metaLastStop = "last_stop"
+
+// SetLastStop records how the previous run of the server ended; nil clears it.
+func SetLastStop(stop *runstate.Stop) error {
+	value := ""
+	if stop != nil {
+		encoded, err := json.Marshal(stop)
+		if err != nil {
+			return err
+		}
+		value = string(encoded)
+	}
+	return SetMeta(metaLastStop, value)
+}
+
+// LastStop returns how the previous run of the server ended, or nil when
+// that is not known.
+func LastStop() (*runstate.Stop, error) {
+	value, err := Meta(metaLastStop)
+	if err != nil || value == "" {
+		return nil, err
+	}
+	var stop runstate.Stop
+	if err := json.Unmarshal([]byte(value), &stop); err != nil {
+		return nil, nil
+	}
+	return &stop, nil
 }
 
 // SaveReport stores a completed CLI scan report and returns it with its report_id.

@@ -43,6 +43,9 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runReport(arguments[1:], output)
 	case "serve":
 		err = runServe(arguments[1:], output)
+	case "record-stop":
+		// Not in the help: the server service runs it as ExecStopPost.
+		err = runRecordStop()
 	case "user":
 		err = runUser(arguments[1:], input, output, diagnostics)
 	case "agent":
