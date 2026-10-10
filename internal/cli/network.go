@@ -24,6 +24,7 @@ import (
 	"deaconguard/internal/buildinfo"
 	checkspkg "deaconguard/internal/checks"
 	"deaconguard/internal/local"
+	"deaconguard/internal/runstate"
 	"deaconguard/internal/server"
 	"deaconguard/internal/store"
 	"deaconguard/internal/tlscert"
@@ -57,6 +58,7 @@ func runServe(arguments []string, output io.Writer) error {
 	if (certificatePath == "") != (keyPath == "") {
 		return fmt.Errorf("--tls-cert and --tls-key go together")
 	}
+	run := startRun(output)
 	if server.IsLoopback(listen) && certificatePath == "" {
 		handler, err := server.New(web.Files(), nil)
 		if err != nil {
@@ -67,7 +69,7 @@ func runServe(arguments []string, output io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(output, "DeaconGuard %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
-		return serveUntilStopped(handler, listener, output)
+		return serveUntilStopped(handler, listener, output, run)
 	}
 
 	var certificate tls.Certificate
@@ -101,7 +103,34 @@ func runServe(arguments []string, output io.Writer) error {
 		fmt.Fprintln(output, "agents trust it through the fingerprint in their enrollment token.")
 	}
 	fmt.Fprintf(output, "Certificate public key (SHA-256): %s\nData: %s\nPress Ctrl+C to stop.\n", pin, store.DatabasePath())
-	return serveUntilStopped(handler, listener, output)
+	return serveUntilStopped(handler, listener, output, run)
+}
+
+// startRun records this run of the server and keeps how the previous run
+// ended, for the dashboard and for scans it cut short. Failing to record is
+// never a reason not to serve.
+func startRun(output io.Writer) *runstate.Run {
+	run, previous, err := runstate.Start(store.DataDir(), buildinfo.Version, time.Now())
+	if err != nil {
+		fmt.Fprintf(output, "Warning: cannot record this run, so a restart will not be explained: %v\n", err)
+		return nil
+	}
+	if previous != nil && previous.Unexpected() {
+		fmt.Fprintf(output, "The previous run ended unexpectedly: %s\n", previous.Message)
+		if previous.Detail != "" {
+			fmt.Fprintln(output, previous.Detail)
+		}
+	}
+	if err := store.SetLastStop(previous); err != nil {
+		fmt.Fprintf(output, "Warning: cannot store how the previous run ended: %v\n", err)
+	}
+	return run
+}
+
+// runRecordStop is the server service's ExecStopPost: it records how systemd
+// saw the server end, for the next run to explain.
+func runRecordStop() error {
+	return runstate.RecordSystemdResult(store.DataDir(), os.Getenv, time.Now())
 }
 
 func displayAddress(address net.Addr) string {
@@ -115,7 +144,7 @@ func displayAddress(address net.Addr) string {
 	return net.JoinHostPort(host, port)
 }
 
-func serveUntilStopped(handler *server.Server, listener net.Listener, output io.Writer) error {
+func serveUntilStopped(handler *server.Server, listener net.Listener, output io.Writer, run *runstate.Run) error {
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -132,6 +161,11 @@ func serveUntilStopped(handler *server.Server, listener net.Listener, output io.
 	}
 	fmt.Fprintln(output, "Waiting for running scans to finish (press Ctrl+C again to quit now)...")
 	handler.Close()
+	if run != nil {
+		if err := run.Stopped(time.Now()); err != nil {
+			fmt.Fprintf(output, "Warning: cannot record the stop: %v\n", err)
+		}
+	}
 	return nil
 }
 

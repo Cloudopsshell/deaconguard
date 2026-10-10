@@ -8,6 +8,16 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A scan cut short by a server restart now says why**, instead of "scan was interrupted before it finished": the machine restarted, it ran out of memory and the kernel stopped the server, DeaconGuard crashed (with the crash report), or it was stopped by a signal. For example: "The DeaconGuard server stopped while this scan was running. The machine ran out of memory and the kernel stopped the DeaconGuard server. Run the scan again."
+
+### Added
+
+- **The dashboard says when the server restarted unexpectedly**, and why, in a notice at the top of every page for 7 days or until dismissed. A crash shows its report. The server also writes the reason to its journal when it starts.
+  - The server service gains `ExecStopPost=-/usr/bin/deaconguard record-stop`, which records how systemd saw the server end. Upgrading with the install script or the package installs it.
+- The requirements state the server's memory: at least 2 GB, RAM plus swap. Checking an Ubuntu 24.04 machine briefly needs about 1.6 GB on the server.
+
 ## [0.5.0] - 2026-10-10
 
 ### Added
