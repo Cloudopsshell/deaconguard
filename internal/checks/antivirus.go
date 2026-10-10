@@ -33,7 +33,7 @@ func runAntivirus(executor *Executor, now time.Time) Result {
 	if strings.TrimSpace(string(output)) == "" {
 		return Result{
 			Status: StatusSkipped, Summary: "ClamAV is not installed on this host",
-			Notes:    []string{"DeaconGuard runs ClamAV only when it is already installed; it never installs software. Install the clamav package and update its signatures with freshclam to enable this check."},
+			Notes:    []string{"The DeaconGuard install script installs ClamAV and keeps its signatures current; run it again to add ClamAV: curl -fsSL https://get.deaconguard.io | sudo sh -"},
 			Findings: []Finding{},
 		}
 	}
