@@ -20,6 +20,7 @@ import {
   Th,
 } from "../components/ui";
 import { countFor, isActive, severityOrder, severityStyle, timeAgo } from "../lib/format";
+import { PackageCountsInline, packageCounts } from "../lib/fixes";
 
 function riskScore(counts: SeverityCounts) {
   return counts.critical * 1000 + counts.high * 100 + counts.medium * 10 + counts.low;
@@ -74,14 +75,19 @@ export function Dashboard() {
     );
   }
 
-  const critHigh = data.severity.critical + data.severity.high;
+  // Headline numbers count what an update or a restart fixes; the rest wait
+  // on the distribution and are shown separately, never as clean.
+  const toFixSeverity = data.fixes?.actionable ?? data.severity;
+  const toFix = data.fixes ? (data.fixes.counts.available ?? 0) + (data.fixes.counts.reboot ?? 0) : data.findings;
+  const waiting = data.findings - toFix;
+  const critHigh = toFixSeverity.critical + toFixSeverity.high;
   const attention = data.host_summaries.filter(
     (host) => host.last_scan?.status === "failed",
   );
   const neverScanned = data.host_summaries.filter((host) => !host.last_report && !attention.includes(host));
   const ranked: HostSummary[] = data.host_summaries
     .filter((host) => host.last_report)
-    .sort((a, b) => riskScore(b.last_report!.severity) - riskScore(a.last_report!.severity))
+    .sort((a, b) => riskScore(packageCounts(b.last_report!).severity) - riskScore(packageCounts(a.last_report!).severity))
     .slice(0, 6);
 
   return (
@@ -130,16 +136,20 @@ export function Dashboard() {
           tone="bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"
         />
         <StatTile
-          label="Open findings"
-          value={data.findings}
-          detail="Package and CVE pairs across hosts"
+          label="To fix now"
+          value={toFix}
+          detail={
+            waiting > 0
+              ? `On ${data.hosts_to_update ?? 0} host${data.hosts_to_update === 1 ? "" : "s"}; ${waiting.toLocaleString()} more wait on the distribution`
+              : `On ${data.hosts_to_update ?? 0} host${data.hosts_to_update === 1 ? "" : "s"}, with an update or a restart`
+          }
           icon={<Bug className="size-5" />}
           tone="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
         />
         <StatTile
-          label="Critical & high"
+          label="Critical & high to fix"
           value={critHigh}
-          detail="Prioritize these first"
+          detail="By the distribution's own rating; start here"
           icon={<ShieldAlert className="size-5" />}
           tone="bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300"
         />
@@ -154,13 +164,13 @@ export function Dashboard() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-2">
-          <CardHeader title="Findings by severity" description="From each host's latest successful scan" />
+          <CardHeader title="To fix now, by severity" description="What an update or a restart fixes, from each host's latest scan" />
           <div className="space-y-4 px-5 py-5">
-            <SeverityBar counts={data.severity} className="h-3" />
+            <SeverityBar counts={toFixSeverity} className="h-3" />
             <ul className="space-y-3">
               {severityOrder.map((severity) => {
-                const value = countFor(data.severity, severity);
-                const percent = data.findings > 0 ? (value / data.findings) * 100 : 0;
+                const value = countFor(toFixSeverity, severity);
+                const percent = toFix > 0 ? (value / toFix) * 100 : 0;
                 return (
                   <li key={severity} className="text-sm">
                     <div className="flex items-center justify-between">
@@ -177,6 +187,12 @@ export function Dashboard() {
                 );
               })}
             </ul>
+            {waiting > 0 && (
+              <p className="border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                {waiting.toLocaleString()} more have no fix from the distribution yet, or need Ubuntu Pro or removing old kernels. Each host's page
+                lists them by what clears them.
+              </p>
+            )}
           </div>
         </Card>
 
@@ -210,10 +226,10 @@ export function Dashboard() {
                       {isActive(host.last_scan?.status) ? (
                         <StatusBadge status={host.last_scan!.status} />
                       ) : (
-                        <SeverityCountsInline counts={host.last_report!.severity} />
+                        <PackageCountsInline summary={host.last_report!} />
                       )}
                     </div>
-                    <SeverityBar counts={host.last_report!.severity} className="mt-2.5" />
+                    <SeverityBar counts={packageCounts(host.last_report!).severity} className="mt-2.5" />
                   </Link>
                 </li>
               ))}
@@ -227,7 +243,7 @@ export function Dashboard() {
       <Card className="mt-6">
         <CardHeader
           title="Top vulnerabilities"
-          description="Ranked by severity, then by the number of affected hosts"
+          description="Those an update fixes first, then by severity and the number of affected hosts"
           action={
             <Link to="/vulnerabilities" className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
               View all
@@ -247,6 +263,7 @@ export function Dashboard() {
                 <Th>CVE</Th>
                 <Th>Severity</Th>
                 <Th>Packages</Th>
+                <Th>Fix</Th>
                 <Th className="text-right">Hosts</Th>
               </tr>
             </thead>
@@ -265,6 +282,9 @@ export function Dashboard() {
                     <SeverityBadge severity={item.severity} />
                   </Td>
                   <Td className="max-w-xs truncate text-slate-600 dark:text-slate-300">{item.packages.join(", ")}</Td>
+                  <Td className="text-xs whitespace-nowrap text-slate-600 dark:text-slate-300">
+                    {item.fixable_host_count > 0 ? `Update on ${item.fixable_host_count}` : <span title="No update or restart fixes it yet">Waiting</span>}
+                  </Td>
                   <Td className="text-right font-semibold tabular-nums">{item.host_count}</Td>
                 </tr>
               ))}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -61,6 +62,48 @@ func (counts *SeverityCounts) add(severity string) {
 	}
 }
 
+// FixSummary sums a scan's package findings by what clears them.
+type FixSummary struct {
+	// Counts holds the number of findings in each fix state: available,
+	// reboot, old_kernel, ubuntu_pro, and none.
+	Counts map[string]int `json:"counts"`
+	// Actionable counts, by severity, the findings that installing updates
+	// or restarting fixes.
+	Actionable SeverityCounts `json:"actionable"`
+}
+
+// fixStates are the fix states, as advisory.Classify sets them.
+var fixStates = []string{"available", "reboot", "old_kernel", "ubuntu_pro", "none"}
+
+// actionableFix reports whether installing updates or restarting fixes a
+// finding in this state.
+func actionableFix(fix string) bool { return fix == "available" || fix == "reboot" }
+
+// findingFix is a finding's fix state; reports from before 0.7.0 only say
+// whether a fixed version exists.
+func findingFix(fix, fixedVersion string) string {
+	for _, state := range fixStates {
+		if fix == state {
+			return fix
+		}
+	}
+	if fixedVersion == "" {
+		return "none"
+	}
+	return "available"
+}
+
+func decodeFixSummary(value string) *FixSummary {
+	if value == "" {
+		return nil
+	}
+	var summary FixSummary
+	if json.Unmarshal([]byte(value), &summary) != nil {
+		return nil
+	}
+	return &summary
+}
+
 // Scan is one scan attempt. Only succeeded scans carry a report; any other
 // status must never be read as a clean result.
 type Scan struct {
@@ -75,7 +118,10 @@ type Scan struct {
 	FindingCount     int            `json:"finding_count"`
 	UnsupportedCount int            `json:"unsupported_count"`
 	Severity         SeverityCounts `json:"severity"`
-	FeedStale        bool           `json:"feed_stale"`
+	// Fixes sums package findings by what clears them; nil when the scan
+	// did not check packages.
+	Fixes     *FixSummary `json:"fixes,omitempty"`
+	FeedStale bool        `json:"feed_stale"`
 	// Checks lists the checks this scan ran. Package counts above are only
 	// meaningful when it includes CheckPackages.
 	Checks []string `json:"checks"`
@@ -87,7 +133,7 @@ type Scan struct {
 const CheckPackages = "packages"
 
 const scanColumns = `id, host_id, address, status, error, started_at, finished_at, os,
-	finding_count, unsupported_count, critical, high, medium, low, unknown, feed_stale, checks, events_json IS NOT NULL`
+	finding_count, unsupported_count, critical, high, medium, low, unknown, feed_stale, checks, events_json IS NOT NULL, fix_summary`
 
 func encodeChecks(checks []string) string { return "," + strings.Join(checks, ",") + "," }
 
@@ -105,13 +151,14 @@ func scanScan(row rowScanner) (Scan, error) {
 	var scan Scan
 	var finishedAt sql.NullString
 	var feedStale int
-	var checks string
+	var checks, fixSummary string
 	err := row.Scan(&scan.ID, &scan.HostID, &scan.Address, &scan.Status, &scan.Error, &scan.StartedAt, &finishedAt, &scan.OS, &scan.FindingCount, &scan.UnsupportedCount,
 		&scan.Severity.Critical, &scan.Severity.High, &scan.Severity.Medium, &scan.Severity.Low, &scan.Severity.Unknown,
-		&feedStale, &checks, &scan.HasLog)
+		&feedStale, &checks, &scan.HasLog, &fixSummary)
 	if err != nil {
 		return Scan{}, err
 	}
+	scan.Fixes = decodeFixSummary(fixSummary)
 	if finishedAt.Valid {
 		value := finishedAt.String
 		scan.FinishedAt = &value
@@ -492,6 +539,8 @@ type CheckSummary struct {
 	Summary      string         `json:"summary"`
 	FindingCount int            `json:"finding_count"`
 	Severity     SeverityCounts `json:"severity"`
+	// Fixes is set for the package check.
+	Fixes *FixSummary `json:"fixes,omitempty"`
 }
 
 // HostSummaries lists registered hosts with their newest scan attempt and
@@ -540,7 +589,7 @@ func HostSummaries() ([]HostSummary, error) {
 
 func latestChecks(db *sql.DB, hostID string) (map[string]CheckSummary, error) {
 	rows, err := db.Query(`SELECT c.check_id, c.scan_id, s.started_at, c.status, c.privileged, c.summary, c.finding_count,
-		c.critical, c.high, c.medium, c.low, c.unknown
+		c.critical, c.high, c.medium, c.low, c.unknown, c.fix_summary
 		FROM scan_checks c JOIN scans s ON s.id = c.scan_id
 		WHERE s.host_id = ? AND s.status = ? ORDER BY s.started_at DESC, s.rowid DESC`, hostID, ScanSucceeded)
 	if err != nil {
@@ -550,11 +599,13 @@ func latestChecks(db *sql.DB, hostID string) (map[string]CheckSummary, error) {
 	checks := make(map[string]CheckSummary)
 	for rows.Next() {
 		var item CheckSummary
+		var fixSummary string
 		if err := rows.Scan(&item.Check, &item.ScanID, &item.ScannedAt, &item.Status, &item.Privileged, &item.Summary,
 			&item.FindingCount, &item.Severity.Critical, &item.Severity.High, &item.Severity.Medium, &item.Severity.Low,
-			&item.Severity.Unknown); err != nil {
+			&item.Severity.Unknown, &fixSummary); err != nil {
 			return nil, err
 		}
+		item.Fixes = decodeFixSummary(fixSummary)
 		if _, seen := checks[item.Check]; !seen {
 			checks[item.Check] = item
 		}
@@ -563,12 +614,15 @@ func latestChecks(db *sql.DB, hostID string) (map[string]CheckSummary, error) {
 }
 
 type Vulnerability struct {
-	CVE       string   `json:"cve"`
-	Severity  string   `json:"severity"`
-	Title     string   `json:"title"`
-	URL       string   `json:"url"`
-	HostCount int      `json:"host_count"`
-	Packages  []string `json:"packages"`
+	CVE      string `json:"cve"`
+	Severity string `json:"severity"`
+	// FixableHosts counts the hosts where installing updates or restarting
+	// fixes it.
+	FixableHosts int      `json:"fixable_host_count"`
+	Title        string   `json:"title"`
+	URL          string   `json:"url"`
+	HostCount    int      `json:"host_count"`
+	Packages     []string `json:"packages"`
 }
 
 type AffectedPackage struct {
@@ -579,6 +633,7 @@ type AffectedPackage struct {
 	Package          string `json:"package"`
 	InstalledVersion string `json:"installed_version"`
 	FixedVersion     string `json:"fixed_version"`
+	Fix              string `json:"fix"`
 	Severity         string `json:"severity"`
 	URL              string `json:"url"`
 	Title            string `json:"title"`
@@ -588,7 +643,7 @@ type AffectedPackage struct {
 // registered host.
 const latestFindings = `
 SELECT s.host_id, h.address, s.id, s.started_at, f.cve, f.package, f.installed_version, f.fixed_version,
-	f.severity, f.url, f.title
+	f.fix, f.severity, f.url, f.title
 FROM findings f
 JOIN scans s ON s.id = f.scan_id
 JOIN hosts h ON h.id = s.host_id
@@ -614,9 +669,10 @@ func queryLatestFindings(filter string, arguments ...any) ([]AffectedPackage, []
 		var item AffectedPackage
 		var cve string
 		if err := rows.Scan(&item.HostID, &item.Address, &item.ScanID, &item.ScannedAt, &cve, &item.Package,
-			&item.InstalledVersion, &item.FixedVersion, &item.Severity, &item.URL, &item.Title); err != nil {
+			&item.InstalledVersion, &item.FixedVersion, &item.Fix, &item.Severity, &item.URL, &item.Title); err != nil {
 			return nil, nil, err
 		}
+		item.Fix = findingFix(item.Fix, item.FixedVersion)
 		affected = append(affected, item)
 		cves = append(cves, cve)
 	}
@@ -631,6 +687,7 @@ func Vulnerabilities() ([]Vulnerability, error) {
 	}
 	byCVE := make(map[string]*Vulnerability)
 	hosts := make(map[string]map[string]bool)
+	fixable := make(map[string]map[string]bool)
 	packages := make(map[string]map[string]bool)
 	for index, item := range affected {
 		cve := cves[index]
@@ -639,17 +696,22 @@ func Vulnerabilities() ([]Vulnerability, error) {
 			vulnerability = &Vulnerability{CVE: cve, Severity: item.Severity, Title: item.Title, URL: item.URL}
 			byCVE[cve] = vulnerability
 			hosts[cve] = make(map[string]bool)
+			fixable[cve] = make(map[string]bool)
 			packages[cve] = make(map[string]bool)
 		}
 		if severityRank(item.Severity) > severityRank(vulnerability.Severity) {
 			vulnerability.Severity = item.Severity
 		}
 		hosts[cve][item.HostID] = true
+		if actionableFix(item.Fix) {
+			fixable[cve][item.HostID] = true
+		}
 		packages[cve][item.Package] = true
 	}
 	result := make([]Vulnerability, 0, len(byCVE))
 	for cve, vulnerability := range byCVE {
 		vulnerability.HostCount = len(hosts[cve])
+		vulnerability.FixableHosts = len(fixable[cve])
 		for name := range packages[cve] {
 			vulnerability.Packages = append(vulnerability.Packages, name)
 		}
@@ -696,6 +758,8 @@ type findingRecord struct {
 	Package          string `json:"package"`
 	InstalledVersion string `json:"installed_version"`
 	FixedVersion     string `json:"fixed_version"`
+	Fix              string `json:"fix"`
+	CVSSSeverity     string `json:"cvss_severity"`
 	Severity         string `json:"severity"`
 	URL              string `json:"url"`
 	Title            string `json:"title"`
@@ -755,7 +819,7 @@ type checkResultRecord struct {
 	} `json:"findings"`
 }
 
-func insertCheckResults(tx *sql.Tx, id string, report map[string]any, packageCounts SeverityCounts, packageFindings, unsupported int) error {
+func insertCheckResults(tx *sql.Tx, id string, report map[string]any, packageCounts SeverityCounts, packageFindings, unsupported int, fixSummary string) error {
 	for _, check := range reportChecks(report) {
 		if check != CheckPackages {
 			continue
@@ -764,9 +828,9 @@ func insertCheckResults(tx *sql.Tx, id string, report map[string]any, packageCou
 		if unsupported > 0 {
 			status = "partial"
 		}
-		if _, err := tx.Exec(`INSERT INTO scan_checks (scan_id, check_id, status, finding_count, critical, high, medium, low, unknown)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, CheckPackages, status, packageFindings,
-			packageCounts.Critical, packageCounts.High, packageCounts.Medium, packageCounts.Low, packageCounts.Unknown); err != nil {
+		if _, err := tx.Exec(`INSERT INTO scan_checks (scan_id, check_id, status, finding_count, critical, high, medium, low, unknown, fix_summary)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, CheckPackages, status, packageFindings,
+			packageCounts.Critical, packageCounts.High, packageCounts.Medium, packageCounts.Low, packageCounts.Unknown, fixSummary); err != nil {
 			return err
 		}
 	}
@@ -822,8 +886,25 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 		}
 	}
 	var counts SeverityCounts
-	for _, finding := range findings {
+	fixes := FixSummary{Counts: make(map[string]int, len(fixStates))}
+	for _, state := range fixStates {
+		fixes.Counts[state] = 0
+	}
+	for index, finding := range findings {
 		counts.add(finding.Severity)
+		findings[index].Fix = findingFix(finding.Fix, finding.FixedVersion)
+		fixes.Counts[findings[index].Fix]++
+		if actionableFix(findings[index].Fix) {
+			fixes.Actionable.add(finding.Severity)
+		}
+	}
+	fixSummary := ""
+	if slices.Contains(reportChecks(report), CheckPackages) {
+		encodedFixes, err := json.Marshal(fixes)
+		if err != nil {
+			return err
+		}
+		fixSummary = string(encodedFixes)
 	}
 	operatingSystem, _ := report["os"].(string)
 	unsupported := 0
@@ -842,10 +923,10 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 	}
 	result, err := tx.Exec(`UPDATE scans SET status = ?, error = '', finished_at = ?, os = ?,
 		finding_count = ?, unsupported_count = ?, critical = ?, high = ?, medium = ?, low = ?, unknown = ?,
-		feed_stale = ?, report_json = ? WHERE id = ? AND status = ?`,
+		feed_stale = ?, report_json = ?, fix_summary = ? WHERE id = ? AND status = ?`,
 		ScanSucceeded, finishedAt, operatingSystem, len(findings), unsupported,
 		counts.Critical, counts.High, counts.Medium, counts.Low, counts.Unknown,
-		feedStale, string(encoded), id, ScanRunning)
+		feedStale, string(encoded), fixSummary, id, ScanRunning)
 	if err != nil {
 		return err
 	}
@@ -854,13 +935,13 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 	} else if changed != 1 {
 		return fmt.Errorf("scan %s is not running", id)
 	}
-	if err := insertCheckResults(tx, id, report, counts, len(findings), unsupported); err != nil {
+	if err := insertCheckResults(tx, id, report, counts, len(findings), unsupported, fixSummary); err != nil {
 		return err
 	}
 	for _, finding := range findings {
-		if _, err := tx.Exec(`INSERT INTO findings (scan_id, cve, package, installed_version, fixed_version, severity, url, title)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, finding.ID, finding.Package, finding.InstalledVersion,
-			finding.FixedVersion, strings.ToUpper(finding.Severity), finding.URL, finding.Title); err != nil {
+		if _, err := tx.Exec(`INSERT INTO findings (scan_id, cve, package, installed_version, fixed_version, fix, severity, cvss_severity, url, title)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, finding.ID, finding.Package, finding.InstalledVersion,
+			finding.FixedVersion, finding.Fix, strings.ToUpper(finding.Severity), strings.ToUpper(finding.CVSSSeverity), finding.URL, finding.Title); err != nil {
 			return err
 		}
 	}
