@@ -381,6 +381,7 @@ CREATE TABLE schedules (
 	name        TEXT NOT NULL,
 	enabled     INTEGER NOT NULL DEFAULT 1,
 	checks      TEXT NOT NULL,
+	run_as_root INTEGER NOT NULL DEFAULT 1,
 	all_hosts   INTEGER NOT NULL DEFAULT 1,
 	host_ids    TEXT NOT NULL DEFAULT '',
 	days        TEXT NOT NULL,

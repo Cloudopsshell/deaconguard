@@ -183,6 +183,8 @@ export interface Schedule {
   name: string;
   enabled: boolean;
   checks: CheckId[];
+  /** Scans run with root privileges: agents as root, the server's own machine through sudo. */
+  run_as_root: boolean;
   /** Every host, including those added later. */
   all_hosts: boolean;
   host_ids: string[];
@@ -199,7 +201,7 @@ export interface Schedule {
   description: string;
 }
 
-export type ScheduleInput = Pick<Schedule, "name" | "enabled" | "checks" | "all_hosts" | "host_ids" | "days" | "time" | "timezone">;
+export type ScheduleInput = Pick<Schedule, "name" | "enabled" | "checks" | "run_as_root" | "all_hosts" | "host_ids" | "days" | "time" | "timezone">;
 
 export interface NextScan {
   schedule_id: string;

@@ -94,9 +94,13 @@ func (s *Server) runSchedule(item store.Schedule) (started, skipped int) {
 		case host.Transport == store.TransportAgent && !s.network:
 			reason = "agent hosts are scanned only when DeaconGuard serves on the network"
 		default:
+			// The schedule, not the host's own setting, decides whether the
+			// server's own machine is scanned with sudo. Agents run as root.
+			target := host
+			target.AllowSudo = item.RunAsRoot
 			if err := checkAgentVersion(host, item.Checks); err != nil {
 				reason = err.Error()
-			} else if _, err := s.runner.start(host, item.Checks, true); errors.Is(err, errScanInProgress) {
+			} else if _, err := s.runner.start(target, item.Checks, true); errors.Is(err, errScanInProgress) {
 				reason = "a scan of it is already queued or running"
 			} else if err != nil {
 				reason = err.Error()
@@ -110,6 +114,8 @@ func (s *Server) runSchedule(item store.Schedule) (started, skipped int) {
 		started++
 		if host.Transport == store.TransportAgent {
 			s.agents.wake(host.ID)
+		} else if !item.RunAsRoot {
+			serverLog(host.ID, store.LogWarning, "Schedule %q scans %s without root, as set: results show partial coverage", item.Name, host.Address)
 		}
 		store.Audit(actor, "scan.start", host.Address, strings.Join(item.Checks, ", "), "")
 		serverLog(host.ID, store.LogInfo, "Scan of %s started by schedule %q: %s", host.Address, item.Name, strings.Join(item.Checks, ", "))
@@ -124,6 +130,14 @@ func when(item store.Schedule) schedule.When {
 	return schedule.When{Days: item.Days, Time: item.Time, Timezone: item.Timezone}
 }
 
+// describe says when a schedule runs and with what privileges.
+func describe(item store.Schedule) string {
+	if item.RunAsRoot {
+		return when(item).Describe() + ", with root"
+	}
+	return when(item).Describe() + ", without root"
+}
+
 // scheduleView is a schedule as the dashboard shows it.
 type scheduleView struct {
 	store.Schedule
@@ -135,14 +149,16 @@ func viewOf(item store.Schedule) scheduleView {
 }
 
 type scheduleRequest struct {
-	Name     string   `json:"name"`
-	Enabled  *bool    `json:"enabled"`
-	Checks   []string `json:"checks"`
-	AllHosts bool     `json:"all_hosts"`
-	HostIDs  []string `json:"host_ids"`
-	Days     []int    `json:"days"`
-	Time     string   `json:"time"`
-	Timezone string   `json:"timezone"`
+	Name    string   `json:"name"`
+	Enabled *bool    `json:"enabled"`
+	Checks  []string `json:"checks"`
+	// RunAsRoot is on unless the request turns it off.
+	RunAsRoot *bool    `json:"run_as_root"`
+	AllHosts  bool     `json:"all_hosts"`
+	HostIDs   []string `json:"host_ids"`
+	Days      []int    `json:"days"`
+	Time      string   `json:"time"`
+	Timezone  string   `json:"timezone"`
 }
 
 // apply checks request and copies it into item, setting the next run.
@@ -185,6 +201,9 @@ func (request scheduleRequest) apply(item *store.Schedule, now time.Time) error 
 	if request.Enabled != nil {
 		item.Enabled = *request.Enabled
 	}
+	if request.RunAsRoot != nil {
+		item.RunAsRoot = *request.RunAsRoot
+	}
 	item.NextRunAt = ""
 	if item.Enabled {
 		item.NextRunAt = next.Format(time.RFC3339)
@@ -210,7 +229,7 @@ func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &request) {
 		return
 	}
-	item := store.Schedule{Enabled: true, CreatedBy: s.actor(r)}
+	item := store.Schedule{Enabled: true, RunAsRoot: true, CreatedBy: s.actor(r)}
 	if err := request.apply(&item, time.Now()); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -220,7 +239,7 @@ func (s *Server) createSchedule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	s.audit(r, "schedule.create", saved.Name, when(saved).Describe())
+	s.audit(r, "schedule.create", saved.Name, describe(saved))
 	writeJSON(w, http.StatusCreated, viewOf(saved))
 }
 
@@ -247,7 +266,7 @@ func (s *Server) updateSchedule(w http.ResponseWriter, r *http.Request) {
 	if !saved.Enabled {
 		state = "off"
 	}
-	s.audit(r, "schedule.update", saved.Name, when(saved).Describe()+", "+state)
+	s.audit(r, "schedule.update", saved.Name, describe(saved)+", "+state)
 	writeJSON(w, http.StatusOK, viewOf(saved))
 }
 
