@@ -1,5 +1,5 @@
 import { Navigate, NavLink, Outlet, useLocation } from "react-router";
-import { LayoutDashboard, LogOut, RadioTower, ScrollText, Server } from "lucide-react";
+import { LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server } from "lucide-react";
 import { Logo } from "./Logo";
 import { PromptDialog } from "./PromptDialog";
 import { RestartNotice } from "./RestartNotice";
@@ -11,6 +11,7 @@ const navigation = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/hosts", label: "Hosts", icon: Server, end: false },
   { to: "/agents", label: "Agents", icon: RadioTower, end: false },
+  { to: "/logs", label: "Logs", icon: Logs, end: false },
   { to: "/audit", label: "Audit log", icon: ScrollText, end: false },
 ];
 
