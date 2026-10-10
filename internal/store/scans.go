@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"deaconguard/internal/runstate"
 )
 
 // A running scan can pause in a needs_* status while it waits for the user to
@@ -336,15 +338,21 @@ func PruneAllScans(keep int) error {
 	return nil
 }
 
-// InterruptRunningScans fails scans left unfinished by a previous process.
-// Queued scans stay queued for their agents.
-func InterruptRunningScans() error {
+// InterruptRunningScans fails scans left unfinished by a previous process,
+// saying why that process stopped when it is known. Queued scans stay queued
+// for their agents.
+func InterruptRunningScans(why *runstate.Stop) error {
 	db, err := database()
 	if err != nil {
 		return err
 	}
+	message := "The DeaconGuard server stopped while this scan was running."
+	if why != nil {
+		message += " " + why.Message
+	}
+	message += " Run the scan again."
 	_, err = db.Exec(`UPDATE scans SET status = ?, error = ?, finished_at = COALESCE(finished_at, ?)
-		WHERE status IN `+activeStatuses, ScanFailed, "scan was interrupted before it finished", nowText())
+		WHERE status IN `+activeStatuses, ScanFailed, message, nowText())
 	return err
 }
 

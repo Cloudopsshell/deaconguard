@@ -24,6 +24,7 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 
 - **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
+- **Server memory:** give the server at least **2 GB of memory** (RAM plus swap). It checks each machine's package list against the distribution's feed in memory; for an Ubuntu 24.04 machine that briefly needs about 1.6 GB. With less, Linux stops the server mid-scan, and the dashboard says so after it restarts.
 - **Network:** the server needs HTTPS access to the distributions' advisory feeds. Agents only need to reach the server, on port 8443 by default.
 
 ## Install

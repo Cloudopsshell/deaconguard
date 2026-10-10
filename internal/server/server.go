@@ -59,7 +59,11 @@ func NewNetwork(ui fs.FS, scan scanFunc, pin string) (*Server, error) {
 }
 
 func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, error) {
-	if err := store.InterruptRunningScans(); err != nil {
+	lastStop, err := store.LastStop()
+	if err != nil {
+		return nil, err
+	}
+	if err := store.InterruptRunningScans(lastStop); err != nil {
 		return nil, err
 	}
 	if err := store.PruneAllScans(store.KeepScansPerHost); err != nil {
@@ -87,6 +91,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/checks", s.listChecks)
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, buildinfo.Get()) })
 	mux.HandleFunc("GET /api/capabilities", s.capabilities)
+	mux.HandleFunc("GET /api/server-status", s.serverStatus)
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.startScan)
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
 	mux.HandleFunc("DELETE /api/scans/{id}", s.deleteScan)
@@ -603,4 +608,15 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// serverStatus says how the previous run of the server ended, for the
+// dashboard to explain an unexpected restart.
+func (s *Server) serverStatus(w http.ResponseWriter, r *http.Request) {
+	lastStop, err := store.LastStop()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"last_stop": lastStop})
 }
