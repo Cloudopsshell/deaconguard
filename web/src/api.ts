@@ -123,6 +123,8 @@ export interface HostSummary extends Host {
   agent?: AgentInfo;
   /** The host's next scheduled scan, if a schedule covers it. */
   next_scan?: NextScan;
+  /** The machine the DeaconGuard server runs on, scanned by its own agent. */
+  this_server?: boolean;
 }
 
 export interface HostDetail extends HostSummary {
