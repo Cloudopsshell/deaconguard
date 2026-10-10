@@ -8,6 +8,21 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-10
+
+### Added
+
+- **A Logs page** shows what the server and each agent did, newest first, so you no longer need SSH and `journalctl` to find out what happened:
+  - the server: starts and stops, with why the previous run ended; agents connecting and no longer checking in; enrollments; each scan's start (and by whom), finish and failure; and every warning and error a scan reported, such as a stale advisory feed or a check that was skipped;
+  - each agent's own log, sent to the server over its existing connection. Lines from while the server was unreachable are kept on the agent (up to 2,000) and arrive once it answers again.
+
+  Filter by server or agents, machine, level and text; follow new entries live; or download the filtered log as text. Each host's page shows its latest entries. Entries are kept for 7 days, at most 100,000.
+- Reading the log needs a signed-in account. Downloads are recorded in the audit log, and so is viewing the log, at most once per account every 15 minutes.
+
+### Changed
+
+- **Upgrading:** agents send their log from 0.6.0; run the install script on each agent to upgrade. Older agents keep working, and their host page says their log is in the machine's journal only. The database gains a `logs` table (schema 7); downgrading to 0.5.x keeps working and ignores it.
+
 ## [0.5.2] - 2026-10-10
 
 ### Fixed
@@ -168,7 +183,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.2...v0.5.0

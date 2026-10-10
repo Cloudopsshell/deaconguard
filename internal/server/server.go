@@ -92,6 +92,8 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, buildinfo.Get()) })
 	mux.HandleFunc("GET /api/capabilities", s.capabilities)
 	mux.HandleFunc("GET /api/server-status", s.serverStatus)
+	mux.HandleFunc("GET /api/logs", s.listLogs)
+	mux.HandleFunc("GET /api/logs/download", s.downloadLogs)
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.startScan)
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
 	mux.HandleFunc("DELETE /api/scans/{id}", s.deleteScan)
@@ -112,6 +114,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"scans/{id}/events", s.agents.authenticated(s.agents.events))
 		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"scans/{id}/result", s.agents.authenticated(s.agents.result))
 		agentMux.HandleFunc("GET "+agentapi.PathPrefix+agentapi.PathYARARules, s.agents.authenticated(s.agents.yaraRules))
+		agentMux.HandleFunc("POST "+agentapi.PathPrefix+agentapi.PathLogs, s.agents.authenticated(s.agents.agentLogs))
 		agentMux.HandleFunc(agentapi.PathPrefix, func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("unknown agent API endpoint"))
 		})
@@ -464,6 +467,7 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		s.agents.wake(host.ID)
 	}
 	s.audit(r, "scan.start", host.Address, strings.Join(selected, ", "))
+	serverLog(host.ID, store.LogInfo, "Scan of %s started by %s: %s", host.Address, s.actor(r), strings.Join(selected, ", "))
 	writeJSON(w, http.StatusAccepted, scan)
 }
 

@@ -156,6 +156,47 @@ export interface CheckResult {
   findings: CheckFinding[] | null;
 }
 
+export type LogLevel = "info" | "warning" | "error";
+
+/** One line of the server's or an agent's log. */
+export interface LogEntry {
+  id: number;
+  at: string;
+  source: "server" | "agent";
+  host_id?: string;
+  host?: string;
+  level: LogLevel;
+  message: string;
+}
+
+export interface LogFilters {
+  source?: "server" | "agent";
+  host?: string;
+  /** The least severe level shown: warning means warnings and errors. */
+  level?: LogLevel;
+  q?: string;
+  before?: number;
+  limit?: number;
+}
+
+export interface LogPage {
+  entries: LogEntry[];
+  more: boolean;
+}
+
+function logParameters(filters: LogFilters) {
+  const parameters = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "") parameters.set(key, String(value));
+  }
+  return parameters.toString();
+}
+
+/** Downloads the matching log entries as a text file. */
+export function logDownloadUrl(filters: LogFilters) {
+  return `/api/logs/download?${logParameters({ ...filters, before: undefined, limit: undefined })}`;
+}
+
 /** How the previous run of the server ended. */
 export interface ServerStop {
   kind: "stopped" | "reboot" | "out_of_memory" | "crashed" | "killed" | "unknown";
@@ -341,6 +382,7 @@ export const api = {
   checks: () => request<CheckDefinition[]>("GET", "/api/checks"),
   capabilities: () => request<Capabilities>("GET", "/api/capabilities"),
   serverStatus: () => request<ServerStatus>("GET", "/api/server-status"),
+  logs: (filters: LogFilters) => request<LogPage>("GET", `/api/logs?${logParameters(filters)}`),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
