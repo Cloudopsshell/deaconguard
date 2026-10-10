@@ -42,6 +42,8 @@ function StatTile({ label, value, detail, icon, tone }: { label: string; value: 
 }
 
 export function Dashboard() {
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
+  const network = capabilities.data?.agents ?? false;
   const { data, error, isPending } = useQuery({
     queryKey: ["summary"],
     queryFn: api.summary,
@@ -60,13 +62,17 @@ export function Dashboard() {
           <EmptyState
             icon={<ShieldCheck className="size-6" />}
             title="Welcome to DeaconGuard"
-            description="Register the Linux machine DeaconGuard runs on. DeaconGuard reads its installed package list and checks it against the distribution's official security advisories."
+            description={
+              network
+                ? "Enroll the machines to scan with the DeaconGuard agent. Each agent reads its machine's installed packages as root, and this server checks them against the distribution's official security advisories."
+                : "Register the Linux machine DeaconGuard runs on. DeaconGuard reads its installed package list and checks it against the distribution's official security advisories."
+            }
             action={
               <Link
-                to="/hosts?add=1"
+                to={network ? "/agents?enroll=1" : "/hosts?add=1"}
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
-                <Plus className="size-4" /> Add this machine
+                <Plus className="size-4" /> {network ? "Enroll a machine" : "Add this machine"}
               </Link>
             }
           />

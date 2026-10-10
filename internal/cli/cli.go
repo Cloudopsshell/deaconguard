@@ -133,6 +133,19 @@ func runHost(arguments []string, output io.Writer) error {
 			}
 			fmt.Fprintf(output, "%s  this machine (%s, as %s)%s\n", host.ID, host.Address, host.Username, sudo)
 		}
+	case "this-server":
+		// Not in the help: deaconguard setup server runs it to mark the agent
+		// host of the server's own machine.
+		if len(arguments) != 2 {
+			return fmt.Errorf("usage: deaconguard host this-server HOST_ID")
+		}
+		merged, err := store.AdoptThisServer(arguments[1])
+		if err != nil {
+			return err
+		}
+		if merged {
+			fmt.Fprintln(output, "Moved this machine's earlier scans, log entries and schedules to its agent host.")
+		}
 	case "remove":
 		if len(arguments) != 2 {
 			return fmt.Errorf("usage: deaconguard host remove HOST_ID")
@@ -360,9 +373,10 @@ func showCheckResults(report map[string]any, output io.Writer) {
 }
 
 func usage(output io.Writer) {
-	fmt.Fprintln(output, `DeaconGuard scans Linux machines against official security advisories. It
-scans the machine it runs on, and machines running the DeaconGuard agent that
-have enrolled with a DeaconGuard server.
+	fmt.Fprintln(output, `DeaconGuard scans Linux machines against official security advisories. A
+server, which runs without root, collects results from agents, which scan
+their machines as root; the server's own machine has an agent too. On a
+single machine, deaconguard serve and deaconguard scan --local work alone.
 
 Scanning:
   deaconguard host add [--allow-sudo]    register this machine (Linux)
@@ -377,7 +391,9 @@ Scanning:
 Setup (as root, after installing the .deb or .rpm; install.sh runs these):
   deaconguard setup server [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE]
                            [--admin-user NAME] [--admin-password-file FILE]
-                                       create the first account, start the server service
+                           [--no-agent | --with-agent]
+                                       create the first account, start the server service,
+                                       and an agent that scans this machine as root
   deaconguard setup agent [--token-file FILE] [--force]
                                        enroll (asks for the token), start the agent service
 

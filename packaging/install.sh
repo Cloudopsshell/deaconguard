@@ -59,7 +59,8 @@ Usage: install.sh [--server | --agent] [--version VERSION] [SETUP OPTIONS]
 
   (no option)         a server, or an agent when DEACONGUARD_TOKEN is set or
                       this machine is already an enrolled agent
-  --server            install and start the DeaconGuard server
+  --server            install and start the DeaconGuard server, and an agent
+                      that scans this machine as root (--no-agent to skip it)
   --agent             install, enroll, and start the agent; asks for the token
                       unless DEACONGUARD_TOKEN is set
   --version VERSION   install this release, such as 0.4.0; default: the latest
@@ -70,6 +71,7 @@ DEACONGUARD_VERSION (same as --version).
 Setup options are passed to `deaconguard setup server` or `deaconguard setup agent`:
   server: --listen ADDRESS:PORT  --tls-cert FILE --tls-key FILE
           --admin-user NAME  --admin-password-file FILE
+          --no-agent (do not scan this machine as root)  --with-agent
   agent:  --token-file FILE  --force
 
 Run it as root, for example with sudo:
@@ -246,8 +248,9 @@ main() {
 		mode="agent"
 	elif [ -z "$mode" ]; then
 		mode="server"
-		# Upgrading an agent must not turn it into a server.
-		if [ -f /etc/deaconguard/agent.json ]; then
+		# Upgrading an agent must not turn it into a server. A server's own
+		# machine has an agent too, and its server data says it is a server.
+		if [ -f /etc/deaconguard/agent.json ] && [ ! -f /var/lib/deaconguard/deaconguard.db ]; then
 			mode="agent"
 		fi
 	fi

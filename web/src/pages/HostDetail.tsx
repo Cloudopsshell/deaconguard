@@ -26,7 +26,7 @@ import { PackageCountsInline, packageBadge } from "../lib/fixes";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
 import { HostLog } from "../components/HostLog";
-import { agentOnline, connectionLabel } from "../lib/hosts";
+import { ThisServerBadge, agentOnline, connectionLabel } from "../lib/hosts";
 import { AgentStatus } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 
@@ -36,6 +36,7 @@ export function HostDetail() {
   const [scanning, setScanning] = useState<{ initial?: CheckId[] } | null>(null);
   const [logScan, setLogScan] = useState<Scan | null>(null);
   const [deleting, setDeleting] = useState<Scan | null>(null);
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
   const { data, error, isPending } = useQuery({
     queryKey: ["host", hostId],
     queryFn: () => api.host(hostId),
@@ -55,7 +56,12 @@ export function HostDetail() {
         <ArrowLeft className="size-4" /> Hosts
       </Link>
       <PageHeader
-        title={data.address}
+        title={
+          <>
+            {data.address}
+            {data.this_server && <ThisServerBadge />}
+          </>
+        }
         description={
           <>
             {connectionLabel(data)}
@@ -132,6 +138,22 @@ export function HostDetail() {
             </div>
           </div>
         </Card>
+      )}
+
+      {data.transport === "local" && capabilities.data?.agents && (
+        <div className="mb-6 flex gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+          <div>
+            <p className="font-semibold">This machine is scanned without root, so its results are partial</p>
+            <p className="mt-1">
+              The server scans it itself, as the {data.username} user, and the server never runs as root. To scan it fully, give it an agent of
+              its own, as every other machine has. Its scan history and schedules move to the agent host:
+            </p>
+            <code className="mt-2 inline-block rounded-md bg-white/70 px-2 py-1 font-mono text-xs dark:bg-slate-900/60">
+              sudo deaconguard setup server --with-agent
+            </code>
+          </div>
+        </div>
       )}
 
       <Results host={data} onRun={(check) => setScanning({ initial: [check] })} />
