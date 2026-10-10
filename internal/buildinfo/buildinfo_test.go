@@ -23,10 +23,10 @@ func TestAgentInstallCommand(t *testing.T) {
 	defer func() { Version = saved }()
 	const get = "curl -fsSL https://get.deaconguard.io | "
 	for _, test := range []struct{ version, token, want string }{
-		{"0.4.1", "deaconguard1.abc.def", get + "DEACONGUARD_VERSION=0.4.1 DEACONGUARD_TOKEN=deaconguard1.abc.def sh -"},
-		{"0.5.0-rc.1", "", get + "DEACONGUARD_VERSION=0.5.0-rc.1 sh -s -- --agent"},
-		{"dev", "deaconguard1.abc", get + "DEACONGUARD_TOKEN=deaconguard1.abc sh -"},
-		{"0.1.1-3-gabc1234-dirty", "", get + "sh -s -- --agent"},
+		{"0.4.1", "deaconguard1.abc.def", get + "DEACONGUARD_VERSION=0.4.1 DEACONGUARD_TOKEN=deaconguard1.abc.def sudo -E sh -"},
+		{"0.5.0-rc.1", "", get + "DEACONGUARD_VERSION=0.5.0-rc.1 sudo -E sh -s -- --agent"},
+		{"dev", "deaconguard1.abc", get + "DEACONGUARD_TOKEN=deaconguard1.abc sudo -E sh -"},
+		{"0.1.1-3-gabc1234-dirty", "", get + "sudo -E sh -s -- --agent"},
 	} {
 		Version = test.version
 		if got := AgentInstallCommand(test.token); got != test.want {

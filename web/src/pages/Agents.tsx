@@ -273,8 +273,9 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
       {created ? (
         <div className="space-y-4 text-sm">
           <p className="text-slate-600 dark:text-slate-300">
-            On the Linux machine to scan, run this. It installs the same DeaconGuard version as this server, checks it, enrolls
-            the machine, and starts the agent; it uses sudo where it needs root.
+            On the Linux machine to scan, run this as a user with sudo rights (as root, leave out{" "}
+            <code className="font-mono">sudo -E</code>). It installs the same DeaconGuard version as this server, checks it,
+            enrolls the machine, and starts the agent.
           </p>
           <CopyBlock text={created.command} label="Copy the command" />
           <details className="text-xs text-slate-500 dark:text-slate-400">
