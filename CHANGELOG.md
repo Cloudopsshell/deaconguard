@@ -8,6 +8,19 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-10
+
+### Added
+
+- **Every package finding says what clears it**, on Ubuntu, Debian, Red Hat and Amazon Linux: **Update available**, **Restart needed** (the fixed kernel is installed but not running), **Old kernel** (installed but not running), **Ubuntu Pro** (fixed only in ESM), or **No fix yet** (the distribution has not published a fix, so updating cannot help).
+- **The dashboard leads with what you can fix now.** A host that is fully up to date shows "Nothing to fix now", with the findings that wait on the distribution listed separately, never as clean. The host page has a **What to do** card with each group's packages and the command for that distribution, and its findings open on **Fix now**. The dashboard, host list, scan history and Vulnerabilities page count findings to fix now, and show how many are waiting.
+- The CLI's package summary groups findings the same way.
+
+### Changed
+
+- **Ubuntu findings use Ubuntu's own priority as their severity**, instead of the generic CVSS rating first. Ubuntu rates many CVEs lower for how the package is built and used on Ubuntu; for example, CVEs Ubuntu rates low were shown as critical. The CVSS rating is still shown beside the severity when it differs. Debian, Red Hat and Amazon Linux already used their own ratings.
+- **Upgrading:** the database gains fix states (schema 8). Findings from earlier scans are marked from whether a fixed version exists, and Ubuntu severities update with the next scan.
+
 ## [0.6.0] - 2026-10-10
 
 ### Added
@@ -183,7 +196,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.5.0...v0.5.1
