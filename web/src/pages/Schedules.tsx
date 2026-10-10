@@ -32,6 +32,15 @@ function timezones(current: string) {
   return [...new Set(["UTC", current, ...zones])];
 }
 
+/**
+ * The editable fields of a schedule. The server refuses unknown fields, so
+ * read-only ones such as id and next_run_at must never be sent back.
+ */
+function inputOf(schedule: Schedule): ScheduleInput {
+  const { name, enabled, checks, run_as_root, all_hosts, host_ids, days, time, timezone } = schedule;
+  return { name, enabled, checks, run_as_root, all_hosts, host_ids, days, time, timezone };
+}
+
 /** When the next run is, in words and in the viewer's time. */
 function untilText(iso: string) {
   const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
@@ -51,7 +60,7 @@ export function Schedules() {
   const [deleting, setDeleting] = useState<Schedule | null>(null);
   const [ran, setRan] = useState<{ id: string; text: string } | null>(null);
   const toggle = useMutation({
-    mutationFn: (schedule: Schedule) => api.updateSchedule(schedule.id, { ...schedule, enabled: !schedule.enabled }),
+    mutationFn: (schedule: Schedule) => api.updateSchedule(schedule.id, { ...inputOf(schedule), enabled: !schedule.enabled }),
     onSettled: refresh,
   });
   const run = useMutation({
@@ -163,8 +172,8 @@ function ScheduleDialog({ schedule, onClose }: { schedule: Schedule | null; onCl
   const refresh = useRefreshAll();
   const hosts = useQuery({ queryKey: ["hosts"], queryFn: api.hosts });
   const defaultZone = useMemo(browserTimezone, []);
-  const [input, setInput] = useState<ScheduleInput>(
-    schedule ?? {
+  const [input, setInput] = useState<ScheduleInput>(() =>
+    schedule ? inputOf(schedule) : {
       name: "Nightly scan",
       enabled: true,
       checks: ["packages"],
