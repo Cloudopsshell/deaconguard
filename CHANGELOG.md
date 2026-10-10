@@ -8,6 +8,16 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-10
+
+### Changed
+
+- **The install commands say up front that they run as root**, instead of the script asking for a sudo password part-way through:
+  - Server: `curl -fsSL https://get.deaconguard.io | sudo sh -`
+  - Agent: `curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=… sudo -E sh -`. `-E` passes the token through the environment, so it never appears in the process list other users can read.
+
+  Started without root, the installer stops before doing anything and shows the command to use; it no longer calls sudo itself. As root, run the commands without `sudo`. The **Enroll a machine** dialog, `deaconguard token create` and the README show the new commands.
+
 ## [0.4.1] - 2026-10-10
 
 ### Changed
@@ -113,7 +123,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.3.1...v0.3.2
