@@ -39,6 +39,9 @@ type Options struct {
 	// evaluating them here. An agent uses it to leave the evaluation, which
 	// needs the advisory feeds, to the server.
 	CollectInventory func(target.Inventory)
+	// YARARules provides the rules of the advanced antivirus scan. It is
+	// called only when that check runs; without it, the check is skipped.
+	YARARules func() checks.YARAInput
 }
 
 // Run scans host with the given check IDs, reaching it the way its transport
@@ -126,7 +129,15 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 			}
 			continue
 		}
-		result := checks.Run(id, executor, detected, now)
+		var inputs checks.Inputs
+		if id == checks.YARA {
+			if options.YARARules != nil {
+				inputs.YARA = options.YARARules()
+			} else {
+				inputs.YARA = checks.YARAInput{Unavailable: "this scan has no source for the rules"}
+			}
+		}
+		result := checks.Run(id, executor, detected, now, inputs)
 		results[id] = result
 		if note := executor.SudoNote(); note != "" && !sudoNoted {
 			sudoNoted = true

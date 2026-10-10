@@ -1,20 +1,24 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/checks"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
 	"deaconguard/internal/target"
+	"deaconguard/internal/yararules"
 )
 
 const (
@@ -403,3 +407,39 @@ func (s *Server) revokeEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 }
 
 var errNeedsNetworkMode = errors.New("agents enroll with a DeaconGuard server on the network: run deaconguard serve --listen 0.0.0.0:8443")
+
+// yaraRules gives an agent the advanced antivirus scan's rules, which the
+// server downloads and caches, gzip-compressed.
+func (h *agentHub) yaraRules(w http.ResponseWriter, r *http.Request, host store.Host) {
+	input, err := yararules.Load(nil, time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set(agentapi.HeaderRulesVersion, limitText(strings.Map(func(r rune) rune {
+		if r < 0x20 || r > 0x7e {
+			return -1
+		}
+		return r
+	}, input.Version), 120))
+	compressor := gzip.NewWriter(w)
+	if _, err := compressor.Write(input.Rules); err == nil {
+		compressor.Close()
+	}
+}
+
+// checkAgentVersion refuses checks an agent host's agent cannot run.
+func checkAgentVersion(host store.Host, selected []string) error {
+	if host.Transport != store.TransportAgent || !slices.Contains(selected, checks.YARA) {
+		return nil
+	}
+	agents, err := store.Agents()
+	if err != nil {
+		return err
+	}
+	if version := agents[host.ID].Version; !agentapi.SupportsYARA(version) {
+		return agentapi.ErrNeedsNewerAgent(host.Address, version)
+	}
+	return nil
+}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Play, ShieldCheck } from "lucide-react";
-import { api, type CheckId, type Host } from "../api";
+import { api, type CheckDefinition, type CheckId, type Host } from "../api";
 import { checkMeta, rememberChecks, rememberedChecks } from "../lib/checks";
 import { useRefreshAll, useStartScan } from "../lib/hooks";
 import { Button, Dialog, ErrorMessage, Loading, cx } from "./ui";
@@ -34,8 +34,22 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
   const chosenDefinitions = definitions.data?.filter((check) => chosen.includes(check.id)) ?? [];
   const wantsSudo = chosenDefinitions.some((check) => check.sudo === "recommended");
 
+  // The advanced scan is a level of the antivirus check, not a check of its own:
+  // it always runs with ClamAV, and goes when the antivirus check is unticked.
+  const advanced = definitions.data?.find((check) => check.id === "yara");
+  const listed = definitions.data?.filter((check) => check.id !== "yara") ?? [];
+
   function toggle(id: CheckId) {
-    setSelected(chosen.includes(id) ? chosen.filter((value) => value !== id) : [...chosen, id]);
+    setSelected(
+      chosen.includes(id)
+        ? chosen.filter((value) => value !== id && !(id === "antivirus" && value === "yara"))
+        : [...chosen, id],
+    );
+  }
+
+  function setAdvanced(on: boolean) {
+    const others = chosen.filter((value) => value !== "yara");
+    setSelected(on ? [...others, "yara"] : others);
   }
 
   async function start() {
@@ -55,7 +69,7 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
         <div className="space-y-4">
           <fieldset className="space-y-2">
             <legend className="mb-2 text-sm font-medium">Choose what to check</legend>
-            {definitions.data.map((check) => {
+            {listed.map((check) => {
               const Icon = checkMeta[check.id].icon;
               const checked = chosen.includes(check.id);
               return (
@@ -89,6 +103,9 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
                       <span className="mt-1.5 flex gap-1 text-xs text-amber-700 dark:text-amber-400">
                         <AlertTriangle className="mt-px size-3.5 shrink-0" /> {check.warning}
                       </span>
+                    )}
+                    {checked && check.id === "antivirus" && advanced && (
+                      <AntivirusLevel advanced={advanced} on={chosen.includes("yara")} onChange={setAdvanced} />
                     )}
                   </span>
                 </label>
@@ -136,5 +153,56 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
         </div>
       )}
     </Dialog>
+  );
+}
+
+/** Basic (ClamAV) or advanced (ClamAV and YARA) antivirus scan. */
+function AntivirusLevel({
+  advanced,
+  on,
+  onChange,
+}: {
+  advanced: CheckDefinition;
+  on: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  const levels = [
+    { on: false, label: "Basic", detail: "ClamAV signatures" },
+    { on: true, label: "Advanced", detail: "ClamAV and YARA rules" },
+  ];
+  return (
+    // Clicks here choose a level; they must not untick the antivirus check around it.
+    <span className="mt-2.5 block" onClick={(event) => event.preventDefault()}>
+      <span role="radiogroup" aria-label="Antivirus scan" className="grid grid-cols-2 gap-2">
+        {levels.map((level) => (
+          <button
+            key={level.label}
+            type="button"
+            role="radio"
+            aria-checked={on === level.on}
+            onClick={() => onChange(level.on)}
+            className={cx(
+              "rounded-md px-3 py-2 text-left ring-1 ring-inset transition-colors",
+              on === level.on
+                ? "bg-white ring-indigo-600 dark:bg-slate-900 dark:ring-indigo-400"
+                : "ring-slate-200 hover:bg-white dark:ring-slate-700 dark:hover:bg-slate-900",
+            )}
+          >
+            <span className="block text-xs font-semibold">{level.label}</span>
+            <span className="block text-[11px] text-slate-500 dark:text-slate-400">{level.detail}</span>
+          </button>
+        ))}
+      </span>
+      {on && (
+        <span className="mt-2 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+          {advanced.description}
+          {advanced.warning && (
+            <span className="mt-1.5 flex gap-1 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-px size-3.5 shrink-0" /> {advanced.warning}
+            </span>
+          )}
+        </span>
+      )}
+    </span>
   );
 }

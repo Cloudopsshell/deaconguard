@@ -15,9 +15,9 @@ Include the DeaconGuard version, how to reproduce the problem, and what an attac
 
 ## Scope
 
-In scope: DeaconGuard itself, including the commands it runs on scanned machines, its use of sudo, the server, its API and dashboard, the agent and its enrollment, the local web UI, the sudo password prompt, the stored data directory, the install script, and the release files.
+In scope: DeaconGuard itself, including the commands it runs on scanned machines, its use of sudo, the server, its API and dashboard, the agent and its enrollment, the local web UI, the sudo password prompt, the stored data directory, the install script, the download and delivery of the YARA rules, and the release files.
 
-Out of scope: vulnerabilities that DeaconGuard reports on your hosts (those belong to the affected software), and problems in the distributions' advisory data (report those to the distribution).
+Out of scope: vulnerabilities that DeaconGuard reports on your hosts (those belong to the affected software), and problems in the distributions' advisory data (report those to the distribution). False positives and missed detections of a ClamAV signature or YARA rule belong to its authors: YARA findings name the rule and its author.
 
 ## How DeaconGuard limits risk
 
