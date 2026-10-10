@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 
 	"deaconguard/internal/agentapi"
@@ -209,14 +210,19 @@ func hostWithPort(host string) string {
 }
 
 type summary struct {
-	Hosts            int                     `json:"hosts"`
-	ScannedHosts     int                     `json:"scanned_hosts"`
-	AttentionHosts   int                     `json:"attention_hosts"`
-	Findings         int                     `json:"findings"`
-	UniqueCVEs       int                     `json:"unique_cves"`
-	Unsupported      int                     `json:"unsupported"`
-	StaleFeeds       int                     `json:"stale_feeds"`
-	Severity         store.SeverityCounts    `json:"severity"`
+	Hosts          int                  `json:"hosts"`
+	ScannedHosts   int                  `json:"scanned_hosts"`
+	AttentionHosts int                  `json:"attention_hosts"`
+	Findings       int                  `json:"findings"`
+	UniqueCVEs     int                  `json:"unique_cves"`
+	Unsupported    int                  `json:"unsupported"`
+	StaleFeeds     int                  `json:"stale_feeds"`
+	Severity       store.SeverityCounts `json:"severity"`
+	// Fixes sums every host's latest package findings by what clears them.
+	Fixes store.FixSummary `json:"fixes"`
+	// HostsToUpdate counts hosts where updating or restarting fixes
+	// something.
+	HostsToUpdate    int                     `json:"hosts_to_update"`
 	HostSummaries    []store.HostSummary     `json:"host_summaries"`
 	Checks           map[string]*checkTotals `json:"checks"`
 	TopVulnerability []store.Vulnerability   `json:"top_vulnerabilities"`
@@ -243,7 +249,8 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	result := summary{Hosts: len(hosts), UniqueCVEs: len(vulnerabilities), HostSummaries: hosts, Checks: make(map[string]*checkTotals)}
+	result := summary{Hosts: len(hosts), UniqueCVEs: len(vulnerabilities), HostSummaries: hosts, Checks: make(map[string]*checkTotals),
+		Fixes: store.FixSummary{Counts: make(map[string]int)}}
 	for _, host := range hosts {
 		for id, check := range host.Checks {
 			totals := result.Checks[id]
@@ -288,7 +295,25 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		if report.FeedStale {
 			result.StaleFeeds++
 		}
+		if fixes := report.Fixes; fixes != nil {
+			for state, count := range fixes.Counts {
+				result.Fixes.Counts[state] += count
+			}
+			result.Fixes.Actionable.Critical += fixes.Actionable.Critical
+			result.Fixes.Actionable.High += fixes.Actionable.High
+			result.Fixes.Actionable.Medium += fixes.Actionable.Medium
+			result.Fixes.Actionable.Low += fixes.Actionable.Low
+			result.Fixes.Actionable.Unknown += fixes.Actionable.Unknown
+			if fixes.Counts["available"]+fixes.Counts["reboot"] > 0 {
+				result.HostsToUpdate++
+			}
+		}
 	}
+	// The most severe vulnerabilities an update fixes come first: they are the
+	// ones to act on.
+	sort.SliceStable(vulnerabilities, func(i, j int) bool {
+		return (vulnerabilities[i].FixableHosts > 0) && vulnerabilities[j].FixableHosts == 0
+	})
 	if len(vulnerabilities) > 10 {
 		vulnerabilities = vulnerabilities[:10]
 	}

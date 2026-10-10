@@ -15,7 +15,6 @@ import {
   ErrorMessage,
   Loading,
   PageHeader,
-  SeverityCountsInline,
   StatusBadge,
   Table,
   Td,
@@ -23,6 +22,7 @@ import {
   cx,
 } from "../components/ui";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
+import { PackageCountsInline, packageBadge } from "../lib/fixes";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
 import { HostLog } from "../components/HostLog";
@@ -165,7 +165,7 @@ export function HostDetail() {
                     {scan.status !== "succeeded" ? (
                       <span className="line-clamp-2 max-w-sm text-xs text-slate-500 dark:text-slate-400">{scan.error}</span>
                     ) : scan.checks.includes("packages") ? (
-                      <SeverityCountsInline counts={scan.severity} />
+                      <PackageCountsInline summary={scan} />
                     ) : (
                       <span className="text-xs text-slate-500 dark:text-slate-400">Not checked</span>
                     )}
@@ -275,7 +275,8 @@ function Results({ host, onRun }: { host: HostDetailData; onRun: (check: CheckId
         {checkOrder.map((check) => {
           const Icon = checkMeta[check].icon;
           const summary = checks[check];
-          const severity = summary ? topSeverity(summary.severity) : undefined;
+          const packages = check === "packages" && summary ? packageBadge(summary) : undefined;
+          const severity = summary ? topSeverity(packages ? (packages.severity ?? { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 }) : summary.severity) : undefined;
           return (
             <button
               key={check}
@@ -294,18 +295,19 @@ function Results({ host, onRun }: { host: HostDetailData; onRun: (check: CheckId
               {checkMeta[check].label}
               {summary ? (
                 <span
+                  title={packages?.title}
                   className={cx(
                     "rounded-full px-1.5 text-xs font-semibold tabular-nums",
                     summary.status === "skipped" || summary.status === "failed"
                       ? "bg-slate-100 font-normal text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                      : summary.finding_count === 0
+                      : (packages ? packages.text === "✓" : summary.finding_count === 0)
                         ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
                         : severity
                           ? severityStyle[severity].badge
-                          : "bg-slate-100 text-slate-700",
+                          : "bg-slate-100 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300",
                   )}
                 >
-                  {checkBadgeText(summary)}
+                  {packages && summary.status !== "skipped" && summary.status !== "failed" ? packages.text : checkBadgeText(summary)}
                 </span>
               ) : (
                 <span className="text-xs text-slate-400">–</span>

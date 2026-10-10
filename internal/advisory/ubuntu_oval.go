@@ -225,9 +225,10 @@ func evaluateUbuntuOVALReader(contents io.Reader, packages []inventory.Package, 
 				if cveURL == "" {
 					cveURL = "https://ubuntu.com/security/" + reference.attr("ref_id")
 				}
+				severity, cvss := ubuntuSeverity(metadata)
 				result.Findings = append(result.Findings, Finding{
 					ID: reference.attr("ref_id"), Package: packageName, InstalledVersion: installedVersion,
-					FixedVersion: evaluation.items[key], Severity: ubuntuSeverity(metadata),
+					FixedVersion: evaluation.items[key], Severity: severity, CVSSSeverity: cvss,
 					URL: cveURL, Title: metadata.child("title").value(),
 				})
 			}
@@ -677,14 +678,30 @@ func negate(value ovalEval) ovalEval {
 	}
 }
 
-func ubuntuSeverity(metadata *ovalNode) string {
+// ubuntuSeverity is Ubuntu's own priority for the CVE, which weighs how the
+// package is built and used on Ubuntu; the generic CVSS rating is only used
+// when Ubuntu has not rated it yet. cvss is the CVSS rating, for reference.
+func ubuntuSeverity(metadata *ovalNode) (severity, cvss string) {
+	severity, cvss = "UNKNOWN", ""
 	for _, cve := range metadata.child("advisory").children("cve") {
-		if severity := normalizeSeverity(cve.attr("cvss_severity")); severity != "UNKNOWN" {
-			return severity
+		if rating := normalizeSeverity(cve.attr("cvss_severity")); rating != "UNKNOWN" && cvss == "" {
+			cvss = rating
 		}
-		if severity := normalizeSeverity(cve.attr("priority")); severity != "UNKNOWN" {
-			return severity
+		if severity == "UNKNOWN" {
+			severity = ubuntuPriority(cve.attr("priority"))
 		}
 	}
-	return "UNKNOWN"
+	if severity == "UNKNOWN" && cvss != "" {
+		severity = cvss
+	}
+	return severity, cvss
+}
+
+// ubuntuPriority maps Ubuntu's priorities; negligible means Ubuntu sees
+// little or no risk, so it is reported as low.
+func ubuntuPriority(priority string) string {
+	if strings.EqualFold(strings.TrimSpace(priority), "negligible") {
+		return "LOW"
+	}
+	return normalizeSeverity(priority)
 }

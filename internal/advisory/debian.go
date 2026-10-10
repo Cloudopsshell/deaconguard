@@ -15,9 +15,15 @@ type Finding struct {
 	Package          string `json:"package"`
 	InstalledVersion string `json:"installed_version"`
 	FixedVersion     string `json:"fixed_version"`
-	Severity         string `json:"severity"`
-	URL              string `json:"url"`
-	Title            string `json:"title"`
+	// Severity is the distribution's own rating.
+	Severity string `json:"severity"`
+	// CVSSSeverity is the generic CVSS rating, when the distribution
+	// publishes it alongside its own.
+	CVSSSeverity string `json:"cvss_severity,omitempty"`
+	// Fix says what clears the finding; see Classify.
+	Fix   string `json:"fix"`
+	URL   string `json:"url"`
+	Title string `json:"title"`
 }
 
 type Unsupported struct {
