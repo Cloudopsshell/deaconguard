@@ -271,6 +271,13 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 		return nil
 	}
 	fmt.Fprintf(output, "\nPackage vulnerabilities: %v findings\n", report["finding_count"])
+	if counts, ok := report["fix_counts"].(map[string]any); ok {
+		for _, line := range fixLines {
+			if count, _ := counts[line.state].(float64); count > 0 {
+				fmt.Fprintf(output, "  %5.0f %s\n", count, line.text)
+			}
+		}
+	}
 	fmt.Fprintf(output, "Coverage: %v\nMaintenance: %v\n", report["coverage"], report["maintenance"])
 	if database, ok := report["advisory_database"].(map[string]any); ok {
 		freshness := "current"
@@ -296,12 +303,27 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 			}
 			fixed := item["fixed_version"]
 			if fixed == nil || fixed == "" {
-				fixed = "no fixed version listed"
+				fixed = "no fix published yet"
 			}
-			fmt.Fprintf(output, "%-8v %-18v %v %v -> %v\n", item["severity"], item["id"], item["package"], item["installed_version"], fixed)
+			action := ""
+			for _, line := range fixLines {
+				if item["fix"] == line.state && line.state != "available" && line.state != "none" {
+					action = "  [" + line.short + "]"
+				}
+			}
+			fmt.Fprintf(output, "%-8v %-18v %v %v -> %v%s\n", item["severity"], item["id"], item["package"], item["installed_version"], fixed, action)
 		}
 	}
 	return nil
+}
+
+// fixLines describe the fix states, in the order the summary lists them.
+var fixLines = []struct{ state, text, short string }{
+	{"available", "fixed by installing updates", "update"},
+	{"reboot", "fixed by restarting into the already-installed kernel", "restart"},
+	{"old_kernel", "in old kernels that are installed but not running; remove them to clear", "old kernel"},
+	{"ubuntu_pro", "fixed only in Ubuntu Pro (ESM)", "Ubuntu Pro"},
+	{"none", "with no fix published by the distribution yet; updating cannot help until it is", "no fix yet"},
 }
 
 func showCheckResults(report map[string]any, output io.Writer) {
