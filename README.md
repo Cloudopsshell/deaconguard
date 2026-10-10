@@ -6,7 +6,7 @@
 [![CI](https://github.com/Cloudopsshell/deaconguard/actions/workflows/ci.yml/badge.svg)](https://github.com/Cloudopsshell/deaconguard/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/Cloudopsshell/deaconguard)](LICENSE)
 
-DeaconGuard is a Linux security scanner written in Go. It runs fixed, read-only commands on a Linux machine and evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are DeaconGuard code; DeaconGuard never installs software, and the only third-party engine it runs is a ClamAV that is already installed, when you choose the antivirus check.
+DeaconGuard is a Linux security scanner written in Go. It runs fixed, read-only commands on a Linux machine and evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and ClamAV antivirus. The matching, checks, and scan orchestration are DeaconGuard code. Scans never install or change software; the only third-party engine they run is ClamAV, for the antivirus check. The [install script](#install-script) installs ClamAV and the other tools the checks use, once, when it installs DeaconGuard.
 
 One binary does two jobs:
 
@@ -50,7 +50,20 @@ curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.… sudo 
 
 `get.deaconguard.io` serves [`packaging/install.sh`](packaging/install.sh) from this repository's `main` branch. With `DEACONGUARD_TOKEN` the script sets up an agent; without it, a server. On a machine that is already an enrolled agent, it upgrades the agent. The script never asks for a password itself: started without root, it stops before doing anything and shows the command to use.
 
-The script detects the distribution and architecture, downloads the `.deb` or `.rpm` package from GitHub over HTTPS, checks its checksum against the release's `checksums.txt`, and installs the package. When [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) is installed, it also verifies that `checksums.txt` was signed by this repository's release workflow. Nothing is installed when a check fails. It then runs `deaconguard setup server`, which creates the first dashboard account and starts the server, or `deaconguard setup agent`, which enrolls the machine and starts the agent. Running it again upgrades DeaconGuard and keeps the existing setup.
+The script detects the distribution and architecture, then:
+
+1. **Installs what DeaconGuard's checks use**, from the distribution's own signed repositories, on servers and agents alike:
+
+   | For | Debian, Ubuntu | RHEL 8/9, Amazon Linux 2023 |
+   | --- | --- | --- |
+   | Malware check (`ps`, `find`) | `procps`, `findutils` | `procps-ng`, `findutils` |
+   | Security configuration check (`ss`) | `iproute2` | `iproute` |
+   | Pending-reboot check | (not needed) | `needs-restarting` |
+   | Antivirus check | `clamav`, `clamav-freshclam` | `clamav` and its updater; on RHEL from **EPEL**, which the script enables |
+
+   It switches on ClamAV's signature updates (`clamav-freshclam`), which download about 110 MB of signatures in the background and keep them current. Already installed packages are left as they are.
+2. **Installs [cosign](https://docs.sigstore.dev)** to `/usr/local/bin`, unless it is already there: a pinned version, checked against a pinned checksum.
+3. Downloads the `.deb` or `.rpm` package from GitHub over HTTPS, **verifies with cosign that `checksums.txt` was signed by this repository's release workflow**, and checks the package against it. DeaconGuard is not installed when a check fails. It then runs `deaconguard setup server`, which creates the first dashboard account and starts the server, or `deaconguard setup agent`, which enrolls the machine and starts the agent. Running it again upgrades DeaconGuard and keeps the existing setup.
 
 - `curl … | DEACONGUARD_VERSION=0.4.0 sudo -E sh -` (or `curl … | sudo sh -s -- --version 0.4.0`) installs that release instead of the latest.
 - `--server` or `--agent` choose the mode explicitly. Other options go to `deaconguard setup`, for example `curl … | sudo sh -s -- --listen 0.0.0.0:9443`; see [Run the server](#run-the-server) and [the agent](#scan-other-machines-with-the-agent).
@@ -220,6 +233,8 @@ cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
 ```
 
 Then check the files you downloaded with `sha256sum --check --ignore-missing checksums.txt`.
+
+Each release's notes list the Go version and main libraries it was built with, and what the install script installs on each machine. The release also carries an SBOM, `deaconguard_X.Y.Z_sbom.spdx.json` (SPDX JSON), listing every Go module and web UI package with versions and licenses; `checksums.txt` covers it, so the signature does too.
 
 ## Back up and restore
 
