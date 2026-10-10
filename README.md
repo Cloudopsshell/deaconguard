@@ -17,24 +17,10 @@ One binary does two jobs, and they are kept apart on purpose:
 
 **The server never scans anything itself.** Every machine, the server's own included, is scanned by its own agent. The install script gives the server's machine an agent too.
 
-```mermaid
-flowchart TB
-    browser["You, in a browser"]
-    subgraph serverbox ["Server machine"]
-        server["deaconguard-server<br/>dashboard and API on :8443<br/>as the deaconguard user, no root"]
-        local["deaconguard-agent<br/>scans this machine as root<br/>listens on nothing"]
-    end
-    subgraph others ["Other machines"]
-        a1["deaconguard-agent<br/>as root"]
-        a2["deaconguard-agent<br/>as root"]
-    end
-    feeds["Distribution advisory feeds"]
-    browser -- HTTPS --> server
-    local -- "asks for work, sends results" --> server
-    a1 -- "outbound HTTPS" --> server
-    a2 -- "outbound HTTPS" --> server
-    server -- "downloads advisories" --> feeds
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/docs/architecture-dark.svg">
+  <img src="assets/docs/architecture-light.svg" alt="The server runs without root and serves the dashboard. Every machine, the server's own included, runs an agent as root that asks the server for work and sends back results. The server downloads the distributions' advisories." width="100%">
+</picture>
 
 | Component | Runs as | Listens on | Reaches |
 | --- | --- | --- | --- |
