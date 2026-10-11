@@ -94,7 +94,7 @@ export function Layout() {
         </p>
         <VersionLabel />
       </aside>
-      <main className="flex-1 lg:pl-60">
+      <main className="min-w-0 flex-1 lg:pl-60">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
           {session.data?.authenticated !== false && <RestartNotice />}
           <Outlet />
