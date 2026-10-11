@@ -43,6 +43,10 @@ type Server struct {
 	limiter *failureLimiter
 	// scheduler runs scheduled scans once StartScheduler is called.
 	scheduler *scheduler
+	// agentHandler serves only the agent API, for a listener of its own;
+	// agentPort is that listener's port, once SetAgentPort is called.
+	agentHandler http.Handler
+	agentPort    string
 }
 
 // New builds the local-mode handler. ui holds the built web app; scan may be
@@ -84,6 +88,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.HandleFunc("POST /api/login/mfa", s.loginMFA)
 	mux.HandleFunc("GET /api/account", s.account)
+	mux.HandleFunc("PATCH /api/account/appearance", s.saveAppearance)
 	mux.HandleFunc("POST /api/account/password", s.changeOwnPassword)
 	mux.HandleFunc("POST /api/account/mfa", s.startMFA)
 	mux.HandleFunc("POST /api/account/mfa/confirm", s.confirmMFA)
@@ -91,41 +96,41 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/account/recovery-codes", s.newRecoveryCodes)
 	mux.HandleFunc("DELETE /api/account/sessions/{id}", s.endOwnSession)
 	// Accounts exist only when DeaconGuard serves on the network.
-	mux.HandleFunc("GET /api/users", s.networkOnly(s.listUsers))
-	mux.HandleFunc("POST /api/users", s.networkOnly(s.createUser))
-	mux.HandleFunc("PATCH /api/users/{id}", s.networkOnly(s.updateUser))
-	mux.HandleFunc("DELETE /api/users/{id}", s.networkOnly(s.deleteUser))
-	mux.HandleFunc("POST /api/users/{id}/reset-mfa", s.networkOnly(s.resetUserMFA))
-	mux.HandleFunc("POST /api/users/{id}/temporary-password", s.networkOnly(s.setTemporaryPassword))
-	mux.HandleFunc("PATCH /api/settings/security", s.networkOnly(s.updateSecurity))
-	mux.HandleFunc("GET /api/audit", s.listAudit)
-	mux.HandleFunc("GET /api/enrollment-tokens", s.listEnrollmentTokens)
-	mux.HandleFunc("POST /api/enrollment-tokens", s.createEnrollmentToken)
-	mux.HandleFunc("DELETE /api/enrollment-tokens/{id}", s.revokeEnrollmentToken)
+	mux.HandleFunc("GET /api/users", s.needs(store.RoleAdmin, s.networkOnly(s.listUsers)))
+	mux.HandleFunc("POST /api/users", s.needs(store.RoleAdmin, s.networkOnly(s.createUser)))
+	mux.HandleFunc("PATCH /api/users/{id}", s.needs(store.RoleAdmin, s.networkOnly(s.updateUser)))
+	mux.HandleFunc("DELETE /api/users/{id}", s.needs(store.RoleAdmin, s.networkOnly(s.deleteUser)))
+	mux.HandleFunc("POST /api/users/{id}/reset-mfa", s.needs(store.RoleAdmin, s.networkOnly(s.resetUserMFA)))
+	mux.HandleFunc("POST /api/users/{id}/temporary-password", s.needs(store.RoleAdmin, s.networkOnly(s.setTemporaryPassword)))
+	mux.HandleFunc("PATCH /api/settings/security", s.needs(store.RoleAdmin, s.networkOnly(s.updateSecurity)))
+	mux.HandleFunc("GET /api/audit", s.needs(store.RoleAdmin, s.listAudit))
+	mux.HandleFunc("GET /api/enrollment-tokens", s.needs(store.RoleAdmin, s.listEnrollmentTokens))
+	mux.HandleFunc("POST /api/enrollment-tokens", s.needs(store.RoleAdmin, s.createEnrollmentToken))
+	mux.HandleFunc("DELETE /api/enrollment-tokens/{id}", s.needs(store.RoleAdmin, s.revokeEnrollmentToken))
 	mux.HandleFunc("GET /api/summary", s.summary)
 	mux.HandleFunc("GET /api/hosts", s.listHosts)
-	mux.HandleFunc("POST /api/hosts", s.addHost)
+	mux.HandleFunc("POST /api/hosts", s.needs(store.RoleAdmin, s.addHost))
 	mux.HandleFunc("GET /api/hosts/{id}", s.getHost)
-	mux.HandleFunc("PATCH /api/hosts/{id}", s.updateHost)
-	mux.HandleFunc("DELETE /api/hosts/{id}", s.removeHost)
+	mux.HandleFunc("PATCH /api/hosts/{id}", s.needs(store.RoleOperator, s.updateHost))
+	mux.HandleFunc("DELETE /api/hosts/{id}", s.needs(store.RoleAdmin, s.removeHost))
 	mux.HandleFunc("GET /api/checks", s.listChecks)
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, buildinfo.Get()) })
 	mux.HandleFunc("GET /api/capabilities", s.capabilities)
 	mux.HandleFunc("GET /api/server-status", s.serverStatus)
 	mux.HandleFunc("GET /api/logs", s.listLogs)
 	mux.HandleFunc("GET /api/schedules", s.listSchedules)
-	mux.HandleFunc("POST /api/schedules", s.createSchedule)
-	mux.HandleFunc("PATCH /api/schedules/{id}", s.updateSchedule)
-	mux.HandleFunc("DELETE /api/schedules/{id}", s.deleteSchedule)
-	mux.HandleFunc("POST /api/schedules/{id}/run", s.runScheduleNow)
-	mux.HandleFunc("GET /api/logs/download", s.downloadLogs)
-	mux.HandleFunc("POST /api/hosts/{id}/scans", s.startScan)
+	mux.HandleFunc("POST /api/schedules", s.needs(store.RoleOperator, s.createSchedule))
+	mux.HandleFunc("PATCH /api/schedules/{id}", s.needs(store.RoleOperator, s.updateSchedule))
+	mux.HandleFunc("DELETE /api/schedules/{id}", s.needs(store.RoleOperator, s.deleteSchedule))
+	mux.HandleFunc("POST /api/schedules/{id}/run", s.needs(store.RoleOperator, s.runScheduleNow))
+	mux.HandleFunc("GET /api/logs/download", s.needs(store.RoleOperator, s.downloadLogs))
+	mux.HandleFunc("POST /api/hosts/{id}/scans", s.needs(store.RoleOperator, s.startScan))
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
-	mux.HandleFunc("DELETE /api/scans/{id}", s.deleteScan)
+	mux.HandleFunc("DELETE /api/scans/{id}", s.needs(store.RoleOperator, s.deleteScan))
 	mux.HandleFunc("GET /api/prompts", s.listPrompts)
 	mux.HandleFunc("GET /api/activity", s.listActivity)
 	mux.HandleFunc("GET /api/scans/{id}/events", s.scanEvents)
-	mux.HandleFunc("POST /api/scans/{id}/respond", s.respond)
+	mux.HandleFunc("POST /api/scans/{id}/respond", s.needs(store.RoleOperator, s.respond))
 	mux.HandleFunc("GET /api/vulnerabilities", s.listVulnerabilities)
 	mux.HandleFunc("GET /api/vulnerabilities/{cve}", s.getVulnerability)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +148,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		agentMux.HandleFunc(agentapi.PathPrefix, func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("unknown agent API endpoint"))
 		})
+		s.agentHandler = agentOnly(agentMux)
 		browser := s.signedIn(browserChecks(mux, "https"))
 		s.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasPrefix(r.URL.Path, agentapi.PathPrefix) {
@@ -159,6 +165,26 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.handler.ServeHTTP(w, r) }
+
+// AgentHandler serves the agent API alone, with no dashboard or sign-in, for
+// a listener that only agents reach. It is nil in local mode.
+func (s *Server) AgentHandler() http.Handler { return s.agentHandler }
+
+// SetAgentPort records the agent listener's port, so the dashboard can point
+// new enrollment tokens at it.
+func (s *Server) SetAgentPort(port string) { s.agentPort = port }
+
+// agentOnly answers the agent API and nothing else.
+func agentOnly(agentMux http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if !strings.HasPrefix(r.URL.Path, agentapi.PathPrefix) {
+			writeError(w, http.StatusNotFound, errors.New("this port only serves DeaconGuard agents; open the dashboard on the server's dashboard port"))
+			return
+		}
+		agentMux.ServeHTTP(w, r)
+	})
+}
 
 // StartScheduler starts the scheduled scans; Close stops them.
 func (s *Server) StartScheduler() { s.startScheduler() }
@@ -390,10 +416,13 @@ type capabilitiesResponse struct {
 	Username      string `json:"username"`
 	// Agents reports whether agents can enroll, which needs network mode.
 	Agents bool `json:"agents"`
+	// AgentPort is the port of a listener only for agents, if the server has
+	// one; new enrollment tokens should point there.
+	AgentPort string `json:"agent_port,omitempty"`
 }
 
 func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
-	response := capabilitiesResponse{LocalScanning: true, Hostname: local.Hostname(), Username: local.Username(), Agents: s.network}
+	response := capabilitiesResponse{LocalScanning: true, Hostname: local.Hostname(), Username: local.Username(), Agents: s.network, AgentPort: s.agentPort}
 	if err := s.localAvailable(); err != nil {
 		response.LocalScanning, response.LocalReason = false, err.Error()
 	}

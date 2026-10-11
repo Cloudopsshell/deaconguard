@@ -29,6 +29,11 @@ type User struct {
 	MustChangePassword bool   `json:"must_change_password"`
 	Disabled           bool   `json:"disabled"`
 	LastLoginAt        string `json:"last_login_at"`
+	// Role is RoleAdmin, RoleOperator or RoleViewer.
+	Role string `json:"role"`
+	// Appearance is the dashboard's mode and theme the account chose, as
+	// JSON the dashboard reads; empty until it chooses.
+	Appearance string `json:"-"`
 }
 
 const (
@@ -46,7 +51,8 @@ var (
 	ErrAccountDisabled    = errors.New("this account is disabled; ask an administrator to turn it back on")
 	ErrUnknownUser        = errors.New("unknown account")
 	// ErrLastAccount keeps at least one account that can sign in.
-	ErrLastAccount = errors.New("this is the only account that can sign in; add or turn on another account first")
+	ErrLastAccount = errors.New("this is the only administrator that can sign in; make another account an administrator, or turn one on, first")
+	ErrUnknownRole = errors.New("the role must be admin, operator or viewer")
 )
 
 // dummyHash is compared against when the username is unknown, so a failed
