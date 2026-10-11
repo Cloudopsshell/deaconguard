@@ -57,10 +57,10 @@ export function HostDetail() {
       </Link>
       <PageHeader
         title={
-          <>
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             {data.address}
             {data.this_server && <ThisServerBadge />}
-          </>
+          </span>
         }
         description={
           <>
