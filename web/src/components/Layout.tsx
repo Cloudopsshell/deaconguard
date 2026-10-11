@@ -1,14 +1,16 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
-import { CalendarClock, CircleUser, LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server, ShieldAlert, Users, X } from "lucide-react";
+import { CalendarClock, CircleUser, Palette, LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server, ShieldAlert, Users, X } from "lucide-react";
 import { Logo } from "./Logo";
 import { PromptDialog } from "./PromptDialog";
 import { RestartNotice } from "./RestartNotice";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, type Session } from "../api";
+import { api, roleLabels, type Session } from "../api";
+import { adoptAppearance, setAppearanceSaver } from "../lib/appearance";
 import { ChangePassword } from "./account/ChangePassword";
 import { MFASetup } from "./account/MFASetup";
-import { Card, Loading, cx } from "./ui";
+import { AppearancePicker, ModeSwitch } from "./AppearancePicker";
+import { Card, Dialog, Loading, cx } from "./ui";
 
 const navigation = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -22,6 +24,9 @@ const navigation = [
 
 /** Pages that exist only on a server with agents and accounts. */
 const networkPages = ["/agents", "/audit", "/accounts"];
+
+/** Pages only admins use: the audit log, and managing accounts. */
+const adminPages = ["/audit", "/accounts"];
 
 /** True when the account should look at My account: no two-step sign-in, or few recovery codes left. */
 function needsAttention(session?: Session) {
@@ -138,7 +143,7 @@ function SignedInAs({ session }: { session: Session }) {
         <span className="min-w-0">
           <span className="block truncate">{session.username}</span>
           <span className={cx("block text-xs font-normal", attention ? "text-amber-700 dark:text-amber-400" : "text-slate-500 dark:text-slate-400")}>
-            {attention ? (session.mfa_enabled ? "Few recovery codes left" : "Two-step sign-in off") : "My account"}
+            {attention ? (session.mfa_enabled ? "Few recovery codes left" : "Two-step sign-in off") : `My account · ${roleLabels[session.role ?? "viewer"]}`}
           </span>
         </span>
       </NavLink>
@@ -151,6 +156,26 @@ function SignedInAs({ session }: { session: Session }) {
       >
         <LogOut className="size-4" />
       </button>
+    </div>
+  );
+}
+
+/** Light, dark or system mode in one click; the palette opens the themes too. */
+function AppearanceControls() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="hidden items-center justify-between gap-2 px-5 pt-4 lg:flex">
+      <ModeSwitch compact />
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+      >
+        <Palette className="size-4" aria-hidden /> Theme
+      </button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Appearance" wide>
+        <AppearancePicker />
+      </Dialog>
     </div>
   );
 }
@@ -172,6 +197,16 @@ function VersionLabel() {
 export function Layout() {
   const location = useLocation();
   const session = useQuery({ queryKey: ["session"], queryFn: api.session, staleTime: 60_000 });
+  // A signed-in account's appearance follows it from browser to browser.
+  const saved = session.data?.authenticated && session.data.login_required ? session.data.appearance : undefined;
+  const accountSignedIn = Boolean(session.data?.authenticated && session.data.login_required);
+  useEffect(() => {
+    if (saved) adoptAppearance(saved);
+  }, [saved]);
+  useEffect(() => {
+    setAppearanceSaver(accountSignedIn ? (appearance) => void api.saveAppearance(appearance).catch(() => {}) : null);
+    return () => setAppearanceSaver(null);
+  }, [accountSignedIn]);
   // A session still finishing a required step (new password, two-step setup) can't read anything else yet.
   const ready = session.data?.authenticated === true && !session.data.must_change_password && !session.data.mfa_setup_required;
   const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity, enabled: ready });
@@ -181,6 +216,7 @@ export function Layout() {
   }
   const network = capabilities.data?.agents ?? false;
   const signedIn = session.data?.authenticated ? session.data : undefined;
+  const isAdmin = !signedIn?.login_required || signedIn.role === "admin";
   const refresh = () => window.location.reload();
   if (signedIn?.must_change_password) {
     return (
@@ -207,7 +243,7 @@ export function Layout() {
           <span className="text-lg font-bold tracking-tight">DeaconGuard</span>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:pb-0" aria-label="Main">
-          {navigation.filter(({ to }) => network || !networkPages.includes(to)).map(({ to, label, icon: Icon, end }) => (
+          {navigation.filter(({ to }) => (network || !networkPages.includes(to)) && (isAdmin || !adminPages.includes(to))).map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
@@ -227,6 +263,7 @@ export function Layout() {
           ))}
         </nav>
         {signedIn?.username && <SignedInAs session={signedIn} />}
+        <AppearanceControls />
         <p className="hidden px-5 pt-6 text-xs leading-relaxed text-slate-400 lg:block">
           {network
             ? "Server · checks what its agents, this machine's included, read as root against official distribution advisories."

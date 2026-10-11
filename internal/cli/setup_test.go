@@ -40,20 +40,23 @@ func TestParseAgentSetup(t *testing.T) {
 }
 
 func TestServerDropInRoundTrip(t *testing.T) {
-	if dropIn := renderServerDropIn(defaultServerListen, "", ""); dropIn != "" {
+	if dropIn := renderServerDropIn(defaultServerListen, "", "", ""); dropIn != "" {
 		t.Fatalf("the default settings need no drop-in, got %q", dropIn)
 	}
-	listen, certificate, key := parseServerDropIn("")
-	if listen != defaultServerListen || certificate != "" || key != "" {
-		t.Fatalf("no drop-in = %s %s %s", listen, certificate, key)
+	listen, agentListen, certificate, key := parseServerDropIn("")
+	if listen != defaultServerListen || agentListen != "" || certificate != "" || key != "" {
+		t.Fatalf("no drop-in = %s %s %s %s", listen, agentListen, certificate, key)
 	}
-	dropIn := renderServerDropIn("0.0.0.0:9443", "/etc/ssl/dg.crt", "/etc/ssl/dg.key")
-	if !strings.Contains(dropIn, "\nExecStart=\nExecStart=/usr/bin/deaconguard serve --listen 0.0.0.0:9443 --tls-cert /etc/ssl/dg.crt --tls-key /etc/ssl/dg.key\n") {
+	dropIn := renderServerDropIn("0.0.0.0:9443", "0.0.0.0:8444", "/etc/ssl/dg.crt", "/etc/ssl/dg.key")
+	if !strings.Contains(dropIn, "\nExecStart=\nExecStart=/usr/bin/deaconguard serve --listen 0.0.0.0:9443 --agent-listen 0.0.0.0:8444 --tls-cert /etc/ssl/dg.crt --tls-key /etc/ssl/dg.key\n") {
 		t.Fatalf("drop-in = %q", dropIn)
 	}
-	listen, certificate, key = parseServerDropIn(dropIn)
-	if listen != "0.0.0.0:9443" || certificate != "/etc/ssl/dg.crt" || key != "/etc/ssl/dg.key" {
-		t.Fatalf("parsed back %s %s %s", listen, certificate, key)
+	listen, agentListen, certificate, key = parseServerDropIn(dropIn)
+	if listen != "0.0.0.0:9443" || agentListen != "0.0.0.0:8444" || certificate != "/etc/ssl/dg.crt" || key != "/etc/ssl/dg.key" {
+		t.Fatalf("parsed back %s %s %s %s", listen, agentListen, certificate, key)
+	}
+	if dropIn := renderServerDropIn(defaultServerListen, "0.0.0.0:8444", "", ""); !strings.Contains(dropIn, "--listen 0.0.0.0:8443 --agent-listen 0.0.0.0:8444\n") {
+		t.Fatalf("agent port alone = %q", dropIn)
 	}
 }
 

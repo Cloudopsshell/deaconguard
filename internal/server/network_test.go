@@ -25,7 +25,7 @@ func newNetworkTestServer(t *testing.T) *Server {
 	if _, err := NewNetwork(fstest.MapFS{}, nil, testPin); err == nil {
 		t.Fatal("network mode started without any account")
 	}
-	if _, err := store.AddUser("admin", []byte(testPassword)); err != nil {
+	if _, err := store.AddUser("admin", []byte(testPassword), store.RoleAdmin, false); err != nil {
 		t.Fatal(err)
 	}
 	s, err := NewNetwork(fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}, nil, testPin)

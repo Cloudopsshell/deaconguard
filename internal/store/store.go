@@ -176,6 +176,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 11 {
+		if err := execInTx(db, schemaV11); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -423,6 +428,15 @@ ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT '';
 UPDATE sessions SET id = lower(hex(randomblob(8))), last_seen_at = created_at;
 PRAGMA user_version = 10;`
+
+// schemaV11 adds roles, which existing accounts get as administrators so
+// nobody loses access, each account's dashboard appearance, and the server
+// port each agent connects to.
+const schemaV11 = `
+ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin';
+ALTER TABLE users ADD COLUMN appearance TEXT NOT NULL DEFAULT '';
+ALTER TABLE agents ADD COLUMN port TEXT NOT NULL DEFAULT '';
+PRAGMA user_version = 11;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

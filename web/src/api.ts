@@ -35,6 +35,8 @@ export interface AgentInfo {
   version: string;
   os: string;
   remote: string;
+  /** The server port the agent last connected to. */
+  port?: string;
 }
 
 export interface Capabilities {
@@ -44,7 +46,14 @@ export interface Capabilities {
   username: string;
   /** Agents can enroll: the server runs on the network. */
   agents: boolean;
+  /** The port of the server's agent-only listener, if it has one. */
+  agent_port?: string;
 }
+
+/** Admins manage accounts and machines, operators run scans, viewers see results. */
+export type Role = "admin" | "operator" | "viewer";
+
+export const roleLabels: Record<Role, string> = { admin: "Admin", operator: "Operator", viewer: "Viewer" };
 
 export interface Session {
   /** False when DeaconGuard serves only this machine at localhost, without accounts. */
@@ -59,6 +68,9 @@ export interface Session {
   mfa_setup_required?: boolean;
   mfa_enabled?: boolean;
   recovery_codes_left?: number;
+  role?: Role;
+  /** The account's saved mode and theme, if it chose one. */
+  appearance?: { mode: "system" | "light" | "dark"; theme: "indigo" | "ocean" | "teal" | "plum" | "graphite" };
 }
 
 /** A dashboard account. */
@@ -71,6 +83,7 @@ export interface Account {
   must_change_password: boolean;
   disabled: boolean;
   last_login_at: string;
+  role: Role;
 }
 
 /** One sign-in of the current account. */
@@ -480,7 +493,9 @@ export const api = {
   newRecoveryCodes: (password: string) => request<{ recovery_codes: string[] }>("POST", "/api/account/recovery-codes", { password }),
   endSession: (id: string) => request<{ ended: number }>("DELETE", `/api/account/sessions/${id}`),
   users: () => request<{ users: Account[]; mfa_required: boolean }>("GET", "/api/users"),
-  createUser: (username: string, password: string) => request<Account>("POST", "/api/users", { username, password }),
+  createUser: (username: string, password: string, role: Role) => request<Account>("POST", "/api/users", { username, password, role }),
+  setUserRole: (id: string, role: Role) => request<Account>("PATCH", `/api/users/${id}`, { role }),
+  saveAppearance: (appearance: { mode: string; theme: string }) => request<unknown>("PATCH", "/api/account/appearance", appearance),
   setUserDisabled: (id: string, disabled: boolean) => request<Account>("PATCH", `/api/users/${id}`, { disabled }),
   removeUser: (id: string) => request<null>("DELETE", `/api/users/${id}`),
   resetUserMFA: (id: string) => request<{ ok: boolean }>("POST", `/api/users/${id}/reset-mfa`),

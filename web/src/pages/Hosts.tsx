@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Play, Plus, RadioTower, Server, Trash2 } from "lucide-react";
+import { useCan } from "../lib/role";
 import { api, type HostSummary } from "../api";
 import {
   Button,
@@ -27,6 +28,7 @@ import { ThisServerBadge, agentOnline, shortConnectionLabel } from "../lib/hosts
 import { RemoveHostDialog } from "./HostDetail";
 
 export function Hosts() {
+  const canEnroll = useCan("admin");
   const [searchParams, setSearchParams] = useSearchParams();
   const adding = searchParams.get("add") === "1";
   const setAdding = (open: boolean) => setSearchParams(open ? { add: "1" } : {}, { replace: true });
@@ -55,7 +57,7 @@ export function Hosts() {
                 <Plus className="size-4" /> Add this machine
               </Button>
             )}
-            {network && (
+            {network && canEnroll && (
               <Link
                 to="/agents?enroll=1"
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold whitespace-nowrap text-white shadow-sm hover:bg-indigo-500"
@@ -83,7 +85,7 @@ export function Hosts() {
                 : "Register the Linux machine DeaconGuard runs on to scan it."
             }
             action={
-              network ? (
+              network && !canEnroll ? undefined : network ? (
                 <Link
                   to="/agents?enroll=1"
                   className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold whitespace-nowrap text-white shadow-sm hover:bg-indigo-500"
@@ -131,6 +133,8 @@ function HostRow({ host }: { host: HostSummary }) {
   const navigate = useNavigate();
   const [removing, setRemoving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const canScan = useCan("operator");
+  const canRemove = useCan("admin");
   const running = isActive(host.last_scan?.status);
   return (
     <tr onClick={() => navigate(`/hosts/${host.id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
@@ -177,35 +181,40 @@ function HostRow({ host }: { host: HostSummary }) {
       </Td>
       <Td className="text-right">
         <div className="flex items-center justify-end gap-1">
-          <Button
-            variant="secondary"
-            loading={running}
-            onClick={(event) => {
-              event.stopPropagation();
-              setScanning(true);
-            }}
-          >
-            {!running && <Play className="size-4" />}
-            {host.last_scan?.status.startsWith("needs_")
-              ? "Waiting for input"
-              : host.last_scan?.status === "queued"
-                ? "Waiting for agent"
-                : running
-                  ? "Scanning"
-                  : "Scan"}
-          </Button>
-          <Button
-            variant="ghost"
-            className="px-2"
-            title={`Remove ${host.address}`}
-            aria-label={`Remove ${host.address}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              setRemoving(true);
-            }}
-          >
-            <Trash2 className="size-4" />
-          </Button>
+          {!canScan && running && <span className="text-sm text-slate-500 dark:text-slate-400">Scanning…</span>}
+          {canScan && (
+            <Button
+              variant="secondary"
+              loading={running}
+              onClick={(event) => {
+                event.stopPropagation();
+                setScanning(true);
+              }}
+            >
+              {!running && <Play className="size-4" />}
+              {host.last_scan?.status.startsWith("needs_")
+                ? "Waiting for input"
+                : host.last_scan?.status === "queued"
+                  ? "Waiting for agent"
+                  : running
+                    ? "Scanning"
+                    : "Scan"}
+            </Button>
+          )}
+          {canRemove && (
+            <Button
+              variant="ghost"
+              className="px-2"
+              title={`Remove ${host.address}`}
+              aria-label={`Remove ${host.address}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                setRemoving(true);
+              }}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          )}
         </div>
         <div className="text-left" onClick={(event) => event.stopPropagation()}>
           <RemoveHostDialog host={host} open={removing} onClose={() => setRemoving(false)} />
@@ -238,8 +247,8 @@ function CheckChips({ host }: { host: HostSummary }) {
                 : summary.finding_count === 0
                   ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30"
                   : severity
-                  ? severityStyle[severity].badge
-                  : "",
+                    ? severityStyle[severity].badge
+                    : "",
             )}
           >
             {checkMeta[check].short} {checkBadgeText(summary)}
@@ -280,14 +289,13 @@ function AddHostDialog({ open, onClose, registered }: { open: boolean; onClose: 
           <p className="text-sm text-slate-600 dark:text-slate-300">This machine is already registered. Open it from the hosts list to scan it.</p>
         ) : (
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            Registers <span className="font-semibold">{capabilities.data?.hostname ?? "this machine"}</span>, the Linux machine
-            DeaconGuard runs on. Scans run fixed, read-only commands directly on it as{" "}
-            <span className="font-semibold">{capabilities.data?.username}</span>.
+            Registers <span className="font-semibold">{capabilities.data?.hostname ?? "this machine"}</span>, the Linux machine DeaconGuard runs on. Scans run
+            fixed, read-only commands directly on it as <span className="font-semibold">{capabilities.data?.username}</span>.
           </p>
         )}
         <p className="rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
-          To scan other machines, install DeaconGuard on them and enroll them as agents with a one-time token from the Agents page
-          (needs the DeaconGuard server running on the network).
+          To scan other machines, install DeaconGuard on them and enroll them as agents with a one-time token from the Agents page (needs the DeaconGuard server
+          running on the network).
         </p>
         {!unavailable && !registered && (
           <label className="flex cursor-pointer gap-2 text-sm">
@@ -300,8 +308,8 @@ function AddHostDialog({ open, onClose, registered }: { open: boolean; onClose: 
             <span>
               <span className="font-medium">Allow sudo for deeper checks</span>
               <span className="block text-xs text-slate-500 dark:text-slate-400">
-                Integrity, malware, configuration, and antivirus checks can read protected files and processes using fixed read-only
-                commands. You can change this later.
+                Integrity, malware, configuration, and antivirus checks can read protected files and processes using fixed read-only commands. You can change
+                this later.
               </span>
             </span>
           </label>
