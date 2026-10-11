@@ -145,6 +145,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"scans/{id}/result", s.agents.authenticated(s.agents.result))
 		agentMux.HandleFunc("GET "+agentapi.PathPrefix+agentapi.PathYARARules, s.agents.authenticated(s.agents.yaraRules))
 		agentMux.HandleFunc("POST "+agentapi.PathPrefix+agentapi.PathLogs, s.agents.authenticated(s.agents.agentLogs))
+		agentMux.HandleFunc("GET "+agentapi.PathPrefix+agentapi.PathHello, s.agents.authenticated(s.agents.hello))
 		agentMux.HandleFunc(agentapi.PathPrefix, func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("unknown agent API endpoint"))
 		})
@@ -172,7 +173,12 @@ func (s *Server) AgentHandler() http.Handler { return s.agentHandler }
 
 // SetAgentPort records the agent listener's port, so the dashboard can point
 // new enrollment tokens at it.
-func (s *Server) SetAgentPort(port string) { s.agentPort = port }
+func (s *Server) SetAgentPort(port string) {
+	s.agentPort = port
+	if s.agents != nil {
+		s.agents.agentPort = port
+	}
+}
 
 // agentOnly answers the agent API and nothing else.
 func agentOnly(agentMux http.Handler) http.Handler {
