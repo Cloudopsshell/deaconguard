@@ -36,7 +36,7 @@ type agentHub struct {
 	// agentPort is the server's port only for agents, if it has one; agents
 	// on other ports are told to move there.
 	agentPort string
-	mu     sync.Mutex
+	mu        sync.Mutex
 	// wakers wake an agent's waiting job request when a scan is queued for it.
 	wakers map[string]chan struct{}
 	// active holds agent scans this process handed out and has not finished.
