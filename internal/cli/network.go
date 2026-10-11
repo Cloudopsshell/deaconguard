@@ -184,7 +184,7 @@ func serveUntilStopped(handler *server.Server, listener net.Listener, output io.
 
 func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("user requires add, passwd, list, or remove")
+		return fmt.Errorf("user requires add, passwd, mfa-reset, list, or remove")
 	}
 	switch arguments[0] {
 	case "list":
@@ -196,8 +196,33 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			fmt.Fprintln(output, noAccountsMessage+" Create one: deaconguard user add USERNAME")
 		}
 		for _, user := range users {
-			fmt.Fprintf(output, "%s  (created %s)\n", user.Username, user.CreatedAt)
+			state := "two-step sign-in: off"
+			if user.MFAEnabled {
+				state = fmt.Sprintf("two-step sign-in: on, %d recovery codes left", user.RecoveryCodesLeft)
+			}
+			if user.Disabled {
+				state += ", disabled"
+			}
+			if user.MustChangePassword {
+				state += ", must change password"
+			}
+			fmt.Fprintf(output, "%s  (%s; created %s)\n", user.Username, state, user.CreatedAt)
 		}
+		return nil
+	case "mfa-reset":
+		// For a lost phone when no other account can reset it in the dashboard.
+		if len(arguments) != 2 {
+			return fmt.Errorf("usage: deaconguard user mfa-reset USERNAME")
+		}
+		user, err := store.UserByName(arguments[1])
+		if err != nil {
+			return err
+		}
+		if err := store.RemoveMFA(user.ID, true); err != nil {
+			return err
+		}
+		store.Audit(local.Username()+" (cli)", "user.mfa_reset", user.Username, "signed out everywhere", "")
+		fmt.Fprintf(output, "Turned off two-step sign-in for %s and signed out their sessions. They sign in with their password, then set it up again on My account.\n", user.Username)
 		return nil
 	case "remove":
 		if len(arguments) != 2 {

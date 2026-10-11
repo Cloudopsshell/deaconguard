@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -22,6 +21,14 @@ type User struct {
 	ID        string `json:"id"`
 	Username  string `json:"username"`
 	CreatedAt string `json:"created_at"`
+	// MFAEnabled reports two-step sign-in with an authenticator app.
+	MFAEnabled bool `json:"mfa_enabled"`
+	// RecoveryCodesLeft counts the unused recovery codes.
+	RecoveryCodesLeft int `json:"recovery_codes_left"`
+	// MustChangePassword is set by a temporary password from an admin.
+	MustChangePassword bool   `json:"must_change_password"`
+	Disabled           bool   `json:"disabled"`
+	LastLoginAt        string `json:"last_login_at"`
 }
 
 const (
@@ -36,6 +43,10 @@ var (
 	ErrUserExists         = errors.New("a user with that name already exists")
 	ErrInvalidCredentials = errors.New("incorrect username or password")
 	ErrNoSession          = errors.New("not signed in")
+	ErrAccountDisabled    = errors.New("this account is disabled; ask an administrator to turn it back on")
+	ErrUnknownUser        = errors.New("unknown account")
+	// ErrLastAccount keeps at least one account that can sign in.
+	ErrLastAccount = errors.New("this is the only account that can sign in; add or turn on another account first")
 )
 
 // dummyHash is compared against when the username is unknown, so a failed
@@ -99,130 +110,6 @@ func checkPassword(encoded string, password []byte) bool {
 	return subtle.ConstantTimeCompare([]byte(hashPasswordWith(password, salt, iterations)), []byte(encoded)) == 1
 }
 
-// AddUser creates a dashboard account.
-func AddUser(username string, password []byte) (User, error) {
-	if err := ValidateUsername(username); err != nil {
-		return User{}, err
-	}
-	if err := ValidatePassword(password); err != nil {
-		return User{}, err
-	}
-	db, err := database()
-	if err != nil {
-		return User{}, err
-	}
-	hash, err := hashPassword(password)
-	if err != nil {
-		return User{}, err
-	}
-	id, err := newID()
-	if err != nil {
-		return User{}, err
-	}
-	user := User{ID: id, Username: username, CreatedAt: nowText()}
-	if _, err := db.Exec("INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
-		user.ID, user.Username, hash, user.CreatedAt); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
-			return User{}, ErrUserExists
-		}
-		return User{}, err
-	}
-	return user, nil
-}
-
-// SetPassword changes a user's password and signs out all their sessions.
-func SetPassword(username string, password []byte) error {
-	if err := ValidatePassword(password); err != nil {
-		return err
-	}
-	db, err := database()
-	if err != nil {
-		return err
-	}
-	hash, err := hashPassword(password)
-	if err != nil {
-		return err
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var id string
-	if err := tx.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&id); errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("unknown user: %s", username)
-	} else if err != nil {
-		return err
-	}
-	if _, err := tx.Exec("UPDATE users SET password_hash = ? WHERE id = ?", hash, id); err != nil {
-		return err
-	}
-	if _, err := tx.Exec("DELETE FROM sessions WHERE user_id = ?", id); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func ListUsers() ([]User, error) {
-	db, err := database()
-	if err != nil {
-		return nil, err
-	}
-	rows, err := db.Query("SELECT id, username, created_at FROM users ORDER BY created_at, rowid")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	users := make([]User, 0)
-	for rows.Next() {
-		var user User
-		if err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt); err != nil {
-			return nil, err
-		}
-		users = append(users, user)
-	}
-	return users, rows.Err()
-}
-
-// RemoveUser deletes an account and its sessions.
-func RemoveUser(username string) error {
-	db, err := database()
-	if err != nil {
-		return err
-	}
-	result, err := db.Exec("DELETE FROM users WHERE username = ?", username)
-	if err != nil {
-		return err
-	}
-	if changed, _ := result.RowsAffected(); changed == 0 {
-		return fmt.Errorf("unknown user: %s", username)
-	}
-	return nil
-}
-
-// Authenticate checks a username and password.
-func Authenticate(username string, password []byte) (User, error) {
-	db, err := database()
-	if err != nil {
-		return User{}, err
-	}
-	var user User
-	var hash string
-	err = db.QueryRow("SELECT id, username, created_at, password_hash FROM users WHERE username = ?", username).
-		Scan(&user.ID, &user.Username, &user.CreatedAt, &hash)
-	if errors.Is(err, sql.ErrNoRows) {
-		checkPassword(dummyHash(), password)
-		return User{}, ErrInvalidCredentials
-	}
-	if err != nil {
-		return User{}, err
-	}
-	if !checkPassword(hash, password) {
-		return User{}, ErrInvalidCredentials
-	}
-	return user, nil
-}
-
 // NewSecret returns a random 256-bit secret, base64url-encoded.
 func NewSecret() (string, error) {
 	value := make([]byte, 32)
@@ -236,55 +123,6 @@ func NewSecret() (string, error) {
 func HashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
-}
-
-// CreateSession signs a user in and returns the session token for the cookie.
-func CreateSession(userID string) (string, time.Time, error) {
-	db, err := database()
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	token, err := NewSecret()
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	now := time.Now().UTC()
-	expires := now.Add(SessionLifetime)
-	if _, err := db.Exec("DELETE FROM sessions WHERE expires_at < ?", now.Format(time.RFC3339)); err != nil {
-		return "", time.Time{}, err
-	}
-	if _, err := db.Exec("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-		HashSecret(token), userID, now.Format(time.RFC3339), expires.Format(time.RFC3339)); err != nil {
-		return "", time.Time{}, err
-	}
-	return token, expires, nil
-}
-
-// SessionUser returns the user a session token belongs to.
-func SessionUser(token string) (User, error) {
-	if token == "" {
-		return User{}, ErrNoSession
-	}
-	db, err := database()
-	if err != nil {
-		return User{}, err
-	}
-	var user User
-	err = db.QueryRow(`SELECT u.id, u.username, u.created_at FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = ? AND s.expires_at > ?`, HashSecret(token), nowText()).Scan(&user.ID, &user.Username, &user.CreatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return User{}, ErrNoSession
-	}
-	return user, err
-}
-
-func DeleteSession(token string) error {
-	db, err := database()
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec("DELETE FROM sessions WHERE token_hash = ?", HashSecret(token))
-	return err
 }
 
 // AuditEntry is one recorded action.
