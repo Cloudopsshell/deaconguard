@@ -12,7 +12,7 @@ DeaconGuard is a Linux security scanner written in Go. It runs fixed, read-only 
 
 One binary does two jobs, and they are kept apart on purpose:
 
-- **Server:** the HTTPS dashboard, with sign-in and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
+- **Server:** the HTTPS dashboard, with sign-in (two-step with any authenticator app) and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
 - **Agent:** runs on each machine to scan, **as root**, so every check sees everything. It listens on nothing: it connects out to the server, runs the scans the server asks for, and sends back the results.
 
 **The server never scans anything itself.** Every machine, the server's own included, is scanned by its own agent. The install script gives the server's machine an agent too.
@@ -207,9 +207,10 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 
 Setup saves these settings in `/etc/systemd/system/deaconguard-server.service.d/10-setup.conf`, so package upgrades keep them.
 
-- **Manage accounts:** `deaconguard user add|passwd|remove USERNAME` and `deaconguard user list`, run as the `deaconguard` user. Every account is an administrator. Changing a password or removing an account signs it out everywhere.
-- **Security:** failed sign-ins and enrollments are limited per address, sessions last 12 hours, and the **Audit log** page records sign-ins, tokens, enrollments, scans and removals.
-- **Firewall:** only allow port 8443 from the networks where your admins and agents are.
+- **Don't expose port 8443 to the internet.** Allow it only from the networks where your admins and agents are, and reach the dashboard over a VPN, Tailscale, an SSH tunnel or AWS Systems Manager port forwarding. See [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard).
+- **Two-step sign-in:** each account turns it on under **My account** with any authenticator app (Google or Microsoft Authenticator, Bitwarden, 1Password, Proton Pass, Apple Passwords, Ente Auth, 2FAS, Aegis, and others) and gets 10 one-time recovery codes. Until it is on, the dashboard reminds you. On the **Accounts** page, **Require it** makes it mandatory for every account.
+- **Accounts:** admins create accounts on the **Accounts** page with a temporary password, which the person changes at their first sign-in, and can set a new temporary password, reset two-step sign-in, disable or remove accounts. Everyone manages their own password, two-step sign-in, recovery codes and sessions on **My account**. Every account is an administrator. There is no password reset by email: another admin resets access, or, on the server, `deaconguard user passwd NAME` and `deaconguard user mfa-reset NAME`, run as the `deaconguard` user like `deaconguard user add|remove NAME` and `deaconguard user list`. See [Accounts and sign-in](https://docs.deaconguard.io/usage/accounts).
+- **Built-in protections:** failed sign-ins, two-step codes and enrollments are limited per address, a code works once, sessions last 12 hours, and the **Audit log** page records sign-ins, account changes, tokens, enrollments, scans and removals.
 
 To run the server in the foreground without systemd, use `deaconguard serve --listen 0.0.0.0:8443`. Any address other than loopback turns on HTTPS and sign-in.
 
@@ -260,7 +261,7 @@ Each release's notes list the Go version and main libraries it was built with, a
 ## Back up and restore
 
 All data lives in one directory: `/var/lib/deaconguard/` for the server service, `~/.local/share/deaconguard/` otherwise, or the path in `DEACONGUARD_HOME`. It holds:
-- `deaconguard.db`: hosts, scan results, activity logs, accounts, tokens and the audit log. Passwords are stored as PBKDF2 hashes; tokens and credentials as SHA-256 hashes.
+- `deaconguard.db`: hosts, scan results, activity logs, accounts, tokens and the audit log. Passwords are stored as PBKDF2 hashes; recovery codes, tokens and credentials as SHA-256 hashes. Authenticator keys for two-step sign-in are stored as is, because checking a code needs them, so keep backups as safe as the server.
 - `tls/`: the server's certificate and key. Keep them: agents trust this key.
 - `feeds/`: a cache that is downloaded again if missing.
 
@@ -301,7 +302,7 @@ By default checks run as the user running DeaconGuard, which cannot see other us
 
 ## Web UI
 
-`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents** and **Audit log** pages. Both have a **Logs** page. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
+`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents**, **Accounts**, **My account** and **Audit log** pages. Both have a **Logs** page. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
 
 The local dashboard only listens on a loopback address and rejects requests addressed to other host names. Both reject requests sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command DeaconGuard runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
 
