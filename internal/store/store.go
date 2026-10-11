@@ -430,10 +430,12 @@ UPDATE sessions SET id = lower(hex(randomblob(8))), last_seen_at = created_at;
 PRAGMA user_version = 10;`
 
 // schemaV11 adds roles, which existing accounts get as administrators so
-// nobody loses access, and each account's dashboard appearance.
+// nobody loses access, each account's dashboard appearance, and the server
+// port each agent connects to.
 const schemaV11 = `
 ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin';
 ALTER TABLE users ADD COLUMN appearance TEXT NOT NULL DEFAULT '';
+ALTER TABLE agents ADD COLUMN port TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 11;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved

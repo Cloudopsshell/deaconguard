@@ -134,6 +134,9 @@ type Agent struct {
 	Version    string `json:"version"`
 	OS         string `json:"os"`
 	Remote     string `json:"remote"`
+	// Port is the server port the agent last connected to, so admins can
+	// see when every agent uses the agent port.
+	Port string `json:"port"`
 }
 
 // AgentEnrollment is what an agent reports about itself when it enrolls.
@@ -192,7 +195,7 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 var ErrUnknownAgent = errors.New("this agent is not enrolled with the server; it may have been removed")
 
 // AuthenticateAgent checks an agent's credential and records that it was seen.
-func AuthenticateAgent(hostID, credential, version, remote string) (Host, error) {
+func AuthenticateAgent(hostID, credential, version, remote, port string) (Host, error) {
 	db, err := database()
 	if err != nil {
 		return Host{}, err
@@ -209,8 +212,8 @@ func AuthenticateAgent(hostID, credential, version, remote string) (Host, error)
 	if subtle.ConstantTimeCompare([]byte(stored), []byte(HashSecret(credential))) != 1 {
 		return Host{}, ErrUnknownAgent
 	}
-	if _, err := db.Exec("UPDATE agents SET last_seen_at = ?, version = ?, remote = ? WHERE host_id = ?",
-		nowText(), version, remote, hostID); err != nil {
+	if _, err := db.Exec("UPDATE agents SET last_seen_at = ?, version = ?, remote = ?, port = ? WHERE host_id = ?",
+		nowText(), version, remote, port, hostID); err != nil {
 		return Host{}, err
 	}
 	return GetHost(hostID)
@@ -236,7 +239,7 @@ func Agents() (map[string]Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query("SELECT host_id, enrolled_at, last_seen_at, version, os, remote FROM agents")
+	rows, err := db.Query("SELECT host_id, enrolled_at, last_seen_at, version, os, remote, port FROM agents")
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +248,7 @@ func Agents() (map[string]Agent, error) {
 	for rows.Next() {
 		var hostID string
 		var agent Agent
-		if err := rows.Scan(&hostID, &agent.EnrolledAt, &agent.LastSeenAt, &agent.Version, &agent.OS, &agent.Remote); err != nil {
+		if err := rows.Scan(&hostID, &agent.EnrolledAt, &agent.LastSeenAt, &agent.Version, &agent.OS, &agent.Remote, &agent.Port); err != nil {
 			return nil, err
 		}
 		agents[hostID] = agent

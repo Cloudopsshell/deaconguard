@@ -12,10 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -126,9 +128,14 @@ func Enroll(ctx context.Context, tokenText, path string, replace bool) (Config, 
 // ErrRemoved means the server no longer knows this agent.
 var ErrRemoved = errors.New("the server does not recognize this agent; it was removed from the server or its enrollment was lost. Enroll it again with a new token")
 
-// Run waits for scans and runs them until ctx is cancelled. logf reports
-// what the agent does, for the service's journal.
-func Run(ctx context.Context, config Config, logf func(format string, arguments ...any)) error {
+// moveRetry is how long an agent waits before trying the server's agent port
+// again after it could not reach it.
+const moveRetry = time.Hour
+
+// Run waits for scans and runs them until ctx is cancelled. path is where
+// the config lives, saved again when the agent moves to the server's agent
+// port. logf reports what the agent does, for the service's journal.
+func Run(ctx context.Context, config Config, path string, logf func(format string, arguments ...any)) error {
 	if _, err := local.New(); err != nil {
 		return err
 	}
@@ -140,6 +147,7 @@ func Run(ctx context.Context, config Config, logf func(format string, arguments 
 	log.info("DeaconGuard agent %s for %s, host %s", buildinfo.Version, config.ServerURL, config.HostID)
 	backoff := time.Duration(0)
 	connected := false
+	var lastMove time.Time
 	for ctx.Err() == nil {
 		if backoff > 0 {
 			select {
@@ -168,6 +176,16 @@ func Run(ctx context.Context, config Config, logf func(format string, arguments 
 		if !connected {
 			connected = true
 			log.info("Connected to %s; waiting for scans", config.ServerURL)
+		}
+		// The server keeps a port for agents and asked this one to use it.
+		if port := client.agentPort(); port != "" && time.Since(lastMove) >= moveRetry {
+			lastMove = time.Now()
+			if moved, movedClient, err := moveToPort(ctx, config, port, path); err != nil {
+				log.warn("The server asks agents to use port %s, but this machine can't use it: %v. Staying on %s; trying again in an hour.", port, err, config.ServerURL)
+			} else {
+				log.info("Moved to %s, the server's port for agents", moved.ServerURL)
+				config, client = moved, movedClient
+			}
 		}
 		log.send(ctx, client)
 		if job.ScanID == "" {
@@ -264,6 +282,45 @@ type client struct {
 	base   string
 	config Config
 	http   *http.Client
+	// suggestedPort is the agent port the server last named, if any.
+	mu            sync.Mutex
+	suggestedPort string
+}
+
+// agentPort returns the port the server asked agents to use, if it did.
+func (c *client) agentPort() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.suggestedPort
+}
+
+// moveToPort checks that port on the same host reaches the same server, with
+// the same pinned key and this agent's credential, then saves and returns
+// the config that uses it.
+func moveToPort(ctx context.Context, config Config, port, path string) (Config, *client, error) {
+	if number, err := strconv.Atoi(port); err != nil || number < 1 || number > 65535 {
+		return Config{}, nil, fmt.Errorf("the server named port %q, which is not a port", port)
+	}
+	parsed, err := url.Parse(config.ServerURL)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	parsed.Host = net.JoinHostPort(parsed.Hostname(), port)
+	moved := config
+	moved.ServerURL = parsed.String()
+	movedClient, err := newClient(moved)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	if err := movedClient.call(ctx, http.MethodGet, agentapi.PathHello, nil, nil, 15*time.Second); err != nil {
+		return Config{}, nil, err
+	}
+	if path != "" {
+		if err := saveConfig(path, moved); err != nil {
+			return Config{}, nil, fmt.Errorf("save the new address: %w", err)
+		}
+	}
+	return moved, movedClient, nil
 }
 
 func newClient(config Config) (*client, error) {
@@ -324,6 +381,11 @@ func (c *client) exchange(ctx context.Context, method, path string, body any, li
 		return nil, nil, err
 	}
 	defer reply.Body.Close()
+	if port := reply.Header.Get(agentapi.HeaderAgentPort); port != "" || reply.StatusCode < 300 {
+		c.mu.Lock()
+		c.suggestedPort = port
+		c.mu.Unlock()
+	}
 	contents, err := io.ReadAll(io.LimitReader(reply.Body, limit+1))
 	if err != nil {
 		return nil, nil, err

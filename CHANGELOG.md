@@ -15,13 +15,16 @@ under **Changed** with upgrade notes.
 - **Roles: Admin, Operator and Viewer.** Viewers see hosts, findings, schedules and logs but change nothing. Operators also scan, answer sudo prompts, delete scans, change a host's sudo setting, manage schedules and download the log. Admins also enroll and remove machines, manage accounts, require two-step sign-in, and read the audit log. The server checks the role on every request, and the dashboard hides what a role can't use; viewers don't get sudo prompts.
 - On the **Accounts** page, new accounts get a role (Viewer unless you choose otherwise), and a **Manage** menu per account changes its role, sets a temporary password, resets two-step sign-in, or disables or removes it. Changing a role signs the account out, so the new role applies at once. The last admin that can sign in can't be demoted, disabled or removed.
 - `deaconguard user add NAME --role admin|operator|viewer` and `deaconguard user role NAME ROLE`; `user list` shows roles.
-- **An agent-only port.** `deaconguard setup server --agent-listen 0.0.0.0:8444` (also an install script option and a `serve` option) gives agents a port that serves only the agent API, with no dashboard or sign-in page, so you can open it to every machine's network and keep 8443 for people. New enrollment tokens point at it; agents enrolled on 8443 keep working. Setup remembers it; `--agent-listen off` removes it.
+- **An agent-only port.** `deaconguard setup server --agent-listen 0.0.0.0:8444` (also an install script option and a `serve` option) gives agents a port that serves only the agent API, with no dashboard or sign-in page, so you can open it to every machine's network and keep 8443 for people. Setup remembers it; `--agent-listen off` removes it.
+- **Agents move to the agent port by themselves.** Agents from 0.11.0 on 8443 are told about the agent port at their next check-in; each checks that the new port reaches the same server, with the same pinned key, then saves the new address and uses it. An agent that can't reach the new port stays on 8443, says why in its log, and tries again an hour later. The server's own agent stays on `127.0.0.1`. Older agents keep working on 8443 until they are upgraded. New enrollment tokens point at the agent port.
+- The **Agents** page shows the port each agent uses and, with an agent port, how many have moved, which haven't and why, and when it is safe to limit the dashboard's port to your administrators.
 - **Light, dark and system modes, and five themes.** System follows your computer's setting as it changes. Themes: Indigo (the default), Ocean, Teal, Plum and Graphite; severity colors never change. Pick them at the bottom of the sidebar or on **My account**. On a server the choice is saved to your account and follows you to every browser.
 
 ### Changed
 
 - **Upgrading:** the database gains roles and a saved appearance (schema 11). Every existing account becomes an admin, so nobody loses access. Nothing else changes until you set roles or an agent port.
 - The page loads `appearance.js` first, so it never flashes the wrong colors.
+- The agent service may now write `/etc/deaconguard`, where it saves its new address after moving; the rest of `/etc` stays read-only to it.
 
 ## [0.10.0] - 2026-10-11
 

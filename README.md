@@ -200,7 +200,7 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 | Option | Use |
 | --- | --- |
 | `--listen ADDRESS:PORT` | Listen elsewhere than `0.0.0.0:8443`. |
-| `--agent-listen ADDRESS:PORT` | Give agents a port of their own, such as `0.0.0.0:8444`, that serves only the agent API, so the dashboard's port can be limited to people. New enrollment tokens point there; agents enrolled on 8443 keep working. `off` removes it. |
+| `--agent-listen ADDRESS:PORT` | Give agents a port of their own, such as `0.0.0.0:8444`, that serves only the agent API, so the dashboard's port can be limited to people. New enrollment tokens point there, and agents from 0.11.0 on 8443 move there by themselves after checking it reaches the same server; older agents keep working on 8443 until upgraded. The **Agents** page shows when every agent has moved. `off` removes it. |
 | `--tls-cert FILE --tls-key FILE` | Use your own certificate. The `deaconguard` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again. |
 | `--admin-user NAME --admin-password-file FILE` | Create the first account without prompts, for automation. Delete the file afterwards. |
 | `--no-agent` | Give this machine no agent. It is then not scanned as root: adding it on the Hosts page has the server scan it without root, with partial coverage. Later runs remember the choice. |

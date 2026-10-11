@@ -35,6 +35,8 @@ export interface AgentInfo {
   version: string;
   os: string;
   remote: string;
+  /** The server port the agent last connected to. */
+  port?: string;
 }
 
 export interface Capabilities {
