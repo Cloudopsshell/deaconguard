@@ -19,7 +19,7 @@ import {
   cx,
 } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
-import { agentOnline } from "../lib/hosts";
+import { ThisServerBadge, agentOnline } from "../lib/hosts";
 
 export function Agents() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -103,10 +103,17 @@ function AgentList({ onEnroll }: { onEnroll: () => void }) {
               return (
                 <tr key={host.id}>
                   <Td>
-                    <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-                      {host.address}
-                    </Link>
-                    {host.agent?.remote && <p className="text-xs text-slate-500 dark:text-slate-400">{host.agent.remote}</p>}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                        {host.address}
+                      </Link>
+                      {host.this_server && <ThisServerBadge />}
+                    </div>
+                    {host.agent?.remote && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {host.this_server ? `${host.agent.remote}, this server's own agent` : host.agent.remote}
+                      </p>
+                    )}
                   </Td>
                   <Td>
                     <AgentStatus online={online} lastSeen={host.agent?.last_seen_at} />
@@ -193,7 +200,9 @@ function TokenList() {
                     </Td>
                     <Td className="text-sm text-slate-600 dark:text-slate-300">
                       {timeAgo(token.created_at)}
-                      <p className="text-xs text-slate-500 dark:text-slate-400">by {token.created_by}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {host?.this_server && token.created_by.endsWith("(cli)") ? "by server setup, for its own agent" : `by ${token.created_by}`}
+                      </p>
                     </Td>
                     <Td className="text-sm text-slate-600 dark:text-slate-300">
                       {token.status === "used" && token.used_at ? (
