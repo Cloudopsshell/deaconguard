@@ -12,7 +12,7 @@ DeaconGuard is a Linux security scanner written in Go. It runs fixed, read-only 
 
 One binary does two jobs, and they are kept apart on purpose:
 
-- **Server:** the HTTPS dashboard, with sign-in (two-step with any authenticator app) and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
+- **Server:** the HTTPS dashboard, with sign-in (two-step with any authenticator app), Admin, Operator and Viewer roles, and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
 - **Agent:** runs on each machine to scan, **as root**, so every check sees everything. It listens on nothing: it connects out to the server, runs the scans the server asks for, and sends back the results.
 
 **The server never scans anything itself.** Every machine, the server's own included, is scanned by its own agent. The install script gives the server's machine an agent too.
@@ -41,7 +41,7 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 - **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
 - **Server memory:** give the server at least **1 GB of memory** (RAM plus swap). It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB. With too little, Linux stops the server mid-scan, and the dashboard says so after it restarts.
-- **Network:** the server needs HTTPS access to the distributions' advisory feeds. Agents only need to reach the server, on port 8443 by default.
+- **Network:** the server needs HTTPS access to the distributions' advisory feeds. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
 
 ## Install
 
@@ -200,6 +200,7 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 | Option | Use |
 | --- | --- |
 | `--listen ADDRESS:PORT` | Listen elsewhere than `0.0.0.0:8443`. |
+| `--agent-listen ADDRESS:PORT` | Give agents a port of their own, such as `0.0.0.0:8444`, that serves only the agent API, so the dashboard's port can be limited to people. New enrollment tokens point there; agents enrolled on 8443 keep working. `off` removes it. |
 | `--tls-cert FILE --tls-key FILE` | Use your own certificate. The `deaconguard` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again. |
 | `--admin-user NAME --admin-password-file FILE` | Create the first account without prompts, for automation. Delete the file afterwards. |
 | `--no-agent` | Give this machine no agent. It is then not scanned as root: adding it on the Hosts page has the server scan it without root, with partial coverage. Later runs remember the choice. |
@@ -207,12 +208,13 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 
 Setup saves these settings in `/etc/systemd/system/deaconguard-server.service.d/10-setup.conf`, so package upgrades keep them.
 
-- **Don't expose port 8443 to the internet.** Allow it only from the networks where your admins and agents are, and reach the dashboard over a VPN, Tailscale, an SSH tunnel or AWS Systems Manager port forwarding. See [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard).
+- **Don't expose port 8443 to the internet.** Allow it only from the networks where your admins and agents are, and reach the dashboard over a VPN, Tailscale, an SSH tunnel or AWS Systems Manager port forwarding. With `--agent-listen`, agents use their own port and 8443 only has to reach people. See [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard).
 - **Two-step sign-in:** each account turns it on under **My account** with any authenticator app (Google or Microsoft Authenticator, Bitwarden, 1Password, Proton Pass, Apple Passwords, Ente Auth, 2FAS, Aegis, and others) and gets 10 one-time recovery codes. Until it is on, the dashboard reminds you. On the **Accounts** page, **Require it** makes it mandatory for every account.
-- **Accounts:** admins create accounts on the **Accounts** page with a temporary password, which the person changes at their first sign-in, and can set a new temporary password, reset two-step sign-in, disable or remove accounts. Everyone manages their own password, two-step sign-in, recovery codes and sessions on **My account**. Every account is an administrator. There is no password reset by email: another admin resets access, or, on the server, `deaconguard user passwd NAME` and `deaconguard user mfa-reset NAME`, run as the `deaconguard` user like `deaconguard user add|remove NAME` and `deaconguard user list`. See [Accounts and sign-in](https://docs.deaconguard.io/usage/accounts).
+- **Roles:** every account is an **Admin** (manages accounts and machines, reads the audit log), an **Operator** (scans, answers sudo prompts, manages schedules), or a **Viewer** (sees everything, changes nothing). The server checks the role on every request, and the dashboard hides what a role can't use. Accounts from before 0.11.0 are admins.
+- **Accounts:** admins create accounts on the **Accounts** page with a role and a temporary password, which the person changes at their first sign-in. **Manage** changes an account's role, sets a new temporary password, resets two-step sign-in, or disables or removes it; the last admin that can sign in stays. Everyone manages their own password, two-step sign-in, recovery codes, appearance and sessions on **My account**. There is no password reset by email: an admin resets access, or, on the server, `deaconguard user passwd NAME` and `deaconguard user mfa-reset NAME`, run as the `deaconguard` user like `deaconguard user add NAME [--role operator|viewer]`, `deaconguard user role NAME ROLE`, `deaconguard user remove NAME` and `deaconguard user list`. See [Accounts and sign-in](https://docs.deaconguard.io/usage/accounts).
 - **Built-in protections:** failed sign-ins, two-step codes and enrollments are limited per address, a code works once, sessions last 12 hours, and the **Audit log** page records sign-ins, account changes, tokens, enrollments, scans and removals.
 
-To run the server in the foreground without systemd, use `deaconguard serve --listen 0.0.0.0:8443`. Any address other than loopback turns on HTTPS and sign-in.
+To run the server in the foreground without systemd, use `deaconguard serve --listen 0.0.0.0:8443` (add `--agent-listen 0.0.0.0:8444` for an agent port). Any address other than loopback turns on HTTPS and sign-in.
 
 ## Scan other machines with the agent
 
@@ -302,7 +304,7 @@ By default checks run as the user running DeaconGuard, which cannot see other us
 
 ## Web UI
 
-`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents**, **Accounts**, **My account** and **Audit log** pages. Both have a **Logs** page. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
+`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents**, **Accounts**, **My account** and **Audit log** pages. Light, dark, or **System** mode (following your computer) and five color themes (Indigo, Ocean, Teal, Plum, Graphite) are at the bottom of the sidebar; severity colors never change. On a server the choice is saved to your account. Both have a **Logs** page. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
 
 The local dashboard only listens on a loopback address and rejects requests addressed to other host names. Both reject requests sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command DeaconGuard runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
 
