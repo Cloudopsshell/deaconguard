@@ -44,6 +44,8 @@ func TestRolesLimitWhatAccountsCanDo(t *testing.T) {
 		{http.MethodPatch, "/api/hosts/nope", store.RoleOperator, map[string]any{"allow_sudo": true}},
 		{http.MethodPost, "/api/schedules", store.RoleOperator, map[string]any{}},
 		{http.MethodGet, "/api/logs/download", store.RoleOperator, nil},
+		{http.MethodGet, "/api/prompts", store.RoleOperator, nil},
+		{http.MethodPost, "/api/scans/nope/respond", store.RoleOperator, map[string]any{"cancel": true}},
 		{http.MethodDelete, "/api/hosts/nope", store.RoleAdmin, nil},
 		{http.MethodGet, "/api/enrollment-tokens", store.RoleAdmin, nil},
 		{http.MethodPost, "/api/enrollment-tokens", store.RoleAdmin, map[string]any{}},

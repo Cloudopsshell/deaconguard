@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCan } from "../lib/role";
 import { ShieldQuestion } from "lucide-react";
 import { api, type Prompt } from "../api";
 import { useRefreshAll } from "../lib/hooks";
@@ -11,7 +12,9 @@ import { Button, Dialog, ErrorMessage } from "./ui";
  * continues the scan without sudo.
  */
 export function PromptDialog() {
-  const { data } = useQuery({ queryKey: ["prompts"], queryFn: api.prompts, refetchInterval: 1500 });
+  // Only operators and admins answer sudo prompts; viewers never see them.
+  const canAnswer = useCan("operator");
+  const { data } = useQuery({ queryKey: ["prompts"], queryFn: api.prompts, refetchInterval: 1500, enabled: canAnswer });
   const prompt = data?.[0];
   if (!prompt) return null;
   // A new key per question resets the form, including after a rejected answer.
