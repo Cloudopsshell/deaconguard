@@ -8,6 +8,21 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-11
+
+### Added
+
+- **Roles: Admin, Operator and Viewer.** Viewers see hosts, findings, schedules and logs but change nothing. Operators also scan, answer sudo prompts, delete scans, change a host's sudo setting, manage schedules and download the log. Admins also enroll and remove machines, manage accounts, require two-step sign-in, and read the audit log. The server checks the role on every request, and the dashboard hides what a role can't use; viewers don't get sudo prompts.
+- On the **Accounts** page, new accounts get a role (Viewer unless you choose otherwise), and a **Manage** menu per account changes its role, sets a temporary password, resets two-step sign-in, or disables or removes it. Changing a role signs the account out, so the new role applies at once. The last admin that can sign in can't be demoted, disabled or removed.
+- `deaconguard user add NAME --role admin|operator|viewer` and `deaconguard user role NAME ROLE`; `user list` shows roles.
+- **An agent-only port.** `deaconguard setup server --agent-listen 0.0.0.0:8444` (also an install script option and a `serve` option) gives agents a port that serves only the agent API, with no dashboard or sign-in page, so you can open it to every machine's network and keep 8443 for people. New enrollment tokens point at it; agents enrolled on 8443 keep working. Setup remembers it; `--agent-listen off` removes it.
+- **Light, dark and system modes, and five themes.** System follows your computer's setting as it changes. Themes: Indigo (the default), Ocean, Teal, Plum and Graphite; severity colors never change. Pick them at the bottom of the sidebar or on **My account**. On a server the choice is saved to your account and follows you to every browser.
+
+### Changed
+
+- **Upgrading:** the database gains roles and a saved appearance (schema 11). Every existing account becomes an admin, so nobody loses access. Nothing else changes until you set roles or an agent port.
+- The page loads `appearance.js` first, so it never flashes the wrong colors.
+
 ## [0.10.0] - 2026-10-11
 
 ### Added
@@ -276,7 +291,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.0...v0.9.1
