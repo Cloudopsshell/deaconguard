@@ -16,6 +16,8 @@ import { Agents } from "./pages/Agents";
 import { Audit } from "./pages/Audit";
 import { Logs } from "./pages/Logs";
 import { Schedules } from "./pages/Schedules";
+import { Account } from "./pages/Account";
+import { Accounts } from "./pages/Accounts";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -41,6 +43,8 @@ const router = createBrowserRouter([
           { path: "/schedules", element: <Schedules /> },
           { path: "/logs", element: <Logs /> },
           { path: "/audit", element: <Audit /> },
+          { path: "/account", element: <Account /> },
+          { path: "/accounts", element: <Accounts /> },
           { path: "*", element: <NotFound /> },
         ],
       },

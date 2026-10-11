@@ -171,6 +171,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 10 {
+		if err := execInTx(db, schemaV10); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -393,6 +398,31 @@ CREATE TABLE schedules (
 	created_by  TEXT NOT NULL
 );
 PRAGMA user_version = 9;`
+
+// schemaV10 adds two-step sign-in (TOTP and recovery codes, which are stored
+// hashed), accounts that must change their password or are disabled, and
+// sessions people can see and end: each gets an ID, a stage (signed in, or
+// waiting for the second step), and where and when it was last used.
+const schemaV10 = `
+ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN totp_pending TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN last_login_at TEXT NOT NULL DEFAULT '';
+CREATE TABLE recovery_codes (
+	user_id   TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	code_hash TEXT NOT NULL,
+	used_at   TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (user_id, code_hash)
+);
+ALTER TABLE sessions ADD COLUMN id TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN stage TEXT NOT NULL DEFAULT 'full';
+ALTER TABLE sessions ADD COLUMN remote TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT '';
+UPDATE sessions SET id = lower(hex(randomblob(8))), last_seen_at = created_at;
+PRAGMA user_version = 10;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

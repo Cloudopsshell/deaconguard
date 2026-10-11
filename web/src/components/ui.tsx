@@ -285,7 +285,8 @@ export function Loading() {
 
 export function Table({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto">
+    // relative: screen-reader-only headings stay inside the scroll area instead of widening the page.
+    <div className="relative overflow-x-auto">
       <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">{children}</table>
     </div>
   );
