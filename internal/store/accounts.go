@@ -16,7 +16,7 @@ import (
 	"unicode"
 )
 
-// User is a dashboard account. Every account is an administrator.
+// User is a dashboard account; its Role decides what it may do.
 type User struct {
 	ID        string `json:"id"`
 	Username  string `json:"username"`
