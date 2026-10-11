@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Plus, RadioTower } from "lucide-react";
 import { useCan } from "../lib/role";
-import { api, type EnrollmentToken, type NewEnrollmentToken } from "../api";
+import { api, type EnrollmentToken, type HostSummary, type NewEnrollmentToken } from "../api";
 import {
   Button,
   Card,
@@ -68,12 +68,69 @@ export function Agents() {
   );
 }
 
+/** Whether an agent version moves to the server's agent port by itself, which arrived in 0.11.0. */
+function movesByItself(version?: string) {
+  const match = /^(\d+)\.(\d+)/.exec(version ?? "");
+  if (!match) return true;
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  return major > 0 || minor >= 11;
+}
+
+/**
+ * With an agent port, agents on the old port move to it by themselves. This
+ * shows how far that got, so admins know when the dashboard's port can be
+ * closed to the machines' networks.
+ */
+function MoveProgress({ agents, agentPort }: { agents: HostSummary[]; agentPort: string }) {
+  // The server's own agent stays on the loopback address.
+  const remote = agents.filter((host) => !host.this_server);
+  const waiting = remote.filter((host) => host.agent?.port && host.agent.port !== agentPort);
+  if (remote.length === 0) return null;
+  const done = waiting.length === 0;
+  return (
+    <div
+      className={cx(
+        "mx-5 mt-4 rounded-lg px-4 py-3 text-sm ring-1 ring-inset",
+        done
+          ? "bg-emerald-50 text-emerald-900 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-200"
+          : "bg-amber-50 text-amber-900 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200",
+      )}
+    >
+      {done ? (
+        <p>
+          Every agent uses port {agentPort}, the server's port for agents. You can now allow the dashboard's port only from your administrators' networks.
+        </p>
+      ) : (
+        <>
+          <p className="font-medium">
+            {remote.length - waiting.length} of {remote.length} agents use port {agentPort}, the server's port for agents.
+          </p>
+          <p className="mt-1">Keep the dashboard's port open to these machines until they move:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {waiting.map((host) => (
+              <li key={host.id}>
+                <span className="font-medium">{host.address}</span>, on port {host.agent?.port}:{" "}
+                {movesByItself(host.agent?.version)
+                  ? `it moves by itself at its next check-in; if it doesn't, it can't reach port ${agentPort}, and its log on the Logs page says why.`
+                  : `its agent, ${host.agent?.version}, can't move by itself; 0.11.0 and later can. Upgrade it, or enroll it again with a new token.`}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AgentList({ onEnroll }: { onEnroll?: () => void }) {
   const { data, error, isPending } = useQuery({ queryKey: ["hosts"], queryFn: api.hosts, refetchInterval: 15_000 });
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
+  const agentPort = capabilities.data?.agent_port;
   const agents = data?.filter((host) => host.transport === "agent") ?? [];
   return (
     <Card>
       <CardHeader title="Enrolled machines" description="Scan them from the Hosts page like any other host." />
+      {agentPort && <MoveProgress agents={agents} agentPort={agentPort} />}
       {isPending ? (
         <Loading />
       ) : error ? (
@@ -123,6 +180,7 @@ function AgentList({ onEnroll }: { onEnroll?: () => void }) {
                     {host.agent?.remote && (
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {host.this_server ? `${host.agent.remote}, this server's own agent` : host.agent.remote}
+                        {host.agent.port && ` · port ${host.agent.port}`}
                       </p>
                     )}
                   </Td>

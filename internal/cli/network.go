@@ -443,7 +443,7 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		return agent.Run(ctx, config, func(format string, values ...any) {
+		return agent.Run(ctx, config, path, func(format string, values ...any) {
 			fmt.Fprintf(diagnostics, format+"\n", values...)
 		})
 	case "status":

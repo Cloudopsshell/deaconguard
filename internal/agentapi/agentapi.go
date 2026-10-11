@@ -186,6 +186,14 @@ type Logs struct {
 	Lines []LogLine `json:"lines"`
 }
 
+// HeaderAgentPort, on the server's replies to an agent, names the port the
+// server keeps for agents when the agent uses another one. The agent checks
+// that the port reaches the same server, at PathHello, then moves to it.
+const (
+	HeaderAgentPort = "X-DeaconGuard-Agent-Port"
+	PathHello       = "hello"
+)
+
 // Headers the agent sends with every request.
 const (
 	HeaderVersion  = "X-DeaconGuard-Agent-Version"

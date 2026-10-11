@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -155,5 +157,42 @@ func TestAgentPortServesOnlyAgents(t *testing.T) {
 	cookie := signIn(t, s)
 	if capabilities := decode[capabilitiesResponse](t, do(t, s, call{method: http.MethodGet, path: "/api/capabilities", cookie: cookie})); capabilities.AgentPort != "8444" {
 		t.Fatalf("capabilities: %+v", capabilities)
+	}
+}
+
+func TestAgentsOnOtherPortsAreToldAboutTheAgentPort(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	created := do(t, s, call{method: http.MethodPost, path: "/api/enrollment-tokens", body: map[string]string{"server_url": testOrigin}, cookie: cookie})
+	token, err := agentapi.ParseToken(decode[enrollmentTokenResponse](t, created).Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrolled := do(t, s, call{method: http.MethodPost, path: "/agent/v1/enroll", body: agentapi.EnrollRequest{Secret: token.Secret, Hostname: "web-01", Username: "root", OS: "Ubuntu", Version: "test"}})
+	identity := decode[agentapi.EnrollResponse](t, enrolled)
+	bearer := identity.HostID + "." + identity.Credential
+	s.SetAgentPort("8444")
+
+	hello := func(port int, remote string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, testOrigin+agentapi.PathPrefix+agentapi.PathHello, nil)
+		request.Header.Set("Authorization", "Bearer "+bearer)
+		request.RemoteAddr = remote
+		request = request.WithContext(context.WithValue(request.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.IPv4(10, 0, 0, 5), Port: port}))
+		recorder := httptest.NewRecorder()
+		s.ServeHTTP(recorder, request)
+		return recorder
+	}
+	if reply := hello(8443, "10.0.0.9:5000"); reply.Code != http.StatusNoContent || reply.Header().Get(agentapi.HeaderAgentPort) != "8444" {
+		t.Fatalf("agent on 8443: %d, told %q", reply.Code, reply.Header().Get(agentapi.HeaderAgentPort))
+	}
+	agents, err := store.Agents()
+	if err != nil || agents[identity.HostID].Port != "8443" {
+		t.Fatalf("recorded port: %+v %v", agents[identity.HostID], err)
+	}
+	if reply := hello(8444, "10.0.0.9:5000"); reply.Header().Get(agentapi.HeaderAgentPort) != "" {
+		t.Fatal("an agent already on the agent port was told to move")
+	}
+	if reply := hello(8443, "127.0.0.1:5000"); reply.Header().Get(agentapi.HeaderAgentPort) != "" {
+		t.Fatal("the server's own agent was told to move")
 	}
 }
