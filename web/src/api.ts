@@ -51,6 +51,43 @@ export interface Session {
   login_required: boolean;
   authenticated: boolean;
   username?: string;
+  /** The password was right; the code from the authenticator app is still needed. */
+  mfa_pending?: boolean;
+  /** An admin set a temporary password, which must be changed first. */
+  must_change_password?: boolean;
+  /** Two-step sign-in is required for every account, and this one has none yet. */
+  mfa_setup_required?: boolean;
+  mfa_enabled?: boolean;
+  recovery_codes_left?: number;
+}
+
+/** A dashboard account. */
+export interface Account {
+  id: string;
+  username: string;
+  created_at: string;
+  mfa_enabled: boolean;
+  recovery_codes_left: number;
+  must_change_password: boolean;
+  disabled: boolean;
+  last_login_at: string;
+}
+
+/** One sign-in of the current account. */
+export interface AccountSession {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  last_seen_at: string;
+  remote: string;
+  user_agent: string;
+  current: boolean;
+}
+
+export interface MyAccount extends Account {
+  sessions: AccountSession[];
+  /** Every account must use two-step sign-in. */
+  mfa_required: boolean;
 }
 
 export interface EnrollmentToken {
@@ -433,6 +470,23 @@ export const api = {
   session: () => request<Session>("GET", "/api/session"),
   login: (username: string, password: string) => request<Session>("POST", "/api/login", { username, password }),
   logout: () => request<{ ok: boolean }>("POST", "/api/logout"),
+  loginMFA: (code: string) => request<Session>("POST", "/api/login/mfa", { code }),
+  account: () => request<MyAccount>("GET", "/api/account"),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: boolean }>("POST", "/api/account/password", { current_password: currentPassword, new_password: newPassword }),
+  startMFA: (password: string) => request<{ secret: string; uri: string }>("POST", "/api/account/mfa", { password }),
+  confirmMFA: (code: string) => request<{ recovery_codes: string[] }>("POST", "/api/account/mfa/confirm", { code }),
+  removeMFA: (password: string) => request<{ ok: boolean }>("POST", "/api/account/mfa/remove", { password }),
+  newRecoveryCodes: (password: string) => request<{ recovery_codes: string[] }>("POST", "/api/account/recovery-codes", { password }),
+  endSession: (id: string) => request<{ ended: number }>("DELETE", `/api/account/sessions/${id}`),
+  users: () => request<{ users: Account[]; mfa_required: boolean }>("GET", "/api/users"),
+  createUser: (username: string, password: string) => request<Account>("POST", "/api/users", { username, password }),
+  setUserDisabled: (id: string, disabled: boolean) => request<Account>("PATCH", `/api/users/${id}`, { disabled }),
+  removeUser: (id: string) => request<null>("DELETE", `/api/users/${id}`),
+  resetUserMFA: (id: string) => request<{ ok: boolean }>("POST", `/api/users/${id}/reset-mfa`),
+  setTemporaryPassword: (id: string, password: string) =>
+    request<{ ok: boolean }>("POST", `/api/users/${id}/temporary-password`, { password }),
+  setRequireMFA: (required: boolean) => request<{ require_mfa: boolean }>("PATCH", "/api/settings/security", { require_mfa: required }),
   enrollmentTokens: () => request<EnrollmentToken[]>("GET", "/api/enrollment-tokens"),
   createEnrollmentToken: (serverUrl: string) =>
     request<NewEnrollmentToken>("POST", "/api/enrollment-tokens", { server_url: serverUrl }),
