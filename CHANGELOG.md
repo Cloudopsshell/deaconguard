@@ -8,6 +8,13 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-11
+
+### Fixed
+
+- On the **Hosts** page, the **This server** label now sits beside the host name, as on the Agents page. A host with many check results made the Findings column wide and pushed the label onto the next line.
+- A table wider than the screen scrolls inside its card instead of widening the whole page.
+
 ## [0.9.1] - 2026-10-11
 
 ### Fixed
@@ -246,7 +253,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.0...v0.8.1
