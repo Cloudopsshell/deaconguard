@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Download, Logs as LogsIcon, Pause, Play, Search } from "lucide-react";
+import { useCan } from "../lib/role";
 import { api, logDownloadUrl, type LogFilters, type LogLevel } from "../api";
 import { LogTable } from "../components/LogTable";
 import { Button, Card, EmptyState, ErrorMessage, Loading, PageHeader, cx } from "../components/ui";
@@ -23,6 +24,7 @@ const selectClass =
 
 /** The server's and the agents' logs, newest first, with filters and a download. */
 export function Logs() {
+  const canDownload = useCan("operator");
   const [parameters, setParameters] = useSearchParams();
   const [live, setLive] = useState(true);
   const [search, setSearch] = useState(parameters.get("q") ?? "");
@@ -61,12 +63,14 @@ export function Logs() {
             <Button variant="secondary" onClick={() => setLive(!live)} aria-pressed={live}>
               {live ? <Pause className="size-4" /> : <Play className="size-4" />} {live ? "Pause" : "Follow"}
             </Button>
+            {canDownload && (
             <a
               href={logDownloadUrl(filters)}
               className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-900 ring-1 ring-slate-300 ring-inset hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700 dark:hover:bg-slate-700"
             >
               <Download className="size-4" /> Download
             </a>
+            )}
           </div>
         }
       />

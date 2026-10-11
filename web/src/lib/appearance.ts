@@ -51,8 +51,15 @@ if (typeof window !== "undefined") {
   window.matchMedia(darkQuery).addEventListener("change", followSystem);
 }
 
-export function setAppearance(change: Partial<Appearance>) {
-  current = { ...current, ...change };
+// save keeps a choice with the signed-in account, so it follows it to every browser.
+let save: ((appearance: Appearance) => void) | null = null;
+
+export function setAppearanceSaver(saver: ((appearance: Appearance) => void) | null) {
+  save = saver;
+}
+
+function remember(next: Appearance) {
+  current = next;
   try {
     localStorage.setItem(storageKey, JSON.stringify(current));
   } catch {
@@ -60,6 +67,17 @@ export function setAppearance(change: Partial<Appearance>) {
   }
   apply(current);
   listeners.forEach((listener) => listener());
+}
+
+/** Changes the appearance, here and on the account. */
+export function setAppearance(change: Partial<Appearance>) {
+  remember({ ...current, ...change });
+  save?.(current);
+}
+
+/** Takes the appearance saved on the account, as this browser's too. */
+export function adoptAppearance(saved: Appearance) {
+  if (saved.mode !== current.mode || saved.theme !== current.theme) remember({ ...saved });
 }
 
 function subscribe(listener: () => void) {
