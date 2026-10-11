@@ -1,10 +1,18 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, LogOut, Monitor, ShieldCheck, ShieldOff } from "lucide-react";
-import { api } from "../api";
+import { api, roleLabels, type Role } from "../api";
+
+/** What the role means, after its name; only admins change roles. */
+const roleNotes: Record<Role, string> = {
+  admin: "",
+  operator: " (you can scan and manage schedules; an admin changes roles)",
+  viewer: " (you can see results; an admin changes roles)",
+};
 import { ChangePassword } from "../components/account/ChangePassword";
 import { MFASetup } from "../components/account/MFASetup";
 import { RecoveryCodes } from "../components/account/RecoveryCodes";
+import { AppearancePicker } from "../components/AppearancePicker";
 import { Button, Card, CardHeader, Dialog, ErrorMessage, Field, Loading, PageHeader } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
 
@@ -50,7 +58,10 @@ export function Account() {
 
   return (
     <>
-      <PageHeader title="My account" description={`Signed in as ${data.username}. Your password, two-step sign-in and sessions.`} />
+      <PageHeader
+        title="My account"
+        description={`Signed in as ${data.username}, with the ${roleLabels[data.role]} role${roleNotes[data.role]}. Your password, two-step sign-in, appearance and sessions.`}
+      />
       <div className="space-y-6">
         <Card>
           <CardHeader
@@ -101,6 +112,13 @@ export function Account() {
           <div className="px-5 py-5">
             {passwordChanged && <p className="mb-4 text-sm text-emerald-700 dark:text-emerald-400">Password changed. Your other sessions were signed out.</p>}
             <ChangePassword onDone={() => (setPasswordChanged(true), refresh())} />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Appearance" description="Saved to your account, so it follows you to every browser. Everyone chooses their own." />
+          <div className="px-5 py-5">
+            <AppearancePicker />
           </div>
         </Card>
 

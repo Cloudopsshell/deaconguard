@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "./themes.css";
+
+/* Dark mode follows the chosen appearance (light, dark, or the system's), set on <html> by appearance.js. */
+@custom-variant dark (&:where([data-mode="dark"], [data-mode="dark"] *));
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -7,7 +11,10 @@
 
 @layer base {
   html {
-    color-scheme: light dark;
+    color-scheme: light;
+  }
+  html[data-mode="dark"] {
+    color-scheme: dark;
   }
   body {
     @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;

@@ -33,7 +33,10 @@ const (
 // agentHub hands queued scans to agents and collects their progress and results.
 type agentHub struct {
 	runner *runner
-	mu     sync.Mutex
+	// agentPort is the server's port only for agents, if it has one; agents
+	// on other ports are told to move there.
+	agentPort string
+	mu        sync.Mutex
 	// wakers wake an agent's waiting job request when a scan is queued for it.
 	wakers map[string]chan struct{}
 	// active holds agent scans this process handed out and has not finished.
@@ -139,7 +142,8 @@ func (h *agentHub) authenticated(next func(http.ResponseWriter, *http.Request, s
 			writeError(w, http.StatusUnauthorized, errors.New("agent credential required"))
 			return
 		}
-		host, err := store.AuthenticateAgent(hostID, secret, limitText(r.Header.Get(agentapi.HeaderVersion), 64), remoteIP(r))
+		port := localPort(r)
+		host, err := store.AuthenticateAgent(hostID, secret, limitText(r.Header.Get(agentapi.HeaderVersion), 64), remoteIP(r), port)
 		if errors.Is(err, store.ErrUnknownAgent) {
 			writeError(w, http.StatusUnauthorized, err)
 			return
@@ -155,8 +159,36 @@ func (h *agentHub) authenticated(next func(http.ResponseWriter, *http.Request, s
 				return
 			}
 		}
+		// An agent on another port is told about the agent port, so it can
+		// move there. The server's own agent stays on the loopback address.
+		if h.agentPort != "" && port != "" && port != h.agentPort && !isLoopbackIP(remoteIP(r)) {
+			w.Header().Set(agentapi.HeaderAgentPort, h.agentPort)
+		}
 		next(w, r, host)
 	}
+}
+
+// hello answers an agent checking that the agent port reaches this server.
+func (h *agentHub) hello(w http.ResponseWriter, r *http.Request, host store.Host) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// localPort is the server port a request came in on.
+func localPort(r *http.Request) string {
+	address, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if !ok {
+		return ""
+	}
+	_, port, err := net.SplitHostPort(address.String())
+	if err != nil {
+		return ""
+	}
+	return port
+}
+
+func isLoopbackIP(address string) bool {
+	ip := net.ParseIP(address)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {

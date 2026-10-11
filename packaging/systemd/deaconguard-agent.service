@@ -16,6 +16,9 @@ RestartPreventExitStatus=3
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full
+# The agent saves its own config here when it moves to the server's agent port;
+# the rest of /etc stays read-only.
+ReadWritePaths=/etc/deaconguard
 ProtectHome=read-only
 
 [Install]

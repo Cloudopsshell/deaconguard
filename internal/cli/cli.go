@@ -389,7 +389,8 @@ Scanning:
   deaconguard report REPORT_ID [--json]
 
 Setup (as root, after installing the .deb or .rpm; install.sh runs these):
-  deaconguard setup server [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE]
+  deaconguard setup server [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT|off]
+                           [--tls-cert FILE --tls-key FILE]
                            [--admin-user NAME] [--admin-password-file FILE]
                            [--no-agent | --with-agent]
                                        create the first account, start the server service,
@@ -399,9 +400,13 @@ Setup (as root, after installing the .deb or .rpm; install.sh runs these):
 
 Web UI and server:
   deaconguard serve                       local web UI at http://127.0.0.1:7480, no sign-in
-  deaconguard serve --listen 0.0.0.0:8443 [--tls-cert FILE --tls-key FILE]
-                                       server: HTTPS dashboard with sign-in, agents enroll
-  deaconguard user add|passwd USERNAME [--password-stdin]
+  deaconguard serve --listen 0.0.0.0:8443 [--agent-listen 0.0.0.0:8444] [--tls-cert FILE --tls-key FILE]
+                                       server: HTTPS dashboard with sign-in, agents enroll;
+                                       --agent-listen gives agents a port of their own
+  deaconguard user add USERNAME [--role admin|operator|viewer] [--password-stdin]
+                                       roles: admin (default here), operator, viewer
+  deaconguard user passwd USERNAME [--password-stdin]
+  deaconguard user role USERNAME admin|operator|viewer
   deaconguard user mfa-reset USERNAME   turn off two-step sign-in, for a lost phone
   deaconguard user list | remove USERNAME
   deaconguard token create --server-url https://HOST:8443   one-time agent token, valid 24 hours

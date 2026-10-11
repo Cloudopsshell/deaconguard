@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CalendarClock, FileText, Play, ShieldCheck, TerminalSquare, Trash2, XCircle } from "lucide-react";
+import { useCan } from "../lib/role";
 import { api, type CheckId, type Host, type HostDetail as HostDetailData, type Scan } from "../api";
 import { CheckResultView } from "../components/CheckResultView";
 import { ScanConsole } from "../components/ScanConsole";
@@ -31,6 +32,8 @@ import { AgentStatus } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 
 export function HostDetail() {
+  const canOperate = useCan("operator");
+  const canRemove = useCan("admin");
   const { hostId = "" } = useParams();
   const [removing, setRemoving] = useState(false);
   const [scanning, setScanning] = useState<{ initial?: CheckId[] } | null>(null);
@@ -83,9 +86,11 @@ export function HostDetail() {
               ) : (
                 <span>
                   Not on a schedule; scanned only when someone presses Scan now.{" "}
-                  <Link to="/schedules" className="text-indigo-600 hover:underline dark:text-indigo-400">
-                    Add a schedule
-                  </Link>
+                  {canOperate && (
+                    <Link to="/schedules" className="text-indigo-600 hover:underline dark:text-indigo-400">
+                      Add a schedule
+                    </Link>
+                  )}
                 </span>
               )}
             </span>
@@ -93,9 +98,12 @@ export function HostDetail() {
         }
         action={
           <>
-            <Button variant="secondary" onClick={() => setRemoving(true)}>
-              <Trash2 className="size-4" /> Remove
-            </Button>
+            {canRemove && (
+              <Button variant="secondary" onClick={() => setRemoving(true)}>
+                <Trash2 className="size-4" /> Remove
+              </Button>
+            )}
+            {canOperate && (
             <Button
               loading={running}
               onClick={() => setScanning({})}
@@ -109,6 +117,7 @@ export function HostDetail() {
                     ? "Scanning…"
                     : "Scan now"}
             </Button>
+            )}
           </>
         }
       />
@@ -232,6 +241,7 @@ export function HostDetail() {
                     )}
                   </Td>
                   <Td className="w-px pl-0 text-right">
+                    {canOperate && (
                     <Button
                       variant="ghost"
                       className="px-2"
@@ -248,6 +258,7 @@ export function HostDetail() {
                     >
                       <Trash2 className="size-4" />
                     </Button>
+                  )}
                   </Td>
                 </tr>
               ))}
@@ -274,6 +285,7 @@ export function HostDetail() {
 }
 
 function SudoToggle({ host }: { host: Host }) {
+  const canOperate = useCan("operator");
   const refresh = useRefreshAll();
   const update = useMutation({ mutationFn: (allow: boolean) => api.setAllowSudo(host.id, allow), onSuccess: refresh });
   return (
@@ -282,7 +294,8 @@ function SudoToggle({ host }: { host: Host }) {
         type="button"
         role="switch"
         aria-checked={host.allow_sudo}
-        disabled={update.isPending}
+        disabled={update.isPending || !canOperate}
+        title={canOperate ? undefined : "Operators and admins can change this"}
         onClick={() => update.mutate(!host.allow_sudo)}
         className={cx(
           "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-60",
@@ -396,6 +409,7 @@ function CheckTab({ host, check, onRun }: { host: HostDetailData; check: CheckId
     enabled: Boolean(scanId),
   });
   const Icon = checkMeta[check].icon;
+  const canOperate = useCan("operator");
 
   if (!scanId) {
     return (
@@ -403,11 +417,13 @@ function CheckTab({ host, check, onRun }: { host: HostDetailData; check: CheckId
         <EmptyState
           icon={<Icon className="size-6" />}
           title={`${checkMeta[check].label} has not been checked yet`}
-          description="Run a scan that includes this check to see results here."
+          description={canOperate ? "Run a scan that includes this check to see results here." : "Results appear here once an operator runs a scan that includes this check."}
           action={
-            <Button onClick={() => onRun(check)}>
-              <Play className="size-4" /> Run this check
-            </Button>
+            canOperate && (
+              <Button onClick={() => onRun(check)}>
+                <Play className="size-4" /> Run this check
+              </Button>
+            )
           }
         />
       </Card>
@@ -427,7 +443,7 @@ function CheckTab({ host, check, onRun }: { host: HostDetailData; check: CheckId
           {dateTime(scannedAt)} ({timeAgo(scannedAt)})
         </Link>
       </p>
-      {result && !result.privileged && result.status !== "skipped" && !host.allow_sudo && (
+      {canOperate && result && !result.privileged && result.status !== "skipped" && !host.allow_sudo && (
         <RescanWithSudo host={host} check={check} />
       )}
       {check === "packages" ? (

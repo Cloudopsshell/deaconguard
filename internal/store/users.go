@@ -51,18 +51,42 @@ type Session struct {
 }
 
 const userColumns = `u.id, u.username, u.created_at, u.totp_secret != '', u.must_change_password, u.disabled, u.last_login_at,
-	(SELECT COUNT(*) FROM recovery_codes r WHERE r.user_id = u.id AND r.used_at = '')`
+	(SELECT COUNT(*) FROM recovery_codes r WHERE r.user_id = u.id AND r.used_at = ''), u.role, u.appearance`
 
 func scanUser(row rowScanner) (User, error) {
 	var user User
 	err := row.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.MFAEnabled, &user.MustChangePassword, &user.Disabled,
-		&user.LastLoginAt, &user.RecoveryCodesLeft)
+		&user.LastLoginAt, &user.RecoveryCodesLeft, &user.Role, &user.Appearance)
 	return user, err
 }
 
-// AddUser creates a dashboard account. mustChange makes the password
-// temporary: it has to be changed at the first sign-in.
-func AddUser(username string, password []byte, mustChange ...bool) (User, error) {
+// Roles, from the most to the least access. Admins manage accounts, enroll
+// machines and remove hosts; operators run scans and schedules; viewers see
+// results only.
+const (
+	RoleAdmin    = "admin"
+	RoleOperator = "operator"
+	RoleViewer   = "viewer"
+)
+
+// ValidRole reports whether role is one of the roles.
+func ValidRole(role string) bool {
+	return role == RoleAdmin || role == RoleOperator || role == RoleViewer
+}
+
+// RoleAllows reports whether an account with role may do what needs at least
+// the role needed.
+func RoleAllows(role, needed string) bool {
+	rank := map[string]int{RoleViewer: 1, RoleOperator: 2, RoleAdmin: 3}
+	return rank[role] >= rank[needed] && rank[needed] > 0
+}
+
+// AddUser creates a dashboard account with role. temporary makes the
+// password one that has to be changed at the first sign-in.
+func AddUser(username string, password []byte, role string, temporary bool) (User, error) {
+	if !ValidRole(role) {
+		return User{}, ErrUnknownRole
+	}
 	if err := ValidateUsername(username); err != nil {
 		return User{}, err
 	}
@@ -81,9 +105,8 @@ func AddUser(username string, password []byte, mustChange ...bool) (User, error)
 	if err != nil {
 		return User{}, err
 	}
-	temporary := len(mustChange) > 0 && mustChange[0]
-	if _, err := db.Exec("INSERT INTO users (id, username, password_hash, created_at, must_change_password) VALUES (?, ?, ?, ?, ?)",
-		id, username, hash, nowText(), temporary); err != nil {
+	if _, err := db.Exec("INSERT INTO users (id, username, password_hash, created_at, must_change_password, role) VALUES (?, ?, ?, ?, ?, ?)",
+		id, username, hash, nowText(), temporary, role); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return User{}, ErrUserExists
 		}
@@ -537,15 +560,78 @@ func SetPassword(username string, password []byte) error {
 	return ChangePassword(user.ID, password, "", false)
 }
 
-// activeAccounts counts accounts that can sign in.
-func activeAccounts(tx *sql.Tx) (int, error) {
+// activeAdmins counts administrators that can sign in.
+func activeAdmins(tx *sql.Tx) (int, error) {
 	var count int
-	err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE disabled = 0").Scan(&count)
+	err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE disabled = 0 AND role = ?", RoleAdmin).Scan(&count)
 	return count, err
 }
 
+// keepsAnAdmin returns ErrLastAccount when user is the last administrator
+// that can sign in, so taking it away would leave nobody to manage accounts.
+func keepsAnAdmin(tx *sql.Tx, user User) error {
+	if user.Disabled || user.Role != RoleAdmin {
+		return nil
+	}
+	count, err := activeAdmins(tx)
+	if err != nil {
+		return err
+	}
+	if count <= 1 {
+		return ErrLastAccount
+	}
+	return nil
+}
+
+// SetRole changes an account's role and signs it out everywhere, so the new
+// role applies at once. The last administrator that can sign in keeps its role.
+func SetRole(userID, role string) error {
+	if !ValidRole(role) {
+		return ErrUnknownRole
+	}
+	db, err := database()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	user, err := scanUser(tx.QueryRow("SELECT "+userColumns+" FROM users u WHERE u.id = ?", userID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrUnknownUser
+	}
+	if err != nil {
+		return err
+	}
+	if user.Role == role {
+		return nil
+	}
+	if err := keepsAnAdmin(tx, user); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE users SET role = ? WHERE id = ?", role, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM sessions WHERE user_id = ?", userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SetAppearance saves the dashboard mode and theme an account chose.
+func SetAppearance(userID, appearance string) error {
+	db, err := database()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("UPDATE users SET appearance = ? WHERE id = ?", limitString(appearance, 200), userID)
+	return err
+}
+
 // SetDisabled turns an account off, signing it out everywhere, or back on.
-// The last account that can sign in cannot be turned off.
+// The last administrator that can sign in cannot be turned off.
 func SetDisabled(userID string, disabled bool) error {
 	db, err := database()
 	if err != nil {
@@ -564,10 +650,8 @@ func SetDisabled(userID string, disabled bool) error {
 		return err
 	}
 	if disabled && !user.Disabled {
-		if count, err := activeAccounts(tx); err != nil {
+		if err := keepsAnAdmin(tx, user); err != nil {
 			return err
-		} else if count <= 1 {
-			return ErrLastAccount
 		}
 		if _, err := tx.Exec("DELETE FROM sessions WHERE user_id = ?", userID); err != nil {
 			return err
@@ -579,8 +663,8 @@ func SetDisabled(userID string, disabled bool) error {
 	return tx.Commit()
 }
 
-// RemoveUser deletes an account and its sessions. The last account that can
-// sign in cannot be removed.
+// RemoveUser deletes an account and its sessions. The last administrator
+// that can sign in cannot be removed.
 func RemoveUser(username string) error {
 	user, err := UserByName(username)
 	if err != nil {
@@ -600,18 +684,14 @@ func RemoveUserID(userID string) error {
 		return err
 	}
 	defer tx.Rollback()
-	var disabled bool
-	if err := tx.QueryRow("SELECT disabled FROM users WHERE id = ?", userID).Scan(&disabled); errors.Is(err, sql.ErrNoRows) {
+	user, err := scanUser(tx.QueryRow("SELECT "+userColumns+" FROM users u WHERE u.id = ?", userID))
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrUnknownUser
 	} else if err != nil {
 		return err
 	}
-	if !disabled {
-		if count, err := activeAccounts(tx); err != nil {
-			return err
-		} else if count <= 1 {
-			return ErrLastAccount
-		}
+	if err := keepsAnAdmin(tx, user); err != nil {
+		return err
 	}
 	if _, err := tx.Exec("DELETE FROM users WHERE id = ?", userID); err != nil {
 		return err
