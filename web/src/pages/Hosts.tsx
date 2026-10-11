@@ -135,7 +135,8 @@ function HostRow({ host }: { host: HostSummary }) {
   return (
     <tr onClick={() => navigate(`/hosts/${host.id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
       <Td>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {/* Name and label stay on one line, so a wide Findings column cannot push the label down. */}
+        <div className="flex items-center gap-2 whitespace-nowrap">
           <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
             {host.address}
           </Link>
