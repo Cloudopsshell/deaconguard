@@ -135,10 +135,12 @@ function HostRow({ host }: { host: HostSummary }) {
   return (
     <tr onClick={() => navigate(`/hosts/${host.id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
       <Td>
-        <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-          {host.address}
-        </Link>
-        {host.this_server && <ThisServerBadge />}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+            {host.address}
+          </Link>
+          {host.this_server && <ThisServerBadge />}
+        </div>
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {host.transport === "agent" && (
             <span
