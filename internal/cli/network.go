@@ -38,14 +38,16 @@ const (
 )
 
 func runServe(arguments []string, output io.Writer) error {
-	listen, certificatePath, keyPath := defaultListen, "", ""
+	listen, agentListen, certificatePath, keyPath := defaultListen, "", "", ""
 	for index := 0; index < len(arguments); index++ {
 		if index+1 >= len(arguments) {
-			return fmt.Errorf("usage: deaconguard serve [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE]")
+			return fmt.Errorf("usage: deaconguard serve [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE]")
 		}
 		switch arguments[index] {
 		case "--listen":
 			listen = arguments[index+1]
+		case "--agent-listen":
+			agentListen = arguments[index+1]
 		case "--tls-cert":
 			certificatePath = arguments[index+1]
 		case "--tls-key":
@@ -57,6 +59,14 @@ func runServe(arguments []string, output io.Writer) error {
 	}
 	if (certificatePath == "") != (keyPath == "") {
 		return fmt.Errorf("--tls-cert and --tls-key go together")
+	}
+	if agentListen != "" {
+		if _, port, err := net.SplitHostPort(agentListen); err != nil || port == "" {
+			return fmt.Errorf("--agent-listen needs ADDRESS:PORT, such as 0.0.0.0:8444")
+		}
+		if server.IsLoopback(listen) && certificatePath == "" {
+			return fmt.Errorf("--agent-listen is for a server on the network; the local dashboard has no agents")
+		}
 	}
 	run := startRun(output)
 	if server.IsLoopback(listen) && certificatePath == "" {
@@ -70,7 +80,7 @@ func runServe(arguments []string, output io.Writer) error {
 		}
 		fmt.Fprintf(output, "DeaconGuard %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
 		handler.StartScheduler()
-		return serveUntilStopped(handler, listener, output, run)
+		return serveUntilStopped(handler, listener, output, run, nil)
 	}
 
 	var certificate tls.Certificate
@@ -96,8 +106,28 @@ func runServe(arguments []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	listener = tls.NewListener(listener, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
+	listener = tls.NewListener(listener, tlsConfig)
 	fmt.Fprintf(output, "DeaconGuard %s server: https://%s\n", buildinfo.Version, displayAddress(listener.Addr()))
+	var agents *http.Server
+	if agentListen != "" {
+		// Agents get a port of their own, which serves only the agent API, so
+		// the dashboard's port can be limited to the people who use it.
+		agentListener, err := net.Listen("tcp", agentListen)
+		if err != nil {
+			listener.Close()
+			return err
+		}
+		_, port, _ := net.SplitHostPort(agentListener.Addr().String())
+		handler.SetAgentPort(port)
+		agents = &http.Server{Handler: handler.AgentHandler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
+		go func() {
+			if err := agents.Serve(tls.NewListener(agentListener, tlsConfig)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				fmt.Fprintf(output, "Agent listener stopped: %v\n", err)
+			}
+		}()
+		fmt.Fprintf(output, "Agents: https://%s (the agent API only)\n", displayAddress(agentListener.Addr()))
+	}
 	if created {
 		fmt.Fprintf(output, "Created a self-signed certificate in %s. Browsers warn about it once;\n",
 			filepath.Join(store.DataDir(), "tls"))
@@ -105,7 +135,7 @@ func runServe(arguments []string, output io.Writer) error {
 	}
 	fmt.Fprintf(output, "Certificate public key (SHA-256): %s\nData: %s\nPress Ctrl+C to stop.\n", pin, store.DatabasePath())
 	handler.StartScheduler()
-	return serveUntilStopped(handler, listener, output, run)
+	return serveUntilStopped(handler, listener, output, run, agents)
 }
 
 // startRun records this run of the server and keeps how the previous run
@@ -156,7 +186,9 @@ func displayAddress(address net.Addr) string {
 	return net.JoinHostPort(host, port)
 }
 
-func serveUntilStopped(handler *server.Server, listener net.Listener, output io.Writer, run *runstate.Run) error {
+// serveUntilStopped serves until Ctrl+C or SIGTERM, then stops agents, the
+// agent listener if there is one, first.
+func serveUntilStopped(handler *server.Server, listener net.Listener, output io.Writer, run *runstate.Run, agents *http.Server) error {
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -166,6 +198,9 @@ func serveUntilStopped(handler *server.Server, listener net.Listener, output io.
 		stop()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if agents != nil {
+			agents.Shutdown(shutdown)
+		}
 		httpServer.Shutdown(shutdown)
 	}()
 	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -184,7 +219,7 @@ func serveUntilStopped(handler *server.Server, listener net.Listener, output io.
 
 func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("user requires add, passwd, mfa-reset, list, or remove")
+		return fmt.Errorf("user requires add, passwd, role, mfa-reset, list, or remove")
 	}
 	switch arguments[0] {
 	case "list":
@@ -206,8 +241,22 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			if user.MustChangePassword {
 				state += ", must change password"
 			}
-			fmt.Fprintf(output, "%s  (%s; created %s)\n", user.Username, state, user.CreatedAt)
+			fmt.Fprintf(output, "%s  (%s; %s; created %s)\n", user.Username, user.Role, state, user.CreatedAt)
 		}
+		return nil
+	case "role":
+		if len(arguments) != 3 {
+			return fmt.Errorf("usage: deaconguard user role USERNAME admin|operator|viewer")
+		}
+		user, err := store.UserByName(arguments[1])
+		if err != nil {
+			return err
+		}
+		if err := store.SetRole(user.ID, arguments[2]); err != nil {
+			return err
+		}
+		store.Audit(local.Username()+" (cli)", "user.role", user.Username, user.Role+" to "+arguments[2]+"; signed out everywhere", "")
+		fmt.Fprintf(output, "%s is now %s, and was signed out so the role applies at once.\n", user.Username, arguments[2])
 		return nil
 	case "mfa-reset":
 		// For a lost phone when no other account can reset it in the dashboard.
@@ -238,19 +287,30 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 	default:
 		return fmt.Errorf("unknown user action %q", arguments[0])
 	}
-	username, fromStdin := "", false
-	for _, argument := range arguments[1:] {
+	usage := fmt.Errorf("usage: deaconguard user %s USERNAME [--password-stdin]", arguments[0])
+	if arguments[0] == "add" {
+		usage = fmt.Errorf("usage: deaconguard user add USERNAME [--role admin|operator|viewer] [--password-stdin]")
+	}
+	username, fromStdin, role := "", false, store.RoleAdmin
+	for index := 1; index < len(arguments); index++ {
+		argument := arguments[index]
 		switch {
 		case argument == "--password-stdin":
 			fromStdin = true
+		case argument == "--role" && arguments[0] == "add" && index+1 < len(arguments):
+			role = arguments[index+1]
+			index++
 		case strings.HasPrefix(argument, "-") || username != "":
-			return fmt.Errorf("usage: deaconguard user %s USERNAME [--password-stdin]", arguments[0])
+			return usage
 		default:
 			username = argument
 		}
 	}
 	if username == "" {
-		return fmt.Errorf("usage: deaconguard user %s USERNAME [--password-stdin]", arguments[0])
+		return usage
+	}
+	if !store.ValidRole(role) {
+		return store.ErrUnknownRole
 	}
 	password, err := readNewPassword(input, diagnostics, fromStdin)
 	if err != nil {
@@ -258,11 +318,11 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 	}
 	defer clear(password)
 	if arguments[0] == "add" {
-		if _, err := store.AddUser(username, password); err != nil {
+		if _, err := store.AddUser(username, password, role, false); err != nil {
 			return err
 		}
-		store.Audit(local.Username()+" (cli)", "user.add", username, "", "")
-		fmt.Fprintf(output, "Created %s. Sign in to the dashboard served by: deaconguard serve --listen 0.0.0.0:8443\n", username)
+		store.Audit(local.Username()+" (cli)", "user.add", username, role, "")
+		fmt.Fprintf(output, "Created %s, with the %s role. Sign in to the dashboard served by: deaconguard serve --listen 0.0.0.0:8443\n", username, role)
 		return nil
 	}
 	if err := store.SetPassword(username, password); err != nil {
@@ -383,7 +443,7 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		return agent.Run(ctx, config, func(format string, values ...any) {
+		return agent.Run(ctx, config, path, func(format string, values ...any) {
 			fmt.Fprintf(diagnostics, format+"\n", values...)
 		})
 	case "status":

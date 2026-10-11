@@ -49,7 +49,9 @@ const (
 
 type serverSetup struct {
 	listen, certificate, key string
-	adminUser, passwordFile  string
+	// agentListen gives agents a port of their own; "off" removes it.
+	agentListen             string
+	adminUser, passwordFile string
 	// noAgent and withAgent decide whether the server's own machine gets
 	// an agent; without either, the earlier choice stands.
 	noAgent, withAgent bool
@@ -83,7 +85,7 @@ func runSetup(arguments []string, output, diagnostics io.Writer) error {
 }
 
 const (
-	serverSetupUsage = "usage: deaconguard setup server [--listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE] [--admin-user NAME] [--admin-password-file FILE] [--no-agent | --with-agent]"
+	serverSetupUsage = "usage: deaconguard setup server [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT|off] [--tls-cert FILE --tls-key FILE] [--admin-user NAME] [--admin-password-file FILE] [--no-agent | --with-agent]"
 	agentSetupUsage  = "usage: deaconguard setup agent [--token-file FILE] [--force]"
 )
 
@@ -105,6 +107,8 @@ func parseServerSetup(arguments []string) (serverSetup, error) {
 		switch arguments[index] {
 		case "--listen":
 			options.listen = value
+		case "--agent-listen":
+			options.agentListen = value
 		case "--tls-cert":
 			options.certificate = value
 		case "--tls-key":
@@ -135,6 +139,14 @@ func parseServerSetup(arguments []string) (serverSetup, error) {
 		}
 		if isLoopbackListen(options.listen) {
 			return options, fmt.Errorf("the server must listen on the network for agents to reach it; for a dashboard on this machine only, run: deaconguard serve")
+		}
+	}
+	if options.agentListen != "" && options.agentListen != "off" {
+		if _, port, err := net.SplitHostPort(options.agentListen); err != nil || port == "" {
+			return options, fmt.Errorf("--agent-listen needs ADDRESS:PORT, such as 0.0.0.0:8444, or off")
+		}
+		if isLoopbackListen(options.agentListen) {
+			return options, fmt.Errorf("--agent-listen must be on the network for agents to reach it")
 		}
 	}
 	return options, nil
@@ -178,11 +190,14 @@ func isLoopbackListen(listen string) bool {
 
 // renderServerDropIn returns the drop-in that runs the server with options, or
 // "" when the packaged unit's defaults apply.
-func renderServerDropIn(listen, certificate, key string) string {
-	if listen == defaultServerListen && certificate == "" {
+func renderServerDropIn(listen, agentListen, certificate, key string) string {
+	if listen == defaultServerListen && agentListen == "" && certificate == "" {
 		return ""
 	}
 	command := "/usr/bin/deaconguard serve --listen " + listen
+	if agentListen != "" {
+		command += " --agent-listen " + agentListen
+	}
 	if certificate != "" {
 		command += " --tls-cert " + certificate + " --tls-key " + key
 	}
@@ -190,11 +205,11 @@ func renderServerDropIn(listen, certificate, key string) string {
 		"[Service]\nExecStart=\nExecStart=" + command + "\n"
 }
 
-var dropInSetting = regexp.MustCompile(`--(listen|tls-cert|tls-key) (\S+)`)
+var dropInSetting = regexp.MustCompile(`--(listen|agent-listen|tls-cert|tls-key) (\S+)`)
 
 // parseServerDropIn reads the settings back from a drop-in written by
 // renderServerDropIn, so running setup again without options keeps them.
-func parseServerDropIn(contents string) (listen, certificate, key string) {
+func parseServerDropIn(contents string) (listen, agentListen, certificate, key string) {
 	listen = defaultServerListen
 	for _, line := range strings.Split(contents, "\n") {
 		if !strings.HasPrefix(line, "ExecStart=/") {
@@ -204,6 +219,8 @@ func parseServerDropIn(contents string) (listen, certificate, key string) {
 			switch match[1] {
 			case "listen":
 				listen = match[2]
+			case "agent-listen":
+				agentListen = match[2]
 			case "tls-cert":
 				certificate = match[2]
 			case "tls-key":
@@ -211,7 +228,7 @@ func parseServerDropIn(contents string) (listen, certificate, key string) {
 			}
 		}
 	}
-	return listen, certificate, key
+	return listen, agentListen, certificate, key
 }
 
 // checkServiceHost stops setup early where it cannot work: it changes system
@@ -271,9 +288,16 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	listen, certificate, key := parseServerDropIn(string(existing))
+	listen, agentListen, certificate, key := parseServerDropIn(string(existing))
 	if options.listen != "" {
 		listen = options.listen
+	}
+	switch options.agentListen {
+	case "":
+	case "off":
+		agentListen = ""
+	default:
+		agentListen = options.agentListen
 	}
 	if options.certificate != "" {
 		certificate, key = options.certificate, options.key
@@ -281,7 +305,7 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 	// changed is whether this setup changed something the running server
 	// must restart to pick up.
 	changed := false
-	if dropIn := renderServerDropIn(listen, certificate, key); dropIn != string(existing) {
+	if dropIn := renderServerDropIn(listen, agentListen, certificate, key); dropIn != string(existing) {
 		changed = true
 		if dropIn == "" {
 			err = os.Remove(serverDropIn)
@@ -338,7 +362,15 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 		fmt.Fprintf(output, "\nWarning: could not add the agent on this machine: %v\nThe server is running. Try again with: sudo deaconguard setup server --with-agent\n", err)
 		state = serverAgentFailed
 	}
-	describeServerMachine(output, port, state)
+	agentPort := ""
+	if agentListen != "" {
+		_, agentPort, _ = net.SplitHostPort(agentListen)
+	}
+	describeServerMachine(output, port, agentPort, state)
+	if agentPort != "" {
+		fmt.Fprintf(output, "\nAdd other machines on the dashboard's Agents page, and turn on two-step sign-in\nunder My account. Agents use port %s; allow it from your machines' networks. Allow\nport %s, the dashboard, only from your administrators' networks, never the internet.\nSee https://docs.deaconguard.io/security/securing-the-dashboard\n", agentPort, port)
+		return nil
+	}
 	fmt.Fprintf(output, "\nAdd other machines on the dashboard's Agents page, and turn on two-step sign-in\nunder My account. Don't expose port %s to the internet: only allow it from the\nnetworks of your administrators and agents. See\nhttps://docs.deaconguard.io/security/securing-the-dashboard\n", port)
 	return nil
 }
@@ -431,9 +463,13 @@ func loopbackURL(serverURL string) bool {
 }
 
 // describeServerMachine says what runs where, the same way the docs do.
-func describeServerMachine(output io.Writer, port, state string) {
+func describeServerMachine(output io.Writer, port, agentPort, state string) {
 	fmt.Fprintf(output, "\nWhat runs on this machine:\n")
-	fmt.Fprintf(output, "  deaconguard-server  the dashboard and API on port %s, as the %s user, without root\n", port, serviceAccount)
+	if agentPort != "" {
+		fmt.Fprintf(output, "  deaconguard-server  the dashboard on port %s and the agent API on port %s, as the %s user, without root\n", port, agentPort, serviceAccount)
+	} else {
+		fmt.Fprintf(output, "  deaconguard-server  the dashboard and API on port %s, as the %s user, without root\n", port, serviceAccount)
+	}
 	switch state {
 	case serverAgentRunning:
 		fmt.Fprintln(output, "  deaconguard-agent   scans this machine as root and reports to this server; listens on nothing")

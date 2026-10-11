@@ -2,11 +2,43 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldAlert, ShieldCheck, UserPlus, Users } from "lucide-react";
-import { api, type Account } from "../api";
+import { api, roleLabels, type Account, type Role } from "../api";
 import { Button, Card, CardHeader, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, Table, Td, Th, cx } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
 
-type Action = { kind: "create" } | { kind: "password" | "reset" | "remove"; account: Account };
+type Action = { kind: "create" } | { kind: "password" | "reset" | "remove" | "role"; account: Account };
+
+/** What each role may do, as the dashboard explains it. */
+const roleDescriptions: Record<Role, string> = {
+  viewer: "Sees hosts, findings, schedules and logs. Can't start scans or change anything.",
+  operator: "Also scans, answers sudo prompts, deletes scans, and manages schedules.",
+  admin: "Also enrolls and removes machines, manages accounts, and reads the audit log.",
+};
+
+function RolePicker({ value, onChange }: { value: Role; onChange: (role: Role) => void }) {
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium">Role</legend>
+      <div className="mt-2 space-y-2">
+        {(["viewer", "operator", "admin"] as Role[]).map((role) => (
+          <label
+            key={role}
+            className={cx(
+              "flex cursor-pointer gap-3 rounded-lg px-3 py-2.5 ring-1",
+              value === role ? "bg-indigo-50 ring-indigo-600 dark:bg-indigo-500/10 dark:ring-indigo-400" : "ring-slate-200 dark:ring-slate-700",
+            )}
+          >
+            <input type="radio" name="role" className="mt-0.5 accent-indigo-600" checked={value === role} onChange={() => onChange(role)} />
+            <span>
+              <span className="block text-sm font-medium">{roleLabels[role]}</span>
+              <span className="block text-xs text-slate-500 dark:text-slate-400">{roleDescriptions[role]}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
 
 function Badge({ tone, children }: { tone: "green" | "amber" | "slate"; children: string }) {
   const tones = {
@@ -21,21 +53,29 @@ function Badge({ tone, children }: { tone: "green" | "amber" | "slate"; children
 export function Accounts() {
   const queryClient = useQueryClient();
   const users = useQuery({ queryKey: ["users"], queryFn: api.users });
-  const session = useQuery({ queryKey: ["session"], queryFn: api.session, staleTime: 60_000 });
+  const session = useQuery({
+    queryKey: ["session"],
+    queryFn: api.session,
+    staleTime: 60_000,
+  });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["users"] });
   const [action, setAction] = useState<Action | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Role>("viewer");
   const [done, setDone] = useState("");
+  const [managing, setManaging] = useState<Account | null>(null);
   const close = () => {
     setAction(null);
     setUsername("");
     setPassword("");
+    setRole("viewer");
     run.reset();
   };
   const run = useMutation({
     mutationFn: async (current: Action) => {
-      if (current.kind === "create") await api.createUser(username.trim(), password);
+      if (current.kind === "create") await api.createUser(username.trim(), password, role);
+      if (current.kind === "role") await api.setUserRole(current.account.id, role);
       if (current.kind === "password") await api.setTemporaryPassword(current.account.id, password);
       if (current.kind === "reset") await api.resetUserMFA(current.account.id);
       if (current.kind === "remove") await api.removeUser(current.account.id);
@@ -44,7 +84,8 @@ export function Accounts() {
       const name = current.kind === "create" ? username.trim() : current.account.username;
       setDone(
         {
-          create: `Created ${name}. Give them the temporary password; they choose their own at the first sign-in.`,
+          create: `Created ${name} as ${roleLabels[role]}. Give them the temporary password; they choose their own at the first sign-in.`,
+          role: `${name} is now ${roleLabels[role]}, and was signed out so the role applies at once.`,
           password: `Set a temporary password for ${name} and signed them out. They choose a new one at the next sign-in.`,
           reset: `Reset two-step sign-in for ${name} and signed them out. They sign in with their password and set it up again.`,
           remove: `Removed ${name}.`,
@@ -81,7 +122,7 @@ export function Accounts() {
     <>
       <PageHeader
         title="Accounts"
-        description="Everyone who can sign in to this dashboard. Every account is an administrator."
+        description="Everyone who can sign in to this dashboard, and what their role lets them do."
         action={
           <Button onClick={() => setAction({ kind: "create" })}>
             <UserPlus className="size-4" /> New account
@@ -90,7 +131,10 @@ export function Accounts() {
       />
       <div className="space-y-6">
         {done && (
-          <p className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800 ring-1 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300" role="status">
+          <p
+            className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800 ring-1 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+            role="status"
+          >
             {done}
           </p>
         )}
@@ -127,6 +171,7 @@ export function Accounts() {
               <thead>
                 <tr>
                   <Th>Account</Th>
+                  <Th>Role</Th>
                   <Th>Two-step sign-in</Th>
                   <Th>Last sign-in</Th>
                   <Th>
@@ -148,11 +193,14 @@ export function Accounts() {
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Created {dateTime(account.created_at)}</p>
                       </Td>
+                      <Td className="whitespace-nowrap">{roleLabels[account.role]}</Td>
                       <Td>
                         {account.mfa_enabled ? (
                           <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700 dark:text-emerald-400">
                             <ShieldCheck className="size-4" /> On
-                            {account.recovery_codes_left <= 2 && <span className="text-amber-700 dark:text-amber-400">· {account.recovery_codes_left} codes left</span>}
+                            {account.recovery_codes_left <= 2 && (
+                              <span className="text-amber-700 dark:text-amber-400">· {account.recovery_codes_left} codes left</span>
+                            )}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
@@ -169,22 +217,9 @@ export function Accounts() {
                             My account
                           </Link>
                         ) : (
-                          <div className="-my-2 flex flex-wrap justify-end gap-1">
-                            {account.mfa_enabled && (
-                              <Button variant="ghost" onClick={() => setAction({ kind: "reset", account })}>
-                                Reset two-step
-                              </Button>
-                            )}
-                            <Button variant="ghost" onClick={() => setAction({ kind: "password", account })}>
-                              Set temporary password
-                            </Button>
-                            <Button variant="ghost" loading={toggle.isPending && toggle.variables?.id === account.id} onClick={() => toggle.mutate(account)}>
-                              {account.disabled ? "Enable" : "Disable"}
-                            </Button>
-                            <Button variant="ghost" onClick={() => setAction({ kind: "remove", account })}>
-                              Remove
-                            </Button>
-                          </div>
+                          <Button variant="secondary" className="-my-2" onClick={() => setManaging(account)}>
+                            Manage
+                          </Button>
                         )}
                       </Td>
                     </tr>
@@ -204,22 +239,79 @@ export function Accounts() {
         </p>
       </div>
 
+      <Dialog open={managing !== null} onClose={() => setManaging(null)} title={managing ? `Manage ${managing.username}` : ""}>
+        {managing && (
+          <ul className="-my-1 divide-y divide-slate-200 dark:divide-slate-800">
+            {[
+              {
+                label: "Change role",
+                detail: `${roleLabels[managing.role]} now. Signs them out so the new role applies.`,
+                run: () => {
+                  setRole(managing.role);
+                  setAction({ kind: "role", account: managing });
+                },
+              },
+              {
+                label: "Set temporary password",
+                detail: "For a forgotten password. Signs them out; they choose a new one at the next sign-in.",
+                run: () => setAction({ kind: "password", account: managing }),
+              },
+              ...(managing.mfa_enabled
+                ? [
+                    {
+                      label: "Reset two-step sign-in",
+                      detail: "For a lost phone and lost recovery codes. They set it up again.",
+                      run: () => setAction({ kind: "reset" as const, account: managing }),
+                    },
+                  ]
+                : []),
+              {
+                label: managing.disabled ? "Enable" : "Disable",
+                detail: managing.disabled ? "Lets them sign in again." : "Signs them out and stops them signing in, keeping the account.",
+                run: () => toggle.mutate(managing),
+              },
+              { label: "Remove", detail: "Deletes the account. The audit log keeps its entries.", run: () => setAction({ kind: "remove", account: managing }), danger: true },
+            ].map((item) => (
+              <li key={item.label}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManaging(null);
+                    item.run();
+                  }}
+                  className="-mx-2 block w-[calc(100%+1rem)] rounded-lg px-2 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                >
+                  <span className={cx("block text-sm font-medium", "danger" in item && item.danger && "text-red-600 dark:text-red-400")}>{item.label}</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{item.detail}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Dialog>
+
       <Dialog
         open={action !== null}
         onClose={close}
         title={
           action?.kind === "create"
             ? "New account"
-            : action?.kind === "password"
-              ? `Temporary password for ${action.account.username}`
-              : action?.kind === "reset"
-                ? `Reset two-step sign-in for ${action.account.username}?`
-                : `Remove ${action?.account.username}?`
+            : action?.kind === "role"
+              ? `Role for ${action.account.username}`
+              : action?.kind === "password"
+                ? `Temporary password for ${action.account.username}`
+                : action?.kind === "reset"
+                  ? `Reset two-step sign-in for ${action.account.username}?`
+                  : `Remove ${action?.account.username}?`
         }
       >
         <form className="space-y-4" onSubmit={submit}>
           {action?.kind === "create" && (
             <Field label="Username" required autoComplete="off" value={username} onChange={(event) => setUsername(event.target.value)} data-autofocus />
+          )}
+          {(action?.kind === "create" || action?.kind === "role") && <RolePicker value={role} onChange={setRole} />}
+          {action?.kind === "role" && (
+            <p className="text-sm text-slate-600 dark:text-slate-300">They are signed out, so the new role applies when they sign in again.</p>
           )}
           {(action?.kind === "create" || action?.kind === "password") && (
             <>
@@ -243,7 +335,8 @@ export function Accounts() {
           {action?.kind === "reset" && (
             <p className="text-sm text-slate-600 dark:text-slate-300">
               Use this when they lost their phone and their recovery codes. Their authenticator and recovery codes stop working, and they are signed out. They
-              sign in with their password and set it up again{required ? ", which is required" : ""}. Check it is really them before you do this.
+              sign in with their password and set it up again
+              {required ? ", which is required" : ""}. Check it is really them before you do this.
             </p>
           )}
           {action?.kind === "remove" && (
@@ -255,7 +348,15 @@ export function Accounts() {
               Cancel
             </Button>
             <Button type="submit" variant={action?.kind === "remove" || action?.kind === "reset" ? "danger" : "primary"} loading={run.isPending}>
-              {action?.kind === "create" ? "Create account" : action?.kind === "password" ? "Set password" : action?.kind === "reset" ? "Reset" : "Remove"}
+              {action?.kind === "create"
+                ? "Create account"
+                : action?.kind === "role"
+                  ? "Change role"
+                  : action?.kind === "password"
+                    ? "Set password"
+                    : action?.kind === "reset"
+                      ? "Reset"
+                      : "Remove"}
             </Button>
           </div>
         </form>
