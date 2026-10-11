@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Bug, Plus, Server, ShieldAlert, ShieldCheck } from "lucide-react";
+import { useCan } from "../lib/role";
 import { api, type HostSummary, type SeverityCounts, type Summary } from "../api";
 import { checkMeta, checkOrder } from "../lib/checks";
 import {
@@ -42,6 +43,7 @@ function StatTile({ label, value, detail, icon, tone }: { label: string; value: 
 }
 
 export function Dashboard() {
+  const canAdd = useCan("admin");
   const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
   const network = capabilities.data?.agents ?? false;
   const { data, error, isPending } = useQuery({
@@ -68,12 +70,14 @@ export function Dashboard() {
                 : "Register the Linux machine DeaconGuard runs on. DeaconGuard reads its installed package list and checks it against the distribution's official security advisories."
             }
             action={
+              canAdd && (
               <Link
                 to={network ? "/agents?enroll=1" : "/hosts?add=1"}
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
               >
                 <Plus className="size-4" /> {network ? "Enroll a machine" : "Add this machine"}
               </Link>
+              )
             }
           />
         </Card>

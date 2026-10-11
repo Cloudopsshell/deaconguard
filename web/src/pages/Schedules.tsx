@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CalendarClock, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { useCan } from "../lib/role";
 import { api, type CheckId, type Schedule, type ScheduleInput } from "../api";
 import { Button, Card, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, cx } from "../components/ui";
 import { checkMeta } from "../lib/checks";
@@ -53,6 +54,7 @@ function untilText(iso: string) {
 
 /** Scheduled scans: which hosts, which checks, and when. */
 export function Schedules() {
+  const canOperate = useCan("operator");
   const refresh = useRefreshAll();
   const schedules = useQuery({ queryKey: ["schedules"], queryFn: api.schedules, refetchInterval: 30_000 });
   const hosts = useQuery({ queryKey: ["hosts"], queryFn: api.hosts });
@@ -80,9 +82,11 @@ export function Schedules() {
         title="Schedules"
         description="Scan hosts automatically on chosen days. Scheduled scans run like Scan now, with root privileges unless a schedule turns them off."
         action={
-          <Button onClick={() => setEditing("new")}>
-            <Plus className="size-4" /> New schedule
-          </Button>
+          canOperate && (
+            <Button onClick={() => setEditing("new")}>
+              <Plus className="size-4" /> New schedule
+            </Button>
+          )
         }
       />
       <ErrorMessage error={toggle.error ?? run.error} />
@@ -97,9 +101,11 @@ export function Schedules() {
             title="No schedules yet"
             description="Without one, results only update when someone presses Scan now. A nightly scan of all hosts is a good start."
             action={
-              <Button onClick={() => setEditing("new")}>
-                <Plus className="size-4" /> New schedule
-              </Button>
+              canOperate && (
+                <Button onClick={() => setEditing("new")}>
+                  <Plus className="size-4" /> New schedule
+                </Button>
+              )
             }
           />
         </Card>
@@ -143,6 +149,7 @@ export function Schedules() {
                   </p>
                   {ran?.id === schedule.id && <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">{ran.text}</p>}
                 </div>
+                {canOperate && (
                 <div className="flex flex-wrap gap-2">
                   <Button variant="secondary" loading={run.isPending && run.variables?.id === schedule.id} onClick={() => run.mutate(schedule)}>
                     <Play className="size-4" /> Run now
@@ -157,6 +164,7 @@ export function Schedules() {
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
+                )}
               </div>
             </Card>
           ))}

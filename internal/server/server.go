@@ -127,7 +127,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.needs(store.RoleOperator, s.startScan))
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
 	mux.HandleFunc("DELETE /api/scans/{id}", s.needs(store.RoleOperator, s.deleteScan))
-	mux.HandleFunc("GET /api/prompts", s.listPrompts)
+	mux.HandleFunc("GET /api/prompts", s.needs(store.RoleOperator, s.listPrompts))
 	mux.HandleFunc("GET /api/activity", s.listActivity)
 	mux.HandleFunc("GET /api/scans/{id}/events", s.scanEvents)
 	mux.HandleFunc("POST /api/scans/{id}/respond", s.needs(store.RoleOperator, s.respond))

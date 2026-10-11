@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Plus, RadioTower } from "lucide-react";
+import { useCan } from "../lib/role";
 import { api, type EnrollmentToken, type NewEnrollmentToken } from "../api";
 import {
   Button,
@@ -23,7 +24,8 @@ import { ThisServerBadge, agentOnline } from "../lib/hosts";
 
 export function Agents() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const enrolling = searchParams.get("enroll") === "1";
+  const canEnroll = useCan("admin");
+  const enrolling = canEnroll && searchParams.get("enroll") === "1";
   const setEnrolling = (open: boolean) => setSearchParams(open ? { enroll: "1" } : {}, { replace: true });
   const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
 
@@ -49,21 +51,24 @@ export function Agents() {
         title="Agents"
         description="Machines running the DeaconGuard agent. Each enrolls once with a one-time token, then waits for scans from this server."
         action={
-          <Button onClick={() => setEnrolling(true)}>
-            <Plus className="size-4" /> Enroll a machine
-          </Button>
+          canEnroll && (
+            <Button onClick={() => setEnrolling(true)}>
+              <Plus className="size-4" /> Enroll a machine
+            </Button>
+          )
         }
       />
       <div className="space-y-6">
-        <AgentList onEnroll={() => setEnrolling(true)} />
-        <TokenList />
+        <AgentList onEnroll={canEnroll ? () => setEnrolling(true) : undefined} />
+        {/* Tokens let anyone enroll a machine, so only admins see them. */}
+        {canEnroll && <TokenList />}
       </div>
       <EnrollDialog open={enrolling} onClose={() => setEnrolling(false)} />
     </>
   );
 }
 
-function AgentList({ onEnroll }: { onEnroll: () => void }) {
+function AgentList({ onEnroll }: { onEnroll?: () => void }) {
   const { data, error, isPending } = useQuery({ queryKey: ["hosts"], queryFn: api.hosts, refetchInterval: 15_000 });
   const agents = data?.filter((host) => host.transport === "agent") ?? [];
   return (
@@ -79,11 +84,17 @@ function AgentList({ onEnroll }: { onEnroll: () => void }) {
         <EmptyState
           icon={<RadioTower className="size-6" />}
           title="No agents yet"
-          description="Create a one-time token, then run the enroll command it shows on the machine you want to scan."
+          description={
+            onEnroll
+              ? "Create a one-time token, then run the enroll command it shows on the machine you want to scan."
+              : "An admin enrolls machines with a one-time token."
+          }
           action={
-            <Button onClick={onEnroll}>
-              <Plus className="size-4" /> Enroll a machine
-            </Button>
+            onEnroll && (
+              <Button onClick={onEnroll}>
+                <Plus className="size-4" /> Enroll a machine
+              </Button>
+            )
           }
         />
       ) : (
@@ -256,7 +267,12 @@ function TokenList() {
 
 function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [serverUrl, setServerUrl] = useState(window.location.origin);
+  const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
+  // With a port only for agents, tokens point there, not at the dashboard's port.
+  const agentPort = capabilities.data?.agent_port;
+  const [edited, setEdited] = useState<string | null>(null);
+  const serverUrl = edited ?? (agentPort ? `${window.location.protocol}//${window.location.hostname}:${agentPort}` : window.location.origin);
+  const setServerUrl = setEdited;
   const [created, setCreated] = useState<NewEnrollmentToken | null>(null);
   const create = useMutation({
     mutationFn: () => api.createEnrollmentToken(serverUrl),
@@ -320,7 +336,11 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
           </p>
           <Field
             label="Server address the machine will connect to"
-            hint="Must be reachable from the machine. Change it if agents reach this server by another name or address."
+            hint={
+              agentPort
+                ? `This server takes agents on port ${agentPort}, apart from the dashboard. It must be reachable from the machine; change the name or address if agents reach this server another way.`
+                : "Must be reachable from the machine. Change it if agents reach this server by another name or address."
+            }
             value={serverUrl}
             onChange={(event) => setServerUrl(event.target.value)}
             required
