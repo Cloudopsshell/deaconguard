@@ -199,8 +199,8 @@ export function Accounts() {
         </Card>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Lost access? Another admin can set a temporary password or reset two-step sign-in here. If you are the only admin, run{" "}
-          <code className="font-mono text-xs">sudo deaconguard user passwd NAME</code> or{" "}
-          <code className="font-mono text-xs">sudo deaconguard user mfa-reset NAME</code> on the server.
+          <code className="font-mono text-xs">sudo -u deaconguard deaconguard user passwd NAME</code> or{" "}
+          <code className="font-mono text-xs">sudo -u deaconguard deaconguard user mfa-reset NAME</code> on the server.
         </p>
       </div>
 
