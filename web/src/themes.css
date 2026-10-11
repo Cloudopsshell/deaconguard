@@ -1,0 +1,100 @@
+/* Themes swap the accent (indigo) and gray (slate) palettes. Severity colors never change. Generated from Tailwind's palette. */
+:root[data-theme="ocean"] {
+  --color-indigo-50: oklch(97% 0.014 254.604);
+  --color-indigo-100: oklch(93.2% 0.032 255.585);
+  --color-indigo-200: oklch(88.2% 0.059 254.128);
+  --color-indigo-300: oklch(80.9% 0.105 251.813);
+  --color-indigo-400: oklch(70.7% 0.165 254.624);
+  --color-indigo-500: oklch(62.3% 0.214 259.815);
+  --color-indigo-600: oklch(54.6% 0.245 262.881);
+  --color-indigo-700: oklch(48.8% 0.243 264.376);
+  --color-indigo-800: oklch(42.4% 0.199 265.638);
+  --color-indigo-900: oklch(37.9% 0.146 265.522);
+  --color-indigo-950: oklch(28.2% 0.091 267.935);
+}
+:root[data-theme="teal"] {
+  --color-indigo-50: oklch(98.4% 0.014 180.72);
+  --color-indigo-100: oklch(95.3% 0.051 180.801);
+  --color-indigo-200: oklch(91% 0.096 180.426);
+  --color-indigo-300: oklch(85.5% 0.138 181.071);
+  --color-indigo-400: oklch(77.7% 0.152 181.912);
+  --color-indigo-500: oklch(70.4% 0.14 182.503);
+  --color-indigo-600: oklch(60% 0.118 184.704);
+  --color-indigo-700: oklch(51.1% 0.096 186.391);
+  --color-indigo-800: oklch(43.7% 0.078 188.216);
+  --color-indigo-900: oklch(38.6% 0.063 188.416);
+  --color-indigo-950: oklch(27.7% 0.046 192.524);
+  --color-slate-50: oklch(98.5% 0 none);
+  --color-slate-100: oklch(96.7% 0.001 286.375);
+  --color-slate-200: oklch(92% 0.004 286.32);
+  --color-slate-300: oklch(87.1% 0.006 286.286);
+  --color-slate-400: oklch(70.5% 0.015 286.067);
+  --color-slate-500: oklch(55.2% 0.016 285.938);
+  --color-slate-600: oklch(44.2% 0.017 285.786);
+  --color-slate-700: oklch(37% 0.013 285.805);
+  --color-slate-800: oklch(27.4% 0.006 286.033);
+  --color-slate-900: oklch(21% 0.006 285.885);
+  --color-slate-950: oklch(14.1% 0.005 285.823);
+}
+:root[data-theme="plum"] {
+  --color-indigo-50: oklch(97.7% 0.014 308.299);
+  --color-indigo-100: oklch(94.6% 0.033 307.174);
+  --color-indigo-200: oklch(90.2% 0.063 306.703);
+  --color-indigo-300: oklch(82.7% 0.119 306.383);
+  --color-indigo-400: oklch(71.4% 0.203 305.504);
+  --color-indigo-500: oklch(62.7% 0.265 303.9);
+  --color-indigo-600: oklch(55.8% 0.288 302.321);
+  --color-indigo-700: oklch(49.6% 0.265 301.924);
+  --color-indigo-800: oklch(43.8% 0.218 303.724);
+  --color-indigo-900: oklch(38.1% 0.176 304.987);
+  --color-indigo-950: oklch(29.1% 0.149 302.717);
+  --color-slate-50: oklch(98.5% 0.001 106.423);
+  --color-slate-100: oklch(97% 0.001 106.424);
+  --color-slate-200: oklch(92.3% 0.003 48.717);
+  --color-slate-300: oklch(86.9% 0.005 56.366);
+  --color-slate-400: oklch(70.9% 0.01 56.259);
+  --color-slate-500: oklch(55.3% 0.013 58.071);
+  --color-slate-600: oklch(44.4% 0.011 73.639);
+  --color-slate-700: oklch(37.4% 0.01 67.558);
+  --color-slate-800: oklch(26.8% 0.007 34.298);
+  --color-slate-900: oklch(21.6% 0.006 56.043);
+  --color-slate-950: oklch(14.7% 0.004 49.25);
+}
+:root[data-theme="graphite"] {
+  --color-indigo-50: oklch(96.7% 0.001 286.375);
+  --color-indigo-100: oklch(92% 0.004 286.32);
+  --color-indigo-200: oklch(87.1% 0.006 286.286);
+  --color-indigo-300: oklch(70.5% 0.015 286.067);
+  --color-indigo-400: oklch(55.2% 0.016 285.938);
+  --color-indigo-500: oklch(37% 0.013 285.805);
+  --color-indigo-600: oklch(27.4% 0.006 286.033);
+  --color-indigo-700: oklch(21% 0.006 285.885);
+  --color-indigo-800: oklch(21% 0.006 285.885);
+  --color-indigo-900: oklch(14.1% 0.005 285.823);
+  --color-indigo-950: oklch(14.1% 0.005 285.823);
+  --color-slate-50: oklch(98.5% 0 none);
+  --color-slate-100: oklch(97% 0 none);
+  --color-slate-200: oklch(92.2% 0 none);
+  --color-slate-300: oklch(87% 0 none);
+  --color-slate-400: oklch(70.8% 0 none);
+  --color-slate-500: oklch(55.6% 0 none);
+  --color-slate-600: oklch(43.9% 0 none);
+  --color-slate-700: oklch(37.1% 0 none);
+  --color-slate-800: oklch(26.9% 0 none);
+  --color-slate-900: oklch(20.5% 0 none);
+  --color-slate-950: oklch(14.5% 0 none);
+}
+/* Graphite in dark mode: links and accent text stay bright on dark backgrounds. */
+:root[data-theme="graphite"][data-mode="dark"] {
+  --color-indigo-50: oklch(96.7% 0.001 286.375);
+  --color-indigo-100: oklch(92% 0.004 286.32);
+  --color-indigo-200: oklch(87.1% 0.006 286.286);
+  --color-indigo-300: oklch(96.7% 0.001 286.375);
+  --color-indigo-400: oklch(92% 0.004 286.32);
+  --color-indigo-500: oklch(44.2% 0.017 285.786);
+  --color-indigo-600: oklch(37% 0.013 285.805);
+  --color-indigo-700: oklch(37% 0.013 285.805);
+  --color-indigo-800: oklch(27.4% 0.006 286.033);
+  --color-indigo-900: oklch(21% 0.006 285.885);
+  --color-indigo-950: oklch(14.1% 0.005 285.823);
+}

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
-import { CalendarClock, CircleUser, LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server, ShieldAlert, Users, X } from "lucide-react";
+import { CalendarClock, CircleUser, Palette, LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server, ShieldAlert, Users, X } from "lucide-react";
 import { Logo } from "./Logo";
 import { PromptDialog } from "./PromptDialog";
 import { RestartNotice } from "./RestartNotice";
@@ -8,7 +8,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type Session } from "../api";
 import { ChangePassword } from "./account/ChangePassword";
 import { MFASetup } from "./account/MFASetup";
-import { Card, Loading, cx } from "./ui";
+import { AppearancePicker, ModeSwitch } from "./AppearancePicker";
+import { Card, Dialog, Loading, cx } from "./ui";
 
 const navigation = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -155,6 +156,26 @@ function SignedInAs({ session }: { session: Session }) {
   );
 }
 
+/** Light, dark or system mode in one click; the palette opens the themes too. */
+function AppearanceControls() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="hidden items-center justify-between gap-2 px-5 pt-4 lg:flex">
+      <ModeSwitch compact />
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+      >
+        <Palette className="size-4" aria-hidden /> Theme
+      </button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Appearance" wide>
+        <AppearancePicker />
+      </Dialog>
+    </div>
+  );
+}
+
 function VersionLabel() {
   const { data } = useQuery({ queryKey: ["version"], queryFn: api.version, staleTime: Infinity });
   if (!data) return null;
@@ -227,6 +248,7 @@ export function Layout() {
           ))}
         </nav>
         {signedIn?.username && <SignedInAs session={signedIn} />}
+        <AppearanceControls />
         <p className="hidden px-5 pt-6 text-xs leading-relaxed text-slate-400 lg:block">
           {network
             ? "Server · checks what its agents, this machine's included, read as root against official distribution advisories."
