@@ -5,6 +5,7 @@ import { api } from "../api";
 import { ChangePassword } from "../components/account/ChangePassword";
 import { MFASetup } from "../components/account/MFASetup";
 import { RecoveryCodes } from "../components/account/RecoveryCodes";
+import { AppearancePicker } from "../components/AppearancePicker";
 import { Button, Card, CardHeader, Dialog, ErrorMessage, Field, Loading, PageHeader } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
 
@@ -101,6 +102,13 @@ export function Account() {
           <div className="px-5 py-5">
             {passwordChanged && <p className="mb-4 text-sm text-emerald-700 dark:text-emerald-400">Password changed. Your other sessions were signed out.</p>}
             <ChangePassword onDone={() => (setPasswordChanged(true), refresh())} />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Appearance" description="Saved in this browser. Everyone chooses their own." />
+          <div className="px-5 py-5">
+            <AppearancePicker />
           </div>
         </Card>
 
