@@ -402,6 +402,7 @@ Web UI and server:
   deaconguard serve --listen 0.0.0.0:8443 [--tls-cert FILE --tls-key FILE]
                                        server: HTTPS dashboard with sign-in, agents enroll
   deaconguard user add|passwd USERNAME [--password-stdin]
+  deaconguard user mfa-reset USERNAME   turn off two-step sign-in, for a lost phone
   deaconguard user list | remove USERNAME
   deaconguard token create --server-url https://HOST:8443   one-time agent token, valid 24 hours
 

@@ -8,6 +8,29 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-11
+
+### Added
+
+- **Two-step sign-in.** After the password, the dashboard asks for a 6-digit code from an authenticator app, so a stolen password alone can't sign in. Any app with time-based codes (TOTP) works: Google or Microsoft Authenticator, Bitwarden, 1Password, Proton Pass, Apple Passwords, Ente Auth, 2FAS, Aegis and others. Setup shows a QR code and the key, and ends with 10 one-time **recovery codes** for a lost phone. A code works once.
+- **A reminder until it is on.** Every page shows a banner while your account has no two-step sign-in, and the sidebar marks your account; hiding the banner lasts until the next sign-in. With 2 or fewer recovery codes left, it reminds you to create new ones.
+- **Require two-step sign-in** for every account, on the new **Accounts** page. Anyone without it sets it up right after signing in, before using the dashboard. It can only be turned on once your own account has it.
+- **My account:** change your password, set up two-step sign-in, move it to a new phone, create new recovery codes or turn it off, and see every session signed in to your account, with its browser, address and last use; sign out one, or all others.
+- **Accounts** page for admins: every account with its two-step sign-in status and last sign-in. Create an account with a temporary password, which the person must change at their first sign-in; set a new temporary password; reset two-step sign-in for a lost phone; disable, enable or remove an account. You change your own account on My account, so you can't lock yourself out, and the last account that can sign in can't be disabled or removed.
+- `deaconguard user mfa-reset USERNAME`, for a lost phone when no other admin can reset it. `deaconguard user list` shows two-step sign-in status, recovery codes left, disabled accounts and temporary passwords.
+- Every account change is recorded in the audit log, and sign-ins say whether they used the authenticator app or a recovery code.
+- New docs: [Accounts and sign-in](https://docs.deaconguard.io/usage/accounts) and [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard): keep port 8443 off the internet with a firewall, VPN, Tailscale, an SSH tunnel, AWS Systems Manager or an identity-aware proxy.
+
+### Changed
+
+- **Upgrading:** the database gains two-step sign-in, account and session fields (schema 10). Existing accounts and sessions keep working; two-step sign-in is off until each account turns it on.
+- Changing your password signs out your other sessions. A disabled account is signed out and can't sign in.
+- There is still no password reset by email, on purpose: another admin resets access, or the command line on the server.
+
+### Fixed
+
+- On narrow screens, a table with a screen-reader-only column heading could widen the whole page.
+
 ## [0.9.2] - 2026-10-11
 
 ### Fixed
@@ -253,7 +276,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.8.1...v0.9.0

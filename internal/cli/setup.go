@@ -339,7 +339,7 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 		state = serverAgentFailed
 	}
 	describeServerMachine(output, port, state)
-	fmt.Fprintf(output, "\nAdd other machines on the dashboard's Agents page. Only allow port %s from the\nnetworks of your administrators and agents.\n", port)
+	fmt.Fprintf(output, "\nAdd other machines on the dashboard's Agents page, and turn on two-step sign-in\nunder My account. Don't expose port %s to the internet: only allow it from the\nnetworks of your administrators and agents. See\nhttps://docs.deaconguard.io/security/securing-the-dashboard\n", port)
 	return nil
 }
 
