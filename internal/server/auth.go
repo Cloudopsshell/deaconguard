@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -131,6 +133,10 @@ type sessionResponse struct {
 	// MFAEnabled and RecoveryCodesLeft drive the dashboard's reminders.
 	MFAEnabled        bool `json:"mfa_enabled"`
 	RecoveryCodesLeft int  `json:"recovery_codes_left"`
+	// Role decides what the dashboard offers; the server checks it on every request.
+	Role string `json:"role,omitempty"`
+	// Appearance is the account's saved mode and theme, if it chose one.
+	Appearance json.RawMessage `json:"appearance,omitempty"`
 }
 
 // sessionFor describes a signed-in account to the dashboard.
@@ -143,7 +149,38 @@ func (s *Server) sessionFor(user store.User) (sessionResponse, error) {
 		LoginRequired: true, Authenticated: true, Username: user.Username,
 		MustChangePassword: user.MustChangePassword, MFASetupRequired: required && !user.MFAEnabled,
 		MFAEnabled: user.MFAEnabled, RecoveryCodesLeft: user.RecoveryCodesLeft,
+		Role: user.Role, Appearance: appearanceJSON(user.Appearance),
 	}, nil
+}
+
+// needs lets only accounts with at least role through. Local mode has no
+// accounts, so everything is allowed there.
+func (s *Server) needs(role string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.network {
+			next(w, r)
+			return
+		}
+		user, _, ok := currentUser(r)
+		if !ok || !store.RoleAllows(user.Role, role) {
+			writeError(w, http.StatusForbidden, fmt.Errorf("your role, %s, can't do this; it needs %s. Ask an administrator", roleName(user.Role), roleName(role)))
+			return
+		}
+		next(w, r)
+	}
+}
+
+// roleName is a role as the dashboard names it.
+func roleName(role string) string {
+	switch role {
+	case store.RoleAdmin:
+		return "Admin"
+	case store.RoleOperator:
+		return "Operator"
+	case store.RoleViewer:
+		return "Viewer"
+	}
+	return "none"
 }
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
