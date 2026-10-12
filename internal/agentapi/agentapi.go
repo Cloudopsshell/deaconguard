@@ -213,6 +213,36 @@ func SupportsYARA(version string) bool {
 	return major > 0 || minor >= 5
 }
 
+// checkSince is the agent minor version (0.x) that added each check that
+// older agents don't have.
+var checkSince = map[string]int{"yara": 5, "hardening": 12}
+
+// SupportsCheck reports whether an agent of version runs check. Builds
+// without a release version, such as "dev", are assumed to.
+func SupportsCheck(version, check string) bool {
+	since, limited := checkSince[check]
+	if !limited {
+		return true
+	}
+	var major, minor int
+	if _, err := fmt.Sscanf(version, "%d.%d.", &major, &minor); err != nil {
+		return version != ""
+	}
+	return major > 0 || minor >= since
+}
+
+// ErrAgentTooOld explains why a check was refused for an agent.
+func ErrAgentTooOld(address, version, check string) error {
+	if check == "yara" {
+		return ErrNeedsNewerAgent(address, version)
+	}
+	if version == "" {
+		version = "an unknown version"
+	}
+	return fmt.Errorf("the hardening audit needs the DeaconGuard agent 0.%d.0 or later on %s, which runs %s; "+
+		"upgrade it there with: curl -fsSL https://get.deaconguard.io | sudo sh -", checkSince[check], address, version)
+}
+
 // ErrNeedsNewerAgent explains why an advanced scan was refused for an agent.
 func ErrNeedsNewerAgent(address, version string) error {
 	if version == "" {

@@ -181,6 +181,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 12 {
+		if err := execInTx(db, schemaV12); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -437,6 +442,23 @@ ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin';
 ALTER TABLE users ADD COLUMN appearance TEXT NOT NULL DEFAULT '';
 ALTER TABLE agents ADD COLUMN port TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 11;`
+
+// schemaV12 adds handover audits: scans marked as audits, and the risks
+// admins accepted for a host or for every host.
+const schemaV12 = `
+ALTER TABLE scans ADD COLUMN audit INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX scans_audit ON scans (audit, started_at);
+CREATE TABLE audit_exceptions (
+	id         TEXT PRIMARY KEY,
+	host_id    TEXT NOT NULL DEFAULT '',
+	control_id TEXT NOT NULL,
+	reason     TEXT NOT NULL,
+	expires_at TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE INDEX audit_exceptions_host ON audit_exceptions (host_id);
+PRAGMA user_version = 12;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

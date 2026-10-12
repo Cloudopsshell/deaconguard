@@ -39,6 +39,8 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runHost(arguments[1:], output)
 	case "scan":
 		err = runScan(arguments[1:], input, output, diagnostics)
+	case "audit":
+		err = runAudit(arguments[1:], output, diagnostics)
 	case "report":
 		err = runReport(arguments[1:], output)
 	case "serve":
@@ -179,7 +181,7 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			continue
 		}
 		if index+1 >= len(arguments) {
-			return fmt.Errorf("--checks requires a comma-separated list such as packages,integrity,malware,config,antivirus (add yara for the advanced antivirus scan)")
+			return fmt.Errorf("--checks requires a comma-separated list such as packages,integrity,malware,config,hardening,antivirus (add yara for the advanced antivirus scan)")
 		}
 		index++
 		selected = strings.Split(arguments[index], ",")
@@ -383,10 +385,14 @@ Scanning:
   deaconguard host list
   deaconguard host sudo HOST_ID on|off
   deaconguard host remove HOST_ID        for an agent host, also revokes its agent
-  deaconguard scan HOST_ID [--checks packages,integrity,malware,config,antivirus,yara] [--json]
+  deaconguard scan HOST_ID [--checks packages,integrity,malware,config,hardening,antivirus,yara] [--json]
                                        yara is the advanced antivirus scan; it runs ClamAV too
   deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   deaconguard report REPORT_ID [--json]
+  deaconguard audit HOST_ID [--advanced] [--json]
+                                       handover audit: every check, the hardening baseline,
+                                       and a grade; --advanced adds the YARA antivirus scan
+  deaconguard audit --local [--allow-sudo] [--advanced] [--json]   audit this machine
 
 Setup (as root, after installing the .deb or .rpm; install.sh runs these):
   deaconguard setup server [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT|off]

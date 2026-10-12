@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
-import { CalendarClock, CircleUser, Palette, LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server, ShieldAlert, Users, X } from "lucide-react";
+import { CalendarClock, CircleUser, ClipboardCheck, Palette, LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server, ShieldAlert, Users, X } from "lucide-react";
 import { Logo } from "./Logo";
 import { PromptDialog } from "./PromptDialog";
 import { RestartNotice } from "./RestartNotice";
@@ -15,6 +15,7 @@ import { Card, Dialog, Loading, cx } from "./ui";
 const navigation = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/hosts", label: "Hosts", icon: Server, end: false },
+  { to: "/audits", label: "Server audits", icon: ClipboardCheck, end: false },
   { to: "/agents", label: "Agents", icon: RadioTower, end: false },
   { to: "/schedules", label: "Schedules", icon: CalendarClock, end: false },
   { to: "/logs", label: "Logs", icon: Logs, end: false },
