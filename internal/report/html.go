@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,9 +17,16 @@ import (
 //go:embed templates/report.html.tmpl
 var templates embed.FS
 
-// maxListedVulnerabilities bounds how many vulnerabilities without a fix the
-// PDF and HTML list; the other formats have them all.
-const maxListedVulnerabilities = 200
+// Waiting groups, by package, the vulnerabilities no update fixes yet. The
+// PDF and HTML list fixable ones one by one and these by package, so a
+// report stays readable; Excel, CSV and JSON have every one.
+type Waiting struct {
+	Package   string
+	Installed string
+	Count     int
+	Severity  string
+	Fix       string
+}
 
 // Link is a download offered at the top of a shared report.
 type Link struct {
@@ -28,16 +36,16 @@ type Link struct {
 
 // view is what the HTML and PDF reports show, worked out once.
 type view struct {
-	R                   Report
-	Fingerprint         string
-	Logo                template.URL
-	Generated, Scanned  string
-	CheckNames          string
-	Failed, Accepted    []audit.Control
-	Passed, Other       []audit.Control
-	Vulnerabilities     []Vulnerability
-	MoreVulnerabilities int
-	Downloads           []Link
+	R                  Report
+	Fingerprint        string
+	Logo               template.URL
+	Generated, Scanned string
+	CheckNames         string
+	Failed, Accepted   []audit.Control
+	Passed, Other      []audit.Control
+	Vulnerabilities    []Vulnerability
+	Waiting            []Waiting
+	Downloads          []Link
 }
 
 func newView(report Report, fingerprint string) view {
@@ -69,17 +77,38 @@ func newView(report Report, fingerprint string) view {
 			}
 		}
 	}
-	waiting := 0
+	groups := map[string]*Waiting{}
+	var order []string
 	for _, vulnerability := range report.Vulnerabilities {
-		if actionable(vulnerability.Fix) || waiting < maxListedVulnerabilities {
-			if !actionable(vulnerability.Fix) {
-				waiting++
-			}
+		if actionable(vulnerability.Fix) {
 			v.Vulnerabilities = append(v.Vulnerabilities, vulnerability)
 			continue
 		}
-		v.MoreVulnerabilities++
+		key := vulnerability.Package + " " + vulnerability.Installed + " " + vulnerability.Fix
+		group := groups[key]
+		if group == nil {
+			group = &Waiting{Package: vulnerability.Package, Installed: vulnerability.Installed, Severity: vulnerability.Severity, Fix: vulnerability.Fix}
+			groups[key] = group
+			order = append(order, key)
+		}
+		group.Count++
+		if rank(vulnerability.Severity) < rank(group.Severity) {
+			group.Severity = vulnerability.Severity
+		}
 	}
+	for _, key := range order {
+		v.Waiting = append(v.Waiting, *groups[key])
+	}
+	sort.Slice(v.Waiting, func(a, b int) bool {
+		left, right := v.Waiting[a], v.Waiting[b]
+		if rank(left.Severity) != rank(right.Severity) {
+			return rank(left.Severity) < rank(right.Severity)
+		}
+		if left.Count != right.Count {
+			return left.Count > right.Count
+		}
+		return left.Package < right.Package
+	})
 	return v
 }
 
@@ -159,4 +188,12 @@ func HTML(report Report, fingerprint string, downloads ...Link) ([]byte, error) 
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+// rank orders severities, most severe first; unknown ones come last.
+func rank(severity string) int {
+	if value, known := severityRank[severity]; known {
+		return value
+	}
+	return len(severityRank)
 }

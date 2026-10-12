@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, ChevronRight, Info, Loader2 } from "lucide-react";
 import { api, type AuditControl, type AuditDetail, type AuditSummary, type Inventory } from "../api";
 import { Button, Card, CardHeader, Dialog, ErrorMessage, Field, Loading, SeverityBadge, StatusBadge, cx } from "../components/ui";
+import { ReportsPanel } from "../components/ReportsPanel";
 import { ControlStatusBadge, GradeBadge, formatBytes, formatUptime } from "../lib/audit";
 import { checkStatusStyle } from "../lib/checks";
 import { dateTime, isActive, normalizeSeverity } from "../lib/format";
@@ -167,6 +168,7 @@ function AuditResult({ detail, summary }: { detail: AuditDetail; summary: AuditS
         </Card>
       </div>
 
+      <AuditReports detail={detail} />
       <Controls detail={detail} summary={summary} />
       {summary.inventory && <InventoryCard inventory={summary.inventory} />}
     </div>
@@ -465,4 +467,13 @@ function InventoryCard({ inventory }: { inventory: Inventory }) {
       </div>
     </Card>
   );
+}
+
+/** Reports of this audit, offering to compare with the host's earlier audits. */
+function AuditReports({ detail }: { detail: AuditDetail }) {
+  const audits = useQuery({ queryKey: ["audits", detail.host.id], queryFn: () => api.auditList(detail.host.id) });
+  const list = audits.data ?? [];
+  const index = list.findIndex((item) => item.id === detail.scan.id);
+  const earlier = index >= 0 ? list.slice(index + 1).filter((item) => item.status === "succeeded") : [];
+  return <ReportsPanel scan={detail.scan} earlierAudits={earlier} />;
 }

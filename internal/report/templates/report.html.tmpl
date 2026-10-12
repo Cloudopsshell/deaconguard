@@ -116,12 +116,18 @@
 {{if .R.Packages}}
 <h2>Vulnerabilities</h2>
 {{if .R.Vulnerabilities}}
-<p class="meta">From the distribution's own security advisories. Those an update or a restart fixes come first.</p>
+<p class="meta">From the distribution's own security advisories.</p>
+{{if .Vulnerabilities}}<h3>Fixed by an update or a restart ({{len .Vulnerabilities}})</h3>
 <table>
   <thead><tr><th>CVE</th><th>Package</th><th>Installed</th><th>Fixed in</th><th>Severity</th><th>What clears it</th></tr></thead>
   <tbody>{{range .Vulnerabilities}}<tr><td>{{.ID}}</td><td>{{.Package}}</td><td>{{.Installed}}</td><td>{{.Fixed}}</td><td><span class="pill s-{{.Severity}}">{{.Severity}}</span></td><td>{{fix .Fix}}</td></tr>{{end}}</tbody>
-</table>
-{{if .MoreVulnerabilities}}<p class="meta">{{.MoreVulnerabilities}} more without a fix from the distribution are in the CSV, Excel and JSON versions of this report.</p>{{end}}
+</table>{{else}}<p>Nothing an update or a restart would fix.</p>{{end}}
+{{if .Waiting}}<h3>Waiting on the distribution, by package ({{len .Waiting}} packages)</h3>
+<p class="meta">Updating can't fix these yet. The CSV, Excel and JSON versions list every CVE.</p>
+<table>
+  <thead><tr><th>Package</th><th>Installed</th><th class="num">CVEs</th><th>Highest severity</th><th>What clears it</th></tr></thead>
+  <tbody>{{range .Waiting}}<tr><td>{{.Package}}</td><td>{{.Installed}}</td><td class="num">{{.Count}}</td><td><span class="pill s-{{.Severity}}">{{.Severity}}</span></td><td>{{fix .Fix}}</td></tr>{{end}}</tbody>
+</table>{{end}}
 {{else}}<p>No vulnerable packages were found.</p>{{end}}
 {{end}}
 
