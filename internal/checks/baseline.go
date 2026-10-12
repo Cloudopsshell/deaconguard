@@ -810,5 +810,14 @@ func mountHas(mountPoint string, options ...string) func(*machine) (string, stri
 	}
 }
 
+// BaselineIDs lists the baseline's control IDs.
+func BaselineIDs() []string {
+	ids := make([]string, len(baseline))
+	for index, control := range baseline {
+		ids[index] = control.id
+	}
+	return ids
+}
+
 // BaselineSize is how many controls the baseline has.
 func BaselineSize() int { return len(baseline) }
