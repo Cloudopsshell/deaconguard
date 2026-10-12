@@ -198,19 +198,23 @@ func (s *Server) downloadLogs(w http.ResponseWriter, r *http.Request) {
 // entry per account in this time, however often the page refreshes.
 const logViewAuditInterval = 15 * time.Minute
 
-var logViews = struct {
+// logViews remembers when each account's view of the log was last audited.
+type logViews struct {
 	sync.Mutex
 	last map[string]time.Time
-}{last: make(map[string]time.Time)}
+}
 
 func (s *Server) auditLogView(r *http.Request) {
 	actor := s.actor(r)
-	logViews.Lock()
-	recent := time.Since(logViews.last[actor]) < logViewAuditInterval
-	if !recent {
-		logViews.last[actor] = time.Now()
+	s.logViews.Lock()
+	if s.logViews.last == nil {
+		s.logViews.last = make(map[string]time.Time)
 	}
-	logViews.Unlock()
+	recent := time.Since(s.logViews.last[actor]) < logViewAuditInterval
+	if !recent {
+		s.logViews.last[actor] = time.Now()
+	}
+	s.logViews.Unlock()
 	if !recent {
 		s.audit(r, "logs.view", "", "")
 	}
