@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"deaconguard/internal/buildinfo"
+	"deaconguard/internal/compliance"
 	"deaconguard/internal/report"
 	"deaconguard/internal/store"
 )
@@ -35,6 +36,8 @@ type createReportRequest struct {
 	// CompareWith is an earlier audit of the same host, "previous" for the
 	// one before this, or empty for none.
 	CompareWith string `json:"compare_with"`
+	// Frameworks to include a compliance mapping for, such as pci-dss-4.
+	Frameworks []string `json:"frameworks"`
 }
 
 // createReport freezes an audit or scan as a report, which every download
@@ -77,7 +80,13 @@ func (s *Server) createReport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	source := report.Source{ID: id, Scan: scan, Host: host, Report: raw, Client: request.Client, Notes: request.Notes, By: s.actor(r),
+	for _, framework := range request.Frameworks {
+		if _, known := compliance.Find(framework); !known {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("unknown framework %q", framework))
+			return
+		}
+	}
+	source := report.Source{ID: id, Scan: scan, Host: host, Report: raw, Client: request.Client, Notes: request.Notes, By: s.actor(r), Frameworks: request.Frameworks,
 		Now: time.Now(), Version: buildinfo.Version,
 		Branding: report.Branding{Company: branding.Company, Contact: branding.Contact, Logo: branding.Logo, LogoType: branding.LogoType}}
 	if scan.Audit {
