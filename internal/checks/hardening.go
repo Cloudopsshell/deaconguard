@@ -57,9 +57,9 @@ type Inventory struct {
 }
 
 type Disk struct {
-	Mount      string `json:"mount"`
-	SizeBytes  int64  `json:"size_bytes"`
-	UsedBytes  int64  `json:"used_bytes"`
+	Mount       string `json:"mount"`
+	SizeBytes   int64  `json:"size_bytes"`
+	UsedBytes   int64  `json:"used_bytes"`
 	UsedPercent int    `json:"used_percent"`
 }
 

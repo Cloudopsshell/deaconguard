@@ -127,13 +127,15 @@ type Scan struct {
 	Checks []string `json:"checks"`
 	// HasLog reports whether the scan's activity log was saved.
 	HasLog bool `json:"has_log"`
+	// Audit marks a handover audit: every check, graded together.
+	Audit bool `json:"audit"`
 }
 
 // CheckPackages is the package vulnerability check every earlier scan ran.
 const CheckPackages = "packages"
 
 const scanColumns = `id, host_id, address, status, error, started_at, finished_at, os,
-	finding_count, unsupported_count, critical, high, medium, low, unknown, feed_stale, checks, events_json IS NOT NULL, fix_summary`
+	finding_count, unsupported_count, critical, high, medium, low, unknown, feed_stale, checks, events_json IS NOT NULL, fix_summary, audit`
 
 func encodeChecks(checks []string) string { return "," + strings.Join(checks, ",") + "," }
 
@@ -154,7 +156,7 @@ func scanScan(row rowScanner) (Scan, error) {
 	var checks, fixSummary string
 	err := row.Scan(&scan.ID, &scan.HostID, &scan.Address, &scan.Status, &scan.Error, &scan.StartedAt, &finishedAt, &scan.OS, &scan.FindingCount, &scan.UnsupportedCount,
 		&scan.Severity.Critical, &scan.Severity.High, &scan.Severity.Medium, &scan.Severity.Low, &scan.Severity.Unknown,
-		&feedStale, &checks, &scan.HasLog, &fixSummary)
+		&feedStale, &checks, &scan.HasLog, &fixSummary, &scan.Audit)
 	if err != nil {
 		return Scan{}, err
 	}
@@ -344,7 +346,8 @@ func PruneScans(hostID string, keep int) (int, error) {
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	rows, err = tx.Query(`SELECT id, status FROM scans WHERE host_id = ? ORDER BY started_at DESC, rowid DESC`, hostID)
+	// Audits are handover records: they are kept until someone deletes them.
+	rows, err = tx.Query(`SELECT id, status FROM scans WHERE host_id = ? AND audit = 0 ORDER BY started_at DESC, rowid DESC`, hostID)
 	if err != nil {
 		return 0, err
 	}
