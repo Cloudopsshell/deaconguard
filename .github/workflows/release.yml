@@ -9,6 +9,8 @@ permissions:
   contents: write
   # Keyless cosign signing proves the release came from this workflow.
   id-token: write
+  # The container image and Helm chart are published to GHCR.
+  packages: write
 
 jobs:
   release:
@@ -83,7 +85,20 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
 
-      - name: Release binaries, DEB, and RPM packages
+      # ko and cosign read registry logins from $DOCKER_CONFIG. The runner has
+      # no Docker, so the login is written directly, for this job only.
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/docker"
+          mkdir -p "$DOCKER_CONFIG"
+          auth=$(printf '%s:%s' "$GITHUB_ACTOR" "$GH_TOKEN" | base64 | tr -d '\n')
+          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$auth" > "$DOCKER_CONFIG/config.json"
+          chmod 600 "$DOCKER_CONFIG/config.json"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+
+      - name: Release binaries, DEB and RPM packages, and the container image
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
@@ -94,12 +109,37 @@ jobs:
           # may pick the candidate's tag and upload to the wrong release.
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
-      - name: Check the published signature
+      - name: Check the published signatures
         run: |
+          identity="${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}"
           cosign verify-blob dist/checksums.txt \
             --bundle dist/checksums.txt.sigstore.json \
-            --certificate-identity "${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}" \
+            --certificate-identity "$identity" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          cosign verify "ghcr.io/cloudopsshell/deaconguard:${{ steps.version.outputs.version }}" \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+
+      # The chart's appVersion and default image tag are the release's version.
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Publish the Helm chart
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          helm lint deploy/helm/deaconguard
+          helm package deploy/helm/deaconguard --version "$version" --app-version "$version" --destination "$RUNNER_TEMP/chart"
+          pushed=$(helm push "$RUNNER_TEMP/chart/deaconguard-$version.tgz" oci://ghcr.io/cloudopsshell/charts 2>&1 | tee /dev/stderr)
+          digest=$(printf '%s\n' "$pushed" | sed -n 's/^Digest: //p')
+          cosign sign --yes "ghcr.io/cloudopsshell/charts/deaconguard@$digest"
+          helm registry logout ghcr.io
+
+      - name: Log out of GHCR
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/docker"
 
       - name: Check the release notes were published
         env:

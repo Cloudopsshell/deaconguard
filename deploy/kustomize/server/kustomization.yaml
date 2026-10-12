@@ -1,0 +1,20 @@
+# The DeaconGuard server: https://docs.deaconguard.io/installation/kubernetes
+#
+#   kubectl create namespace deaconguard
+#   kubectl -n deaconguard create secret generic deaconguard-admin --from-literal=password='a-long-password'
+#   kubectl apply -k https://github.com/Cloudopsshell/deaconguard/deploy/kustomize/server?ref=v0.15.0
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: deaconguard
+labels:
+  - pairs:
+      app.kubernetes.io/name: deaconguard
+      app.kubernetes.io/part-of: deaconguard
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - service.yaml
+  - statefulset.yaml
+images:
+  - name: ghcr.io/cloudopsshell/deaconguard
+    newTag: 0.15.0

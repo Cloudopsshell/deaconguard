@@ -1,0 +1,28 @@
+{{- if .Values.server.enabled }}
+DeaconGuard {{ .Chart.AppVersion }} server is starting.
+
+Open the dashboard:
+{{- if .Values.server.ingress.enabled }}
+{{- range .Values.server.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "deaconguard.fullname" . }} 8443:{{ .Values.server.service.dashboardPort }}
+  then https://127.0.0.1:8443 (the certificate is self-signed unless you gave one)
+{{- end }}
+
+Sign in as {{ .Values.server.admin.username }}{{ if not (or .Values.server.admin.existingSecret .Values.server.admin.password) }}, after creating its password:{{ else }}.{{ end }}{{ if not (or .Values.server.admin.existingSecret .Values.server.admin.password) }}
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "deaconguard.adminSecret" . }} --from-literal={{ .Values.server.admin.secretKey }}='a-long-password'
+  kubectl -n {{ .Release.Namespace }} rollout restart statefulset/{{ include "deaconguard.fullname" . }}{{ end }}
+
+Agents in this cluster reach the server at:
+  https://{{ include "deaconguard.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.server.service.agentPort }}
+Use that address when you create a reusable token on the Agents page.
+{{- end }}
+{{- if .Values.agent.enabled }}
+
+The DeaconGuard agent runs on every node{{ if not (or .Values.agent.enrollment.existingSecret .Values.agent.enrollment.token) }}, and waits for its token:
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "deaconguard.enrollmentSecret" . }} --from-literal={{ .Values.agent.enrollment.secretKey }}='TOKEN'
+  kubectl -n {{ .Release.Namespace }} rollout restart daemonset/{{ include "deaconguard.agentName" . }}{{ end }}.
+Each node appears on the server's Agents page, by its node name.
+{{- end }}
