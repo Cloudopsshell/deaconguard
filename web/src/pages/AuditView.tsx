@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, ChevronRight, Info, Loader2 } from "lucide-react";
-import { api, type AuditControl, type AuditDetail, type AuditSummary, type Inventory } from "../api";
+import { api, type AuditControl, type AuditDetail, type AuditSummary, type ComplianceResult, type Inventory, type PolicyResult, type RequirementStatus } from "../api";
 import { Button, Card, CardHeader, Dialog, ErrorMessage, Field, Loading, SeverityBadge, StatusBadge, cx } from "../components/ui";
 import { ReportsPanel } from "../components/ReportsPanel";
 import { ControlStatusBadge, GradeBadge, formatBytes, formatUptime } from "../lib/audit";
@@ -170,6 +170,10 @@ function AuditResult({ detail, summary }: { detail: AuditDetail; summary: AuditS
 
       <AuditReports detail={detail} />
       <Controls detail={detail} summary={summary} />
+      {summary.policies.map((result) => (
+        <PolicyCard key={result.id} detail={detail} result={result} />
+      ))}
+      {detail.compliance && detail.compliance.length > 0 && <ComplianceCard results={detail.compliance} />}
       {summary.inventory && <InventoryCard inventory={summary.inventory} />}
     </div>
   );
@@ -476,4 +480,97 @@ function AuditReports({ detail }: { detail: AuditDetail }) {
   const index = list.findIndex((item) => item.id === detail.scan.id);
   const earlier = index >= 0 ? list.slice(index + 1).filter((item) => item.status === "succeeded") : [];
   return <ReportsPanel scan={detail.scan} earlierAudits={earlier} />;
+}
+
+/** One custom policy's controls on this audit. */
+function PolicyCard({ detail, result }: { detail: AuditDetail; result: PolicyResult }) {
+  const [accepting, setAccepting] = useState<AuditControl | null>(null);
+  const counts = result.counts;
+  return (
+    <Card>
+      <CardHeader
+        title={`Policy: ${result.name}`}
+        description={`Your organisation's own controls, tested on the same settings; they don't change the grade. ${counts.passed} passed · ${counts.failed} failed${counts.accepted ? ` · ${counts.accepted} accepted` : ""}${counts.not_applicable + counts.unknown ? ` · ${counts.not_applicable + counts.unknown} not applicable or not checked` : ""}.`}
+        action={
+          <Link to="/policies" className="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+            Policies
+          </Link>
+        }
+      />
+      <ul className="divide-y divide-slate-200 dark:divide-slate-800">
+        {result.controls.map((control) => (
+          <ControlRow key={control.id} control={control} onAccept={() => setAccepting(control)} />
+        ))}
+      </ul>
+      {accepting && <AcceptRiskDialog detail={detail} control={accepting} onClose={() => setAccepting(null)} />}
+    </Card>
+  );
+}
+
+const requirementStyle: Record<RequirementStatus, { label: string; className: string }> = {
+  met: { label: "Met", className: "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/15 dark:text-emerald-300" },
+  met_accepted: { label: "Met, risk accepted", className: "bg-indigo-50 text-indigo-700 ring-indigo-600/20 dark:bg-indigo-500/15 dark:text-indigo-300" },
+  not_met: { label: "Not met", className: "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/15 dark:text-red-300" },
+  not_checked: { label: "Not checked", className: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-300" },
+  not_evaluated: { label: "Not applicable", className: "bg-slate-100 text-slate-600 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300" },
+};
+
+/** The audit read framework by framework. */
+function ComplianceCard({ results }: { results: ComplianceResult[] }) {
+  const [active, setActive] = useState(results[0].framework.id);
+  const result = results.find((item) => item.framework.id === active) ?? results[0];
+  return (
+    <Card>
+      <CardHeader
+        title="Compliance"
+        description="The requirements of each framework this audit gives evidence for. This is DeaconGuard's mapping, for guidance: frameworks also ask for policies, people and processes no scan can check, so it is not a certification."
+      />
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 px-5 py-3 dark:border-slate-800" role="tablist" aria-label="Framework">
+        {results.map((item) => (
+          <button
+            key={item.framework.id}
+            type="button"
+            role="tab"
+            aria-selected={item.framework.id === active}
+            onClick={() => setActive(item.framework.id)}
+            className={cx(
+              "rounded-full px-3 py-1 text-sm font-medium transition-colors",
+              item.framework.id === active
+                ? "bg-indigo-600 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700",
+            )}
+          >
+            {item.framework.short}
+          </button>
+        ))}
+      </div>
+      <p className="px-5 pt-3 text-sm text-slate-600 dark:text-slate-300">
+        {result.framework.name}: <span className="font-medium text-emerald-700 dark:text-emerald-400">{result.met} met</span> ·{" "}
+        <span className={cx("font-medium", result.not_met > 0 && "text-red-600 dark:text-red-400")}>{result.not_met} not met</span>
+        {result.other > 0 && ` · ${result.other} not checked`}
+      </p>
+      <ul className="mt-2 divide-y divide-slate-200 dark:divide-slate-800">
+        {result.requirements.map((requirement) => (
+          <li key={requirement.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-5 py-2.5 text-sm">
+            <div className="min-w-0 flex-1">
+              <p>
+                <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{requirement.id}</span> <span className="font-medium">{requirement.name}</span>
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {requirement.controls.map((control, index) => (
+                  <span key={control.id}>
+                    {index > 0 && ", "}
+                    <span className={cx(control.status === "fail" && "text-red-600 dark:text-red-400")}>{control.id.replace("CHECK-", "")}</span>
+                  </span>
+                ))}
+              </p>
+            </div>
+            <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset", requirementStyle[requirement.status].className)}>
+              {requirementStyle[requirement.status].label}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
 }

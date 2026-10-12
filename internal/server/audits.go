@@ -8,6 +8,8 @@ import (
 
 	"deaconguard/internal/audit"
 	"deaconguard/internal/checks"
+	"deaconguard/internal/compliance"
+	"deaconguard/internal/policy"
 	"deaconguard/internal/store"
 )
 
@@ -92,7 +94,8 @@ func (s *Server) listAudits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-// gradeAudit grades a finished audit with the risks accepted now.
+// gradeAudit grades a finished audit with the risks accepted and the
+// policies enabled now.
 func gradeAudit(record store.Scan) (audit.Summary, error) {
 	report, err := store.GetReport(record.ID)
 	if err != nil {
@@ -102,13 +105,51 @@ func gradeAudit(record store.Scan) (audit.Summary, error) {
 	if err != nil {
 		return audit.Summary{}, err
 	}
-	return audit.Grade(record, report, exceptions, time.Now())
+	summary, err := audit.Grade(record, report, exceptions, time.Now())
+	if err != nil {
+		return audit.Summary{}, err
+	}
+	policies, err := enabledPolicies()
+	if err != nil {
+		return audit.Summary{}, err
+	}
+	summary.ApplyPolicies(policies)
+	return summary, nil
+}
+
+// enabledPolicies parses the policies that are on. A stored policy always
+// parsed when it was saved; one that no longer does is skipped.
+func enabledPolicies() ([]audit.NamedPolicy, error) {
+	records, err := store.ListPolicies()
+	if err != nil {
+		return nil, err
+	}
+	var policies []audit.NamedPolicy
+	for _, record := range records {
+		if !record.Enabled {
+			continue
+		}
+		if parsed, err := policy.Parse([]byte(record.Source)); err == nil {
+			policies = append(policies, audit.NamedPolicy{ID: record.ID, Policy: parsed})
+		}
+	}
+	return policies, nil
+}
+
+// complianceViews reads an audit framework by framework.
+func complianceViews(summary audit.Summary) []compliance.Result {
+	var results []compliance.Result
+	for _, framework := range compliance.Frameworks() {
+		results = append(results, compliance.Evaluate(summary, framework))
+	}
+	return results
 }
 
 type auditDetail struct {
-	Scan    store.Scan     `json:"scan"`
-	Host    store.Host     `json:"host"`
-	Summary *audit.Summary `json:"summary,omitempty"`
+	Scan       store.Scan          `json:"scan"`
+	Host       store.Host          `json:"host"`
+	Summary    *audit.Summary      `json:"summary,omitempty"`
+	Compliance []compliance.Result `json:"compliance,omitempty"`
 }
 
 func (s *Server) getAudit(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +171,7 @@ func (s *Server) getAudit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		detail.Summary = &summary
+		detail.Compliance = complianceViews(summary)
 	}
 	writeJSON(w, http.StatusOK, detail)
 }
@@ -159,6 +201,13 @@ func (s *Server) addException(w http.ResponseWriter, r *http.Request) {
 	known := false
 	for _, id := range checks.BaselineIDs() {
 		known = known || id == request.ControlID
+	}
+	if policies, err := enabledPolicies(); err == nil {
+		for _, named := range policies {
+			for _, control := range named.Policy.Controls {
+				known = known || control.ID == request.ControlID
+			}
+		}
 	}
 	if !known {
 		writeError(w, http.StatusBadRequest, errors.New("unknown control"))

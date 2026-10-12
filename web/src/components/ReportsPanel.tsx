@@ -154,8 +154,10 @@ function CreateReportDialog({ scan, earlierAudits, onClose }: { scan: Scan; earl
   const [client, setClient] = useState("");
   const [notes, setNotes] = useState("");
   const [compareWith, setCompareWith] = useState(earlierAudits.length > 0 ? "previous" : "");
+  const [frameworks, setFrameworks] = useState<string[]>([]);
+  const available = useQuery({ queryKey: ["frameworks"], queryFn: api.frameworks, staleTime: Infinity, enabled: scan.audit });
   const create = useMutation({
-    mutationFn: () => api.createReport({ scan_id: scan.id, client, notes, compare_with: compareWith }),
+    mutationFn: () => api.createReport({ scan_id: scan.id, client, notes, compare_with: compareWith, frameworks }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       onClose();
@@ -207,6 +209,29 @@ function CreateReportDialog({ scan, earlierAudits, onClose }: { scan: Scan; earl
             </select>
             <span className="text-xs text-slate-500 dark:text-slate-400">The report lists the controls fixed since then, and any that started failing.</span>
           </label>
+        )}
+        {scan.audit && available.data && (
+          <fieldset>
+            <legend className="font-medium">Include a compliance mapping for</legend>
+            <div className="mt-1 grid grid-cols-2 gap-1">
+              {available.data.map((framework) => (
+                <label key={framework.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="accent-indigo-600"
+                    checked={frameworks.includes(framework.id)}
+                    onChange={(event) =>
+                      setFrameworks((current) => (event.target.checked ? [...current, framework.id] : current.filter((id) => id !== framework.id)))
+                    }
+                  />
+                  {framework.name}
+                </label>
+              ))}
+            </div>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Lists each framework requirement the audit gives evidence for, with its status. For guidance, not a certification.
+            </span>
+          </fieldset>
         )}
         <ErrorMessage error={create.error} />
         <div className="flex justify-end gap-2">

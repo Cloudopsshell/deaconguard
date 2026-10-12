@@ -191,6 +191,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 14 {
+		if err := execInTx(db, schemaV14); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -494,6 +499,20 @@ CREATE TABLE report_shares (
 );
 CREATE INDEX report_shares_report ON report_shares (report_id);
 PRAGMA user_version = 13;`
+
+// schemaV14 adds custom policies: admins' own controls, in YAML, that
+// audits test alongside the baseline.
+const schemaV14 = `
+CREATE TABLE policies (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL,
+	source     TEXT NOT NULL,
+	enabled    INTEGER NOT NULL DEFAULT 1,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+PRAGMA user_version = 14;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

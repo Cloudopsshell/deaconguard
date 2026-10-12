@@ -30,8 +30,14 @@ var userFacts = []fact{
 	{"admins", "getent group sudo wheel admin"},
 	{"login.defs", "cat /etc/login.defs"},
 	{"pwquality", "cat /etc/security/pwquality.conf /etc/security/pwquality.conf.d/*.conf"},
-	{"pam", "grep -rhE '^[^#]*(pam_faillock|pam_tally2|pam_pwquality|pam_cracklib)' /etc/pam.d"},
-	{"sysctl", "sysctl " + strings.Join(sysctlKeys, " ")},
+	{"pam", "grep -rhE '^[^#]*(pam_faillock|pam_tally2|pam_pwquality|pam_cracklib|pam_pwhistory|remember=)' /etc/pam.d"},
+	{"sysctl", "sysctl -a"},
+	{"useradd", "cat /etc/default/useradd"},
+	{"faillock", "cat /etc/security/faillock.conf"},
+	{"core-limits", "cat /etc/security/limits.conf /etc/security/limits.d/*.conf; cat /etc/systemd/coredump.conf /etc/systemd/coredump.conf.d/*.conf"},
+	{"usb-storage", "modprobe -n -v usb-storage 2>&1"},
+	{"package-signing", "grep -rhiE '^[[:space:]]*(gpgcheck|repo_gpgcheck)[[:space:]]*=' /etc/yum.repos.d /etc/dnf/dnf.conf /etc/yum.conf; grep -rhiE 'AllowUnauthenticated|allow-insecure|trusted=yes' /etc/apt/apt.conf.d /etc/apt/sources.list /etc/apt/sources.list.d"},
+	{"homes", "stat -c '%a %U %n' /home/*"},
 	{"mounts", "cat /proc/mounts"},
 	{"modes", "stat -c '%a %U %G %n' /etc/passwd /etc/group /etc/shadow /etc/gshadow /etc/ssh/sshd_config " +
 		"/etc/crontab /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly /boot/grub/grub.cfg /boot/grub2/grub.cfg"},
@@ -58,19 +64,11 @@ var rootFacts = []fact{
 	{"unsticky", "find / -xdev -type d -perm -0002 ! -perm -1000 | head -n 200"},
 	{"unowned", "find / -xdev \\( -nouser -o -nogroup \\) | head -n 200"},
 	{"audit-rules", "auditctl -l | head -n 500"},
+	{"readable-logs", "find /var/log -xdev -type f -perm -0004 | head -n 100"},
 }
 
 // noSocketTool marks a machine with neither ss nor netstat.
 const noSocketTool = "NO_SOCKET_TOOL"
-
-// sysctlKeys are the kernel settings the baseline reads.
-var sysctlKeys = []string{
-	"net.ipv4.ip_forward", "net.ipv4.conf.all.accept_redirects", "net.ipv4.conf.default.accept_redirects",
-	"net.ipv4.conf.all.send_redirects", "net.ipv4.conf.all.accept_source_route", "net.ipv4.conf.all.rp_filter",
-	"net.ipv4.conf.all.log_martians", "net.ipv4.icmp_echo_ignore_broadcasts", "net.ipv4.tcp_syncookies",
-	"net.ipv6.conf.all.accept_redirects", "kernel.randomize_va_space", "kernel.dmesg_restrict", "kernel.kptr_restrict",
-	"kernel.yama.ptrace_scope", "fs.suid_dumpable", "fs.protected_hardlinks", "fs.protected_symlinks",
-}
 
 // factMarker starts each fact's section. It differs from the "==> file <=="
 // lines the SSH configuration fact prints itself.
