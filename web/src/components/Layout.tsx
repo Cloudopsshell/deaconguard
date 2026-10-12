@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
-import { CalendarClock, CircleUser, ClipboardCheck, Palette, LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server, ShieldAlert, Users, X } from "lucide-react";
+import { CalendarClock, CircleUser, ClipboardCheck, Settings as SettingsIcon, Palette, LayoutDashboard, LogOut, Logs, RadioTower, ScrollText, Server, ShieldAlert, Users, X } from "lucide-react";
 import { Logo } from "./Logo";
 import { PromptDialog } from "./PromptDialog";
 import { RestartNotice } from "./RestartNotice";
@@ -21,13 +21,14 @@ const navigation = [
   { to: "/logs", label: "Logs", icon: Logs, end: false },
   { to: "/audit", label: "Audit log", icon: ScrollText, end: false },
   { to: "/accounts", label: "Accounts", icon: Users, end: false },
+  { to: "/settings", label: "Settings", icon: SettingsIcon, end: false },
 ];
 
 /** Pages that exist only on a server with agents and accounts. */
 const networkPages = ["/agents", "/audit", "/accounts"];
 
 /** Pages only admins use: the audit log, and managing accounts. */
-const adminPages = ["/audit", "/accounts"];
+const adminPages = ["/audit", "/accounts", "/settings"];
 
 /** True when the account should look at My account: no two-step sign-in, or few recovery codes left. */
 function needsAttention(session?: Session) {

@@ -19,6 +19,11 @@ export function Audits() {
       <PageHeader
         title="Server audits"
         description="Full checks of a machine, graded A to F: for handing a new server over, or checking an existing one. Start one from a host's page."
+        action={
+          <Link to="/verify" className="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+            Verify a report
+          </Link>
+        }
       />
       <div className="space-y-6">
         <AuditOnEnroll />
