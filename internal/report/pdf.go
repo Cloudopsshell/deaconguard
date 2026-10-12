@@ -399,22 +399,37 @@ func (w *pdfWriter) vulnerabilities() {
 		return
 	}
 	w.heading("Vulnerabilities")
-	v := newView(r, "")
-	if len(v.Vulnerabilities) == 0 {
+	if len(r.Vulnerabilities) == 0 {
 		w.text("No vulnerable packages were found.", 10, "", ink)
 		return
 	}
-	w.text("From the distribution's own security advisories. Those an update or a restart fixes come first.", 9, "", muted)
-	w.pdf.Ln(2)
-	widths := []float64{32, 32, 32, 32, 18, 28}
-	w.row(widths, []string{"CVE", "Package", "Installed", "Fixed in", "Severity", "What clears it"}, nil, true)
-	for _, vulnerability := range v.Vulnerabilities {
-		w.row(widths, []string{vulnerability.ID, vulnerability.Package, vulnerability.Installed, vulnerability.Fixed, vulnerability.Severity,
-			FixLabel(vulnerability.Fix)}, []rgb{{}, {}, {}, {}, sevFG[vulnerability.Severity], {}}, false)
+	v := newView(r, "")
+	w.text("From the distribution's own security advisories.", 9, "", muted)
+	w.subheading(fmt.Sprintf("Fixed by an update or a restart (%d)", len(v.Vulnerabilities)))
+	if len(v.Vulnerabilities) == 0 {
+		w.text("Nothing an update or a restart would fix.", 10, "", ink)
+	} else {
+		widths := []float64{28, 40, 38, 38, 16, 14}
+		w.row(widths, []string{"CVE", "Package", "Installed", "Fixed in", "Severity", "Clears"}, nil, true)
+		for _, vulnerability := range v.Vulnerabilities {
+			clears := "Update"
+			if vulnerability.Fix == "reboot" {
+				clears = "Restart"
+			}
+			w.row(widths, []string{vulnerability.ID, vulnerability.Package, vulnerability.Installed, vulnerability.Fixed, vulnerability.Severity, clears},
+				[]rgb{{}, {}, {}, {}, sevFG[vulnerability.Severity], {}}, false)
+		}
 	}
-	if v.MoreVulnerabilities > 0 {
-		w.pdf.Ln(2)
-		w.text(fmt.Sprintf("%d more without a fix from the distribution are in the CSV, Excel and JSON versions of this report.", v.MoreVulnerabilities), 9, "", muted)
+	if len(v.Waiting) > 0 {
+		w.subheading(fmt.Sprintf("Waiting on the distribution, by package (%d packages)", len(v.Waiting)))
+		w.text("Updating can't fix these yet. The CSV, Excel and JSON versions list every CVE.", 9, "", muted)
+		w.pdf.Ln(1)
+		widths := []float64{50, 46, 16, 26, 36}
+		w.row(widths, []string{"Package", "Installed", "CVEs", "Highest", "What clears it"}, nil, true)
+		for _, group := range v.Waiting {
+			w.row(widths, []string{group.Package, group.Installed, fmt.Sprint(group.Count), group.Severity, FixLabel(group.Fix)},
+				[]rgb{{}, {}, {}, sevFG[group.Severity], {}}, false)
+		}
 	}
 }
 
