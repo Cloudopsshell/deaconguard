@@ -38,8 +38,8 @@ func currentCode(t *testing.T, secret string) string {
 }
 
 // setUpMFA turns on two-step sign-in for the account of cookie and returns
-// its secret and recovery codes.
-func setUpMFA(t *testing.T, s *Server, cookie *http.Cookie, password string) (string, []string) {
+// its secret, its recovery codes, and the code that confirmed it.
+func setUpMFA(t *testing.T, s *Server, cookie *http.Cookie, password string) (string, []string, string) {
 	t.Helper()
 	started := do(t, s, call{method: http.MethodPost, path: "/api/account/mfa", body: map[string]string{"password": password}, cookie: cookie})
 	setup := decode[mfaStartResponse](t, started)
@@ -49,18 +49,19 @@ func setUpMFA(t *testing.T, s *Server, cookie *http.Cookie, password string) (st
 	if wrong := do(t, s, call{method: http.MethodPost, path: "/api/account/mfa/confirm", body: map[string]string{"code": "000000"}, cookie: cookie}); wrong.Code != http.StatusBadRequest {
 		t.Fatalf("a wrong confirmation code: %d", wrong.Code)
 	}
-	confirmed := do(t, s, call{method: http.MethodPost, path: "/api/account/mfa/confirm", body: map[string]string{"code": currentCode(t, setup.Secret)}, cookie: cookie})
+	used := currentCode(t, setup.Secret)
+	confirmed := do(t, s, call{method: http.MethodPost, path: "/api/account/mfa/confirm", body: map[string]string{"code": used}, cookie: cookie})
 	codes := decode[recoveryCodesResponse](t, confirmed).RecoveryCodes
 	if confirmed.Code != http.StatusOK || len(codes) != store.RecoveryCodeCount {
 		t.Fatalf("confirm MFA: %d %v", confirmed.Code, codes)
 	}
-	return setup.Secret, codes
+	return setup.Secret, codes, used
 }
 
 func TestTwoStepSignIn(t *testing.T) {
 	s := newNetworkTestServer(t)
 	cookie := signIn(t, s)
-	secret, codes := setUpMFA(t, s, cookie, testPassword)
+	_, codes, used := setUpMFA(t, s, cookie, testPassword)
 	if session := decode[sessionResponse](t, do(t, s, call{method: http.MethodGet, path: "/api/session", cookie: cookie})); !session.MFAEnabled || session.RecoveryCodesLeft != 10 {
 		t.Fatalf("session after setup = %+v", session)
 	}
@@ -76,8 +77,9 @@ func TestTwoStepSignIn(t *testing.T) {
 	if wrong := do(t, s, call{method: http.MethodPost, path: "/api/login/mfa", body: map[string]string{"code": "123456"}, cookie: pending}); wrong.Code != http.StatusUnauthorized {
 		t.Fatalf("a wrong code: %d", wrong.Code)
 	}
-	// The code of this 30 seconds was used to confirm the setup: it works once.
-	if replay := do(t, s, call{method: http.MethodPost, path: "/api/login/mfa", body: map[string]string{"code": currentCode(t, secret)}, cookie: pending}); replay.Code != http.StatusUnauthorized {
+	// The code that confirmed the setup works once. Replaying that exact
+	// code, not "the current one", keeps this right across a 30-second step.
+	if replay := do(t, s, call{method: http.MethodPost, path: "/api/login/mfa", body: map[string]string{"code": used}, cookie: pending}); replay.Code != http.StatusUnauthorized {
 		t.Fatalf("a used code was accepted again: %d", replay.Code)
 	}
 
@@ -136,7 +138,7 @@ func TestAccountsAdminActions(t *testing.T) {
 	if early := do(t, s, call{method: http.MethodPatch, path: "/api/settings/security", body: securitySettings{RequireMFA: true}, cookie: admin}); early.Code != http.StatusConflict {
 		t.Fatalf("requiring MFA without using it: %d", early.Code)
 	}
-	setUpMFA(t, s, admin, testPassword)
+	_, _, _ = setUpMFA(t, s, admin, testPassword)
 	if set := do(t, s, call{method: http.MethodPatch, path: "/api/settings/security", body: securitySettings{RequireMFA: true}, cookie: admin}); set.Code != http.StatusOK {
 		t.Fatalf("require MFA: %d", set.Code)
 	}
@@ -146,7 +148,7 @@ func TestAccountsAdminActions(t *testing.T) {
 	if blocked := do(t, s, call{method: http.MethodGet, path: "/api/hosts", cookie: bobCookie}); blocked.Code != http.StatusForbidden {
 		t.Fatalf("hosts without MFA while it is required: %d", blocked.Code)
 	}
-	setUpMFA(t, s, bobCookie, "Bobs-own-password-1")
+	_, _, _ = setUpMFA(t, s, bobCookie, "Bobs-own-password-1")
 	if hosts := do(t, s, call{method: http.MethodGet, path: "/api/hosts", cookie: bobCookie}); hosts.Code != http.StatusOK {
 		t.Fatalf("hosts after setting up MFA: %d", hosts.Code)
 	}
