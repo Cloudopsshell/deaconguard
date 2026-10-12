@@ -8,6 +8,27 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-12
+
+### Added
+
+- **Server audits.** **Run audit** on a host's page checks the machine from top to bottom and grades it A to F, for handing a newly built server over or checking an existing one. An audit runs every check, plus an antivirus scan (optionally the advanced one), and records the machine's inventory: OS, kernel, hardware, memory, uptime, disks, addresses, listening services, administrators, accounts that can log in, time zone and clock synchronisation.
+- **The hardening audit check** (`hardening`): the 62 controls of the new DeaconGuard Linux baseline, in 10 categories: accounts and passwords, SSH, network, kernel, services and the firewall, logging and auditing, files and permissions, updates, time, and AppArmor or SELinux. Each control reports pass, fail, not applicable or not checked, with its evidence, why it matters and how to fix it. Like every check, it only runs fixed, read-only commands; from `/etc/shadow` it reads only account names and whether a password is set. Scans can include it on its own too.
+- **The grade:** a score weighted by each control's severity, then capped by anything that should stop a handover: malware (F), changed system files (D), fixable critical vulnerabilities or a failed critical control (C), fixable high vulnerabilities (B). The audit page says what holds the grade back and what couldn't be checked.
+- **Accepted risks:** admins accept a failed control's risk with a reason, for one host or every host, until an expiry date or indefinitely. It shows as accepted, leaves the score, and is recorded in the audit log.
+- A **Server audits** page lists every audit with its grade. An admin switch there, **Audit new machines when they enroll**, audits each machine as soon as its agent enrolls.
+- `deaconguard audit HOST_ID [--advanced] [--json]` and `deaconguard audit --local` print the grade, what holds it back and the failed controls with their fixes.
+
+### Changed
+
+- Audits are kept until someone deletes them; they don't count towards the 10 scans each host keeps.
+- Audits and the hardening check need the agent 0.12.0 or later. Scans, schedules and audits asking an older agent for it are refused with the upgrade command.
+- **Upgrading:** the database gains audits and accepted risks (schema 12).
+
+### Fixed
+
+- The audit log now names role changes, which 0.11.0 listed by their internal name.
+
 ## [0.11.0] - 2026-10-11
 
 ### Added
@@ -294,7 +315,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.1...v0.9.2
