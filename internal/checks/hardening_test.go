@@ -52,30 +52,32 @@ func TestHardeningFindsAnInsecureMachine(t *testing.T) {
 		"hostname": "ip-10-92-0-52",
 		"passwd": "root:x:0:0:root:/root:/bin/bash\ntoor:x:0:0::/root:/bin/bash\ndaemon:x:1:1::/usr/sbin:/bin/sh\n" +
 			"ubuntu:x:1000:1000::/home/ubuntu:/bin/bash\nshared:x:1000:1000::/home/shared:/bin/bash",
-		"login.defs":   "PASS_MAX_DAYS 99999\nUMASK 022",
-		"sshd-files":   "==> /etc/ssh/sshd_config <==\nPermitRootLogin yes\nPasswordAuthentication yes\nX11Forwarding yes\nCiphers aes128-cbc,aes256-gcm@openssh.com",
-		"sysctl":       "net.ipv4.ip_forward = 1\nkernel.randomize_va_space = 0\nnet.ipv4.conf.all.accept_redirects = 1",
-		"modes":        "666 root root /etc/passwd\n644 root shadow /etc/shadow\n644 root root /etc/ssh/sshd_config",
-		"packages":     "openssh-server\ntelnetd\nauditd",
-		"listening":    "tcp LISTEN 0 128 0.0.0.0:6379 0.0.0.0:*\ntcp LISTEN 0 128 0.0.0.0:25 0.0.0.0:*",
-		"mounts":       "tmpfs /dev/shm tmpfs rw,nosuid,nodev 0 0",
-		"reboot":       "REBOOT_REQUIRED",
-		"time":         "Timezone=UTC\nNTPSynchronized=no",
-		"active-units": "auditd.service loaded active running Audit\ncups.service loaded active running CUPS",
-		"apparmor":     "N",
+		"login.defs":      "PASS_MAX_DAYS 99999\nUMASK 022",
+		"sshd-files":      "==> /etc/ssh/sshd_config <==\nPermitRootLogin yes\nPasswordAuthentication yes\nX11Forwarding yes\nCiphers aes128-cbc,aes256-gcm@openssh.com",
+		"sysctl":          "net.ipv4.ip_forward = 1\nkernel.randomize_va_space = 0\nnet.ipv4.conf.all.accept_redirects = 1",
+		"modes":           "666 root root /etc/passwd\n644 root shadow /etc/shadow\n644 root root /etc/ssh/sshd_config",
+		"packages":        "openssh-server\ntelnetd\nauditd",
+		"listening":       "tcp LISTEN 0 128 0.0.0.0:6379 0.0.0.0:*\ntcp LISTEN 0 128 0.0.0.0:25 0.0.0.0:*",
+		"mounts":          "tmpfs /dev/shm tmpfs rw,nosuid,nodev 0 0",
+		"package-signing": "deb [trusted=yes] http://mirror.example/ubuntu noble main",
+		"reboot":          "REBOOT_REQUIRED",
+		"time":            "Timezone=UTC\nNTPSynchronized=no",
+		"active-units":    "auditd.service loaded active running Audit\ncups.service loaded active running CUPS",
+		"apparmor":        "N",
 	}, map[string]string{
 		"shadow":         "root:SET:99999\nguest:EMPTY:99999",
 		"firewall":       "Status: inactive",
 		"setid":          "/usr/bin/sudo\n/home/ubuntu/.cache/backdoor",
 		"world-writable": "/etc/app.conf",
 		"audit-rules":    "No rules",
+		"readable-logs":  "/var/log/app/secrets.log",
 	})
 	expect(t, controls, ControlFail,
 		"ACC-01", "ACC-02", "ACC-03", "ACC-05", "ACC-06", "ACC-07", "ACC-08",
 		"SSH-01", "SSH-02", "SSH-04", "SSH-11", "SSH-12",
 		"NET-01", "NET-02", "KRN-01", "SVC-01", "SVC-02", "SVC-03", "SVC-05", "SVC-06",
 		"LOG-02", "FS-01", "FS-02", "FS-06", "FS-07", "FS-08", "FS-11",
-		"UPD-01", "UPD-02", "TIME-01", "TIME-02", "MAC-01")
+		"UPD-01", "UPD-02", "TIME-01", "TIME-02", "MAC-01", "ACC-09", "ACC-10", "SSH-13", "KRN-07", "UPD-03", "LOG-05")
 	expect(t, controls, ControlPass, "SSH-03", "LOG-01")
 	expect(t, controls, ControlNA, "FS-04")
 	if result.Status != StatusCompleted || !result.Privileged {
@@ -101,10 +103,15 @@ func TestHardeningFindsAnInsecureMachine(t *testing.T) {
 
 func TestHardeningPassesAHardenedMachine(t *testing.T) {
 	_, controls := runAudit(t, map[string]string{
-		"passwd":     "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1::/usr/sbin:/usr/sbin/nologin\nadmin:x:1000:1000::/home/admin:/bin/bash",
-		"login.defs": "PASS_MAX_DAYS 90\nUMASK 027",
-		"pwquality":  "minlen = 14",
-		"pam":        "auth required pam_faillock.so preauth",
+		"passwd":      "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1::/usr/sbin:/usr/sbin/nologin\nadmin:x:1000:1000::/home/admin:/bin/bash",
+		"login.defs":  "PASS_MAX_DAYS 90\nUMASK 027",
+		"pwquality":   "minlen = 14",
+		"pam":         "auth required pam_faillock.so preauth\npassword required pam_pwhistory.so remember=5",
+		"useradd":     "INACTIVE=35",
+		"faillock":    "deny = 5",
+		"core-limits": "* hard core 0",
+		"usb-storage": "install /bin/false",
+		"homes":       "750 admin /home/admin",
 		"sysctl": "net.ipv4.ip_forward = 0\nnet.ipv4.conf.all.accept_redirects = 0\nnet.ipv4.conf.all.send_redirects = 0\n" +
 			"net.ipv4.conf.all.accept_source_route = 0\nnet.ipv4.conf.all.rp_filter = 1\nnet.ipv4.conf.all.log_martians = 1\n" +
 			"net.ipv4.icmp_echo_ignore_broadcasts = 1\nnet.ipv4.tcp_syncookies = 1\nnet.ipv6.conf.all.accept_redirects = 0\n" +
@@ -122,7 +129,8 @@ func TestHardeningPassesAHardenedMachine(t *testing.T) {
 		"reboot":       "",
 	}, map[string]string{
 		"shadow":         "root:SET:90\nadmin:SET:90",
-		"sshd-effective": "permitrootlogin no\npasswordauthentication no\npermitemptypasswords no\nx11forwarding no\nmaxauthtries 3\nclientaliveinterval 300\nhostbasedauthentication no\nignorerhosts yes\nlogingracetime 60\npermituserenvironment no\nciphers aes256-gcm@openssh.com,chacha20-poly1305@openssh.com\nmacs hmac-sha2-512-etm@openssh.com",
+		"sshd-effective": "permitrootlogin no\npasswordauthentication no\npermitemptypasswords no\nx11forwarding no\nmaxauthtries 3\nclientaliveinterval 300\nhostbasedauthentication no\nignorerhosts yes\nlogingracetime 60\npermituserenvironment no\nbanner /etc/issue.net\nloglevel VERBOSE\nciphers aes256-gcm@openssh.com,chacha20-poly1305@openssh.com\nmacs hmac-sha2-512-etm@openssh.com",
+		"readable-logs":  "",
 		"firewall":       "Status: active",
 		"setid":          "/usr/bin/sudo\n/usr/bin/passwd",
 		"world-writable": "",
