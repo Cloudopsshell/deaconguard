@@ -186,6 +186,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 13 {
+		if err := execInTx(db, schemaV13); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -459,6 +464,36 @@ CREATE TABLE audit_exceptions (
 );
 CREATE INDEX audit_exceptions_host ON audit_exceptions (host_id);
 PRAGMA user_version = 12;`
+
+// schemaV13 adds reports, frozen snapshots of an audit or scan that every
+// download format is rendered from, and links that share one without
+// sign-in until they expire. Reports outlive the scans they came from.
+const schemaV13 = `
+CREATE TABLE reports (
+	id          TEXT PRIMARY KEY,
+	scan_id     TEXT NOT NULL,
+	host_id     TEXT NOT NULL,
+	kind        TEXT NOT NULL,
+	client      TEXT NOT NULL DEFAULT '',
+	created_by  TEXT NOT NULL DEFAULT '',
+	created_at  TEXT NOT NULL,
+	fingerprint TEXT NOT NULL,
+	snapshot    BLOB NOT NULL
+);
+CREATE INDEX reports_scan ON reports (scan_id);
+CREATE INDEX reports_host ON reports (host_id, created_at);
+CREATE TABLE report_shares (
+	id         TEXT PRIMARY KEY,
+	report_id  TEXT NOT NULL REFERENCES reports (id) ON DELETE CASCADE,
+	token_hash TEXT NOT NULL UNIQUE,
+	expires_at TEXT NOT NULL,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	revoked_at TEXT NOT NULL DEFAULT '',
+	views      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX report_shares_report ON report_shares (report_id);
+PRAGMA user_version = 13;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.
