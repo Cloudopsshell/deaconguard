@@ -191,7 +191,7 @@ func newMachine(family platform.Family, facts map[string]string, root bool) *mac
 var sshdDefaults = map[string]string{
 	"permitrootlogin": "prohibit-password", "passwordauthentication": "yes", "permitemptypasswords": "no",
 	"x11forwarding": "no", "maxauthtries": "6", "clientaliveinterval": "0", "hostbasedauthentication": "no",
-	"ignorerhosts": "yes", "logingracetime": "120", "permituserenvironment": "no",
+	"ignorerhosts": "yes", "logingracetime": "120", "permituserenvironment": "no", "banner": "none", "loglevel": "info",
 }
 
 func (m *machine) collected(name string) bool {
