@@ -179,7 +179,7 @@ func Grade(scan store.Scan, report map[string]any, exceptions []store.Exception,
 	}
 	summary.Grade = gradeFor(summary.Score)
 	if summary.Counts.Unknown > 0 {
-		summary.Incomplete = append(summary.Incomplete, fmt.Sprintf("%d controls could not be checked, usually because the audit ran without root.", summary.Counts.Unknown))
+		summary.Incomplete = append(summary.Incomplete, count(summary.Counts.Unknown, "control could not be checked", "controls could not be checked")+", usually because the audit ran without root.")
 	}
 
 	names := map[string]string{}
@@ -203,19 +203,19 @@ func Grade(scan store.Scan, report map[string]any, exceptions []store.Exception,
 
 	// What should stop a handover lowers the grade, whatever the score.
 	if found := len(results[checks.Malware].Findings) + len(results[checks.Antivirus].Findings) + len(results[checks.YARA].Findings); found > 0 {
-		summary.cap("F", fmt.Sprintf("Malware or signs of compromise were found (%d)", found))
+		summary.cap("F", fmt.Sprintf("Malware or signs of compromise were found (%s)", count(found, "finding", "findings")))
 	}
 	if changed := severe(results[checks.Integrity]); changed > 0 {
-		summary.cap("D", fmt.Sprintf("%d system files differ from what their packages installed", changed))
+		summary.cap("D", fmt.Sprintf("%s from what %s installed", count(changed, "system file differs", "system files differ"), pick(changed, "its package", "their packages")))
 	}
 	if scan.Fixes != nil && scan.Fixes.Actionable.Critical > 0 {
-		summary.cap("C", fmt.Sprintf("%d critical vulnerabilities have a fix available", scan.Fixes.Actionable.Critical))
+		summary.cap("C", count(scan.Fixes.Actionable.Critical, "critical vulnerability has a fix available", "critical vulnerabilities have a fix available"))
 	}
 	if criticalFailed > 0 {
-		summary.cap("C", fmt.Sprintf("%d critical baseline controls failed", criticalFailed))
+		summary.cap("C", count(criticalFailed, "critical baseline control failed", "critical baseline controls failed"))
 	}
 	if scan.Fixes != nil && scan.Fixes.Actionable.High > 0 {
-		summary.cap("B", fmt.Sprintf("%d high-severity vulnerabilities have a fix available", scan.Fixes.Actionable.High))
+		summary.cap("B", count(scan.Fixes.Actionable.High, "high-severity vulnerability has a fix available", "high-severity vulnerabilities have a fix available"))
 	}
 	return summary, nil
 }
@@ -247,4 +247,16 @@ func firstOf(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// count writes "1 thing" or "N things".
+func count(n int, one, many string) string {
+	return fmt.Sprintf("%d %s", n, pick(n, one, many))
+}
+
+func pick(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

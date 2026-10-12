@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarClock, FileText, Play, ShieldCheck, TerminalSquare, Trash2, XCircle } from "lucide-react";
+import { ArrowLeft, CalendarClock, ClipboardCheck, FileText, Play, ShieldCheck, TerminalSquare, Trash2, XCircle } from "lucide-react";
+import { RunAuditDialog } from "../components/RunAuditDialog";
+import { GradeBadge } from "../lib/audit";
 import { useCan } from "../lib/role";
 import { api, type CheckId, type Host, type HostDetail as HostDetailData, type Scan } from "../api";
 import { CheckResultView } from "../components/CheckResultView";
@@ -36,6 +38,7 @@ export function HostDetail() {
   const canRemove = useCan("admin");
   const { hostId = "" } = useParams();
   const [removing, setRemoving] = useState(false);
+  const [auditing, setAuditing] = useState(false);
   const [scanning, setScanning] = useState<{ initial?: CheckId[] } | null>(null);
   const [logScan, setLogScan] = useState<Scan | null>(null);
   const [deleting, setDeleting] = useState<Scan | null>(null);
@@ -104,6 +107,11 @@ export function HostDetail() {
               </Button>
             )}
             {canOperate && (
+              <Button variant="secondary" disabled={running} onClick={() => setAuditing(true)}>
+                <ClipboardCheck className="size-4" /> Run audit
+              </Button>
+            )}
+            {canOperate && (
             <Button
               loading={running}
               onClick={() => setScanning({})}
@@ -167,10 +175,12 @@ export function HostDetail() {
 
       <Results host={data} onRun={(check) => setScanning({ initial: [check] })} />
 
+      <HostAudits hostId={data.id} />
+
       <Card className="mt-6">
         <CardHeader
           title="Scan history"
-          description="The 10 most recent scans are kept, plus any older scan that still holds a check's latest result."
+          description="The 10 most recent scans are kept, plus any older scan that still holds a check's latest result. Audits are kept until deleted."
         />
         {data.scans.length === 0 ? (
           <EmptyState
@@ -272,6 +282,7 @@ export function HostDetail() {
       <ScanDialog host={data} open={scanning !== null} initial={scanning?.initial} onClose={() => setScanning(null)} />
       <ScanConsole host={data} requested={logScan} onRequestClosed={() => setLogScan(null)} />
       <RemoveHostDialog host={data} open={removing} onClose={() => setRemoving(false)} />
+      <RunAuditDialog host={data} open={auditing} onClose={() => setAuditing(false)} />
       <DeleteScanDialog
         scan={deleting}
         onClose={() => setDeleting(null)}
@@ -522,5 +533,43 @@ export function RemoveHostDialog({ host, open, onClose }: { host: Host; open: bo
         </Button>
       </div>
     </Dialog>
+  );
+}
+
+/** The host's audits, newest first; hidden until it has one. */
+function HostAudits({ hostId }: { hostId: string }) {
+  const { data } = useQuery({
+    queryKey: ["audits", hostId],
+    queryFn: () => api.auditList(hostId),
+    refetchInterval: (query) => (query.state.data?.some((item) => isActive(item.status)) ? 3000 : 30_000),
+  });
+  if (!data || data.length === 0) return null;
+  return (
+    <Card className="mt-6">
+      <CardHeader title="Audits" description="Full checks of this machine, graded A to F. Open one for every control and the inventory." />
+      <ul className="divide-y divide-slate-200 dark:divide-slate-800">
+        {data.slice(0, 5).map((item) => (
+          <li key={item.id}>
+            <Link to={`/audits/${item.id}`} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+              <GradeBadge grade={item.grade} />
+              <span className="min-w-0 flex-1 text-sm">
+                <span className="font-medium">{dateTime(item.started_at)}</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">
+                  {item.grade ? `Score ${item.score} · ${item.failed} ${item.failed === 1 ? "control" : "controls"} failed` : "Running…"}
+                </span>
+              </span>
+              {!item.grade && <StatusBadge status={item.status} />}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {data.length > 5 && (
+        <p className="px-5 py-3 text-sm">
+          <Link to="/audits" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+            All {data.length} audits
+          </Link>
+        </p>
+      )}
+    </Card>
   );
 }
