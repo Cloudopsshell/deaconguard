@@ -1,0 +1,91 @@
+# One server: its data is one SQLite database, on a volume of its own.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: deaconguard
+spec:
+  serviceName: deaconguard
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deaconguard
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deaconguard
+        app.kubernetes.io/component: server
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: ghcr.io/cloudopsshell/deaconguard:0.15.0
+          args: [serve, --listen, "0.0.0.0:8443", --agent-listen, "0.0.0.0:8444"]
+          env:
+            - name: DEACONGUARD_HOME
+              value: /home/nonroot
+            # The first account, created when there is none; ignored after that.
+            - name: DEACONGUARD_ADMIN_USER
+              value: admin
+            - name: DEACONGUARD_ADMIN_PASSWORD_FILE
+              value: /run/secrets/deaconguard-admin/password
+          ports:
+            - name: dashboard
+              containerPort: 8443
+            - name: agents
+              containerPort: 8444
+          readinessProbe:
+            httpGet:
+              path: /api/version
+              port: dashboard
+              scheme: HTTPS
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/version
+              port: dashboard
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /home/nonroot
+            - name: tmp
+              mountPath: /tmp
+            - name: admin
+              mountPath: /run/secrets/deaconguard-admin
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: admin
+          secret:
+            secretName: deaconguard-admin
+            # Needed only for the first start, to create the first account.
+            optional: true
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 5Gi

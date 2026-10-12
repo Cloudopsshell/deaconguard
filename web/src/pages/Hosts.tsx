@@ -294,7 +294,7 @@ function AddHostDialog({ open, onClose, registered }: { open: boolean; onClose: 
           </p>
         )}
         <p className="rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
-          To scan other machines, install DeaconGuard on them and enroll them as agents with a one-time token from the Agents page (needs the DeaconGuard server
+          To scan other machines, install DeaconGuard on them and enroll them as agents with a token from the Agents page (needs the DeaconGuard server
           running on the network).
         </p>
         {!unavailable && !registered && (
