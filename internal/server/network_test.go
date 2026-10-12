@@ -56,7 +56,7 @@ func do(t *testing.T, s *Server, c call) *httptest.ResponseRecorder {
 		reader = bytes.NewReader(nil)
 	}
 	req := httptest.NewRequest(c.method, testOrigin+c.path, reader)
-	if c.method == http.MethodPost || c.method == http.MethodPatch {
+	if c.method == http.MethodPost || c.method == http.MethodPatch || c.method == http.MethodPut {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if c.cookie != nil {

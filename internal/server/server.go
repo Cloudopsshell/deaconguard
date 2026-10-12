@@ -29,6 +29,12 @@ import (
 
 const maxRequestBytes = 64 << 10
 
+// The report logo is the one larger upload.
+const (
+	logoPath            = "/api/settings/reports/logo"
+	maxLogoRequestBytes = 300 << 10
+)
+
 type Server struct {
 	runner *runner
 	agents *agentHub
@@ -141,6 +147,21 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("DELETE /api/exceptions/{id}", s.needs(store.RoleAdmin, s.removeException))
 	mux.HandleFunc("GET /api/settings/audit", s.getAuditSettings)
 	mux.HandleFunc("PATCH /api/settings/audit", s.needs(store.RoleAdmin, s.updateAuditSettings))
+	mux.HandleFunc("POST /api/reports", s.needs(store.RoleOperator, s.createReport))
+	mux.HandleFunc("GET /api/reports", s.listReports)
+	mux.HandleFunc("GET /api/reports/{id}/download", s.downloadReport)
+	mux.HandleFunc("DELETE /api/reports/{id}", s.needs(store.RoleOperator, s.deleteReport))
+	mux.HandleFunc("POST /api/reports/verify", s.verifyReport)
+	mux.HandleFunc("GET /api/reports/{id}/shares", s.listShares)
+	mux.HandleFunc("POST /api/reports/{id}/shares", s.needs(store.RoleOperator, s.createShare))
+	mux.HandleFunc("DELETE /api/shares/{id}", s.needs(store.RoleOperator, s.revokeShare))
+	mux.HandleFunc("GET /api/settings/reports", s.getBranding)
+	mux.HandleFunc("PUT /api/settings/reports", s.needs(store.RoleAdmin, s.updateBranding))
+	mux.HandleFunc("GET /api/settings/reports/logo", s.getLogo)
+	mux.HandleFunc("PUT /api/settings/reports/logo", s.needs(store.RoleAdmin, s.uploadLogo))
+	mux.HandleFunc("DELETE /api/settings/reports/logo", s.needs(store.RoleAdmin, s.removeLogo))
+	mux.HandleFunc("GET /share/{token}", s.openShare)
+	mux.HandleFunc("GET /share/{token}/{file}", s.openShare)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errors.New("unknown API endpoint"))
 	})
@@ -257,14 +278,23 @@ func browserChecks(next http.Handler, scheme string) http.Handler {
 				writeError(w, http.StatusForbidden, errors.New("cross-origin requests are not allowed"))
 				return
 			}
-			if r.Method == http.MethodPost || r.Method == http.MethodPatch {
-				mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			limit := int64(maxRequestBytes)
+			mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			switch {
+			case r.Method == http.MethodPut && r.URL.Path == logoPath:
+				// The report logo is uploaded as the image itself.
+				if mediaType != "image/png" && mediaType != "image/jpeg" {
+					writeError(w, http.StatusUnsupportedMediaType, errors.New("upload the logo as image/png or image/jpeg"))
+					return
+				}
+				limit = maxLogoRequestBytes
+			case r.Method == http.MethodPost || r.Method == http.MethodPatch || r.Method == http.MethodPut:
 				if mediaType != "application/json" {
 					writeError(w, http.StatusUnsupportedMediaType, errors.New("requests must use Content-Type: application/json"))
 					return
 				}
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})

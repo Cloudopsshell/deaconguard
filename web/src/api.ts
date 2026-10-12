@@ -230,6 +230,48 @@ export interface AuditDetail {
   summary?: AuditSummary;
 }
 
+/** A frozen report of an audit or scan, downloadable in several formats. */
+export interface ReportRecord {
+  id: string;
+  scan_id: string;
+  host_id: string;
+  kind: "audit" | "scan";
+  client: string;
+  created_by: string;
+  created_at: string;
+  fingerprint: string;
+}
+
+export type ReportFormat = "pdf" | "html" | "xlsx" | "csv" | "json";
+
+/** A link that shows a report without sign-in until it expires. */
+export interface ReportShare {
+  id: string;
+  report_id: string;
+  expires_at: string;
+  created_by: string;
+  created_at: string;
+  revoked_at: string;
+  views: number;
+}
+
+export interface ReportBranding {
+  company: string;
+  contact: string;
+  has_logo: boolean;
+  logo_type?: string;
+}
+
+export interface VerifyResult {
+  valid: boolean;
+  message: string;
+  report?: ReportRecord;
+  host?: string;
+  grade?: string;
+}
+
+export const reportDownloadUrl = (id: string, format: ReportFormat) => `/api/reports/${id}/download?format=${format}`;
+
 export interface CheckSummary {
   check: CheckId;
   scan_id: string;
@@ -542,7 +584,11 @@ export class ApiError extends Error {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, headers: {} };
-  if (method === "POST" || method === "PATCH") {
+  if (body instanceof Blob) {
+    // A file uploaded as itself, such as the report logo.
+    init.headers = { "Content-Type": body.type };
+    init.body = body;
+  } else if (method === "POST" || method === "PATCH" || method === "PUT") {
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(body ?? {});
   }
@@ -616,6 +662,18 @@ export const api = {
     request<AuditException>("POST", "/api/exceptions", input),
   removeException: (id: string) => request<null>("DELETE", `/api/exceptions/${id}`),
   auditSettings: () => request<{ audit_on_enroll: boolean }>("GET", "/api/settings/audit"),
+  createReport: (input: { scan_id: string; client: string; notes: string; compare_with: string }) => request<ReportRecord>("POST", "/api/reports", input),
+  reports: (query: { scanId?: string; hostId?: string }) =>
+    request<ReportRecord[]>("GET", `/api/reports?${new URLSearchParams({ scan_id: query.scanId ?? "", host_id: query.hostId ?? "" })}`),
+  deleteReport: (id: string) => request<null>("DELETE", `/api/reports/${id}`),
+  verifyReport: (reportId: string, fingerprint: string) => request<VerifyResult>("POST", "/api/reports/verify", { report_id: reportId, fingerprint }),
+  shares: (reportId: string) => request<ReportShare[]>("GET", `/api/reports/${reportId}/shares`),
+  createShare: (reportId: string, days: number) => request<{ share: ReportShare; url: string }>("POST", `/api/reports/${reportId}/shares`, { days }),
+  revokeShare: (id: string) => request<ReportShare>("DELETE", `/api/shares/${id}`),
+  branding: () => request<ReportBranding>("GET", "/api/settings/reports"),
+  saveBranding: (company: string, contact: string) => request<ReportBranding>("PUT", "/api/settings/reports", { company, contact }),
+  uploadLogo: (file: File) => request<ReportBranding>("PUT", "/api/settings/reports/logo", file),
+  removeLogo: () => request<ReportBranding>("DELETE", "/api/settings/reports/logo"),
   setAuditOnEnroll: (on: boolean) => request<{ audit_on_enroll: boolean }>("PATCH", "/api/settings/audit", { audit_on_enroll: on }),
   deleteScan: (id: string) => request<{ ok: boolean }>("DELETE", `/api/scans/${id}`),
   vulnerabilities: () => request<Vulnerability[]>("GET", "/api/vulnerabilities"),
