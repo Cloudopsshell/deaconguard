@@ -1,6 +1,6 @@
 // Package checks implements the optional host checks that run alongside the
 // package vulnerability scan: file integrity, malware indicators, security
-// configuration, ClamAV, and the advanced scan with YARA-X. Every command is a fixed, read-only string
+// configuration, the hardening audit, ClamAV, and the advanced scan with YARA-X. Every command is a fixed, read-only string
 // defined here; nothing from the user or the host is interpolated into it.
 package checks
 
@@ -63,6 +63,10 @@ var definitions = []Definition{
 		Description: "Checks SSH server settings, services listening on all interfaces, pending reboots, automatic updates, and the host firewall.",
 	},
 	{
+		ID: Hardening, Name: "Hardening audit", Sudo: "recommended",
+		Description: "Checks about 60 security settings against the DeaconGuard Linux baseline: accounts and passwords, SSH, network and kernel settings, services and the firewall, logging, file permissions, updates and time. Also records the machine's inventory.",
+	},
+	{
 		ID: Antivirus, Name: "Antivirus scan", Sudo: "recommended",
 		Description: "Scans temporary, home, and application directories for malware. Basic runs ClamAV, which the install script sets up; Advanced adds YARA rules.",
 		Warning:     "ClamAV loads its signatures on the host, using about 1 GB of memory, and can take several minutes.",
@@ -121,6 +125,9 @@ type Result struct {
 	Notes      []string  `json:"notes"`
 	Error      string    `json:"error,omitempty"`
 	Findings   []Finding `json:"findings"`
+	// Controls and Inventory are set by the hardening audit only.
+	Controls  []ControlResult `json:"controls,omitempty"`
+	Inventory *Inventory      `json:"inventory,omitempty"`
 }
 
 func (result *Result) add(finding Finding) {
@@ -177,6 +184,8 @@ func Run(id string, executor *Executor, target platform.Platform, now time.Time,
 		result = runMalware(executor)
 	case Config:
 		result = runConfig(executor, target)
+	case Hardening:
+		result = runHardening(executor, target)
 	case Antivirus:
 		result = runAntivirus(executor, now)
 	case YARA:
