@@ -53,6 +53,7 @@ type Server struct {
 	// agentPort is that listener's port, once SetAgentPort is called.
 	agentHandler http.Handler
 	agentPort    string
+	logViews     logViews
 }
 
 // New builds the local-mode handler. ui holds the built web app; scan may be

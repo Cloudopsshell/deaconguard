@@ -94,6 +94,10 @@ func sections(output []byte) map[string]string {
 	var body []string
 	flush := func() {
 		if current != "" {
+			// The last section ends with the output's final newline.
+			for len(body) > 0 && body[len(body)-1] == "" {
+				body = body[:len(body)-1]
+			}
 			result[current] = strings.Join(body, "\n")
 		}
 	}
