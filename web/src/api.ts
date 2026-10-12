@@ -8,7 +8,7 @@ export type ScanStatus =
   | "failed"
   | "needs_sudo";
 
-export type CheckId = "packages" | "integrity" | "malware" | "config" | "antivirus" | "yara";
+export type CheckId = "packages" | "integrity" | "malware" | "config" | "hardening" | "antivirus" | "yara";
 export type CheckStatus = "completed" | "partial" | "skipped" | "failed";
 
 export interface SeverityCounts {
@@ -148,6 +148,86 @@ export interface Scan {
   feed_stale: boolean;
   checks: CheckId[];
   has_log: boolean;
+  /** A handover audit: every check, graded together. */
+  audit: boolean;
+}
+
+export type ControlStatus = "pass" | "fail" | "na" | "unknown" | "accepted";
+
+/** A risk an admin accepted for a failed control, on one host or every host. */
+export interface AuditException {
+  id: string;
+  host_id: string;
+  control_id: string;
+  reason: string;
+  expires_at: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface AuditControl {
+  id: string;
+  category: string;
+  title: string;
+  severity: "critical" | "high" | "medium" | "low";
+  status: ControlStatus;
+  evidence: string;
+  rationale: string;
+  remediation: string;
+  exception?: AuditException;
+}
+
+export interface ControlCounts {
+  passed: number;
+  failed: number;
+  accepted: number;
+  not_applicable: number;
+  unknown: number;
+}
+
+export interface Inventory {
+  hostname: string;
+  os: string;
+  kernel: string;
+  architecture: string;
+  uptime_seconds: number;
+  virtualization: string;
+  cpus: number;
+  memory_bytes: number;
+  disks: { mount: string; size_bytes: number; used_bytes: number; used_percent: number }[] | null;
+  addresses: string[] | null;
+  packages: number;
+  listening: { protocol: string; address: string; port: number; exposed: boolean }[] | null;
+  login_users: string[] | null;
+  administrators: string[] | null;
+  timezone: string;
+  time_synced: boolean;
+}
+
+export interface AuditSummary {
+  grade: "A" | "B" | "C" | "D" | "F";
+  score: number;
+  caps: string[];
+  incomplete: string[];
+  counts: ControlCounts;
+  categories: (ControlCounts & { name: string })[];
+  controls: AuditControl[];
+  inventory: Inventory | null;
+  checks: { id: CheckId; name: string; status: CheckStatus; summary: string; findings: number; privileged: boolean }[];
+  packages: FixSummary | null;
+  severity: SeverityCounts;
+}
+
+export interface AuditListItem extends Scan {
+  grade?: AuditSummary["grade"];
+  score: number;
+  failed: number;
+}
+
+export interface AuditDetail {
+  scan: Scan;
+  host: Host;
+  summary?: AuditSummary;
 }
 
 export interface CheckSummary {
@@ -529,6 +609,14 @@ export const api = {
   respond: (scanId: string, answer: { value?: string; cancel?: boolean }) =>
     request<{ ok: boolean }>("POST", `/api/scans/${scanId}/respond`, answer),
   scan: (id: string) => request<ScanDetail>("GET", `/api/scans/${id}`),
+  startAudit: (hostId: string, advanced: boolean) => request<Scan>("POST", `/api/hosts/${hostId}/audits`, { advanced }),
+  auditList: (hostId?: string) => request<AuditListItem[]>("GET", `/api/audits${hostId ? `?host_id=${hostId}` : ""}`),
+  auditDetail: (id: string) => request<AuditDetail>("GET", `/api/audits/${id}`),
+  addException: (input: { host_id: string; control_id: string; reason: string; expires_at: string }) =>
+    request<AuditException>("POST", "/api/exceptions", input),
+  removeException: (id: string) => request<null>("DELETE", `/api/exceptions/${id}`),
+  auditSettings: () => request<{ audit_on_enroll: boolean }>("GET", "/api/settings/audit"),
+  setAuditOnEnroll: (on: boolean) => request<{ audit_on_enroll: boolean }>("PATCH", "/api/settings/audit", { audit_on_enroll: on }),
   deleteScan: (id: string) => request<{ ok: boolean }>("DELETE", `/api/scans/${id}`),
   vulnerabilities: () => request<Vulnerability[]>("GET", "/api/vulnerabilities"),
   vulnerability: (cve: string) =>

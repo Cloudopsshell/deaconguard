@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -22,7 +21,6 @@ import (
 	"deaconguard/internal/agent"
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/buildinfo"
-	checkspkg "deaconguard/internal/checks"
 	"deaconguard/internal/local"
 	"deaconguard/internal/runstate"
 	"deaconguard/internal/server"
@@ -461,49 +459,70 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 // scanThroughAgent queues a scan for an agent host and waits for the server,
 // which must be running, to hand it to the agent and store the result.
 func scanThroughAgent(host store.Host, checks []string, asJSON bool, output, diagnostics io.Writer) error {
-	if slices.Contains(checks, checkspkg.YARA) {
-		agents, err := store.Agents()
-		if err != nil {
-			return err
-		}
-		if version := agents[host.ID].Version; !agentapi.SupportsYARA(version) {
-			return agentapi.ErrNeedsNewerAgent(host.Address, version)
-		}
-	}
-	if _, busy, err := store.UnfinishedScan(host.ID); err != nil {
-		return err
-	} else if busy {
-		return fmt.Errorf("a scan is already queued or running for %s", host.Address)
-	}
-	record, err := store.QueueScan(host, checks)
+	id, err := queueForAgent(host, checks, false, diagnostics)
 	if err != nil {
 		return err
 	}
-	store.Audit(local.Username()+" (cli)", "scan.start", host.Address, strings.Join(checks, ", "), "")
-	fmt.Fprintf(diagnostics, "Queued scan %s for the agent on %s; the DeaconGuard server must be running to hand it over.\n", record.ID, host.Address)
-	fmt.Fprintln(diagnostics, "Waiting for the result (Ctrl+C stops waiting; the scan stays queued)...")
+	report, err := waitForAgent(id)
+	if err != nil {
+		return err
+	}
+	return showReport(report, asJSON, output)
+}
+
+// queueForAgent queues a scan, or an audit, for a host's agent.
+func queueForAgent(host store.Host, checks []string, isAudit bool, diagnostics io.Writer) (string, error) {
+	agents, err := store.Agents()
+	if err != nil {
+		return "", err
+	}
+	for _, check := range checks {
+		if version := agents[host.ID].Version; !agentapi.SupportsCheck(version, check) {
+			return "", agentapi.ErrAgentTooOld(host.Address, version, check)
+		}
+	}
+	if _, busy, err := store.UnfinishedScan(host.ID); err != nil {
+		return "", err
+	} else if busy {
+		return "", fmt.Errorf("a scan is already queued or running for %s", host.Address)
+	}
+	record, err := store.QueueScan(host, checks)
+	if err != nil {
+		return "", err
+	}
+	kind, action := "scan", "scan.start"
+	if isAudit {
+		if err := store.MarkAudit(record.ID); err != nil {
+			return "", err
+		}
+		kind, action = "audit", "audit.start"
+	}
+	store.Audit(local.Username()+" (cli)", action, host.Address, strings.Join(checks, ", "), "")
+	fmt.Fprintf(diagnostics, "Queued %s %s for the agent on %s; the DeaconGuard server must be running to hand it over.\n", kind, record.ID, host.Address)
+	fmt.Fprintln(diagnostics, "Waiting for the result (Ctrl+C stops waiting; it stays queued)...")
+	return record.ID, nil
+}
+
+// waitForAgent waits for a queued scan to finish and returns its report.
+func waitForAgent(id string) (map[string]any, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("stopped waiting; scan %s continues on the server", record.ID)
+			return nil, fmt.Errorf("stopped waiting; %s continues on the server", id)
 		case <-time.After(2 * time.Second):
 		}
-		current, err := store.GetScan(record.ID)
+		current, err := store.GetScan(id)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if store.IsUnfinished(current.Status) {
 			continue
 		}
 		if current.Status != store.ScanSucceeded {
-			return fmt.Errorf("scan failed: %s", current.Error)
+			return nil, fmt.Errorf("the scan failed: %s", current.Error)
 		}
-		report, err := store.GetReport(record.ID)
-		if err != nil {
-			return err
-		}
-		return showReport(report, asJSON, output)
+		return store.GetReport(id)
 	}
 }
