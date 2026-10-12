@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="{{.R.Generator}}">
+<title>{{.R.Title}}: {{.R.Host}}</title>
+<style>
+  :root { --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --soft: #f8fafc; --accent: #4f46e5;
+          --red: #b91c1c; --orange: #c2410c; --amber: #b45309; --green: #047857; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--ink); font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+  header.cover { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; border-bottom: 3px solid var(--accent); padding-bottom: 20px; }
+  header.cover img { max-height: 56px; max-width: 220px; }
+  .company { font-weight: 700; font-size: 16px; }
+  .contact { color: var(--muted); font-size: 12px; }
+  h1 { font-size: 26px; margin: 20px 0 4px; }
+  h2 { font-size: 18px; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 14px; margin: 20px 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .meta { color: var(--muted); }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 24px; margin: 16px 0; }
+  .facts dt { color: var(--muted); font-size: 12px; } .facts dd { margin: 0; overflow-wrap: anywhere; }
+  .grade { display: flex; gap: 20px; align-items: center; background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 20px 0; }
+  .letter { width: 72px; height: 72px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 800; flex: none; }
+  .g-A { background: #059669; color: #fff; } .g-B { background: #d1fae5; color: #065f46; } .g-C { background: #fef3c7; color: #92400e; }
+  .g-D { background: #ffedd5; color: #9a3412; } .g-F { background: #dc2626; color: #fff; }
+  .score { font-size: 18px; font-weight: 600; }
+  ul.reasons { margin: 8px 0 0; padding-left: 20px; } ul.reasons li.cap { color: var(--red); } ul.reasons li.gap { color: var(--amber); }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 13px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  td { border-bottom: 1px solid var(--line); padding: 6px 8px; vertical-align: top; overflow-wrap: anywhere; }
+  .num { text-align: right; white-space: nowrap; }
+  .pill { display: inline-block; border-radius: 999px; padding: 0 8px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .s-CRITICAL, .st-fail { background: #fee2e2; color: var(--red); } .s-HIGH { background: #ffedd5; color: var(--orange); }
+  .s-MEDIUM { background: #fef3c7; color: var(--amber); } .s-LOW, .s-UNKNOWN, .st-na, .st-unknown { background: #f1f5f9; color: #475569; }
+  .st-pass { background: #d1fae5; color: var(--green); } .st-accepted { background: #e0e7ff; color: #3730a3; }
+  .control { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; break-inside: avoid; }
+  .control .head { display: flex; justify-content: space-between; gap: 12px; }
+  .control .id { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+  .control p { margin: 4px 0; } .label { font-weight: 600; }
+  .evidence { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--soft); border-radius: 4px; padding: 2px 6px; overflow-wrap: anywhere; }
+  .accepted { background: #eef2ff; border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; } .bar span { display: block; height: 6px; border-radius: 3px; background: #10b981; }
+  footer { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+  .fingerprint { font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .downloads { margin: 0 0 16px; } .downloads a { margin-right: 12px; color: var(--accent); font-weight: 600; }
+  @media print { main { padding: 0; } h2 { break-after: avoid; } .downloads { display: none; } }
+</style>
+</head>
+<body>
+<main>
+{{if .Downloads}}<p class="downloads">Download: {{range .Downloads}}<a href="{{.URL}}">{{.Label}}</a>{{end}}</p>{{end}}
+<header class="cover">
+  <div>
+    {{if .Logo}}<img src="{{.Logo}}" alt="{{.R.Branding.Company}}">{{end}}
+    {{if .R.Branding.Company}}<div class="company">{{.R.Branding.Company}}</div>{{end}}
+    {{if .R.Branding.Contact}}<div class="contact">{{.R.Branding.Contact}}</div>{{end}}
+  </div>
+  <div class="meta" style="text-align:right">Report {{.R.ID}}<br>{{.Generated}}</div>
+</header>
+
+<h1>{{.R.Title}}</h1>
+<p class="meta">{{.R.Host}}{{if .R.OS}} · {{.R.OS}}{{end}}</p>
+<dl class="facts">
+  {{if .R.Client}}<div><dt>Prepared for</dt><dd>{{.R.Client}}</dd></div>{{end}}
+  <div><dt>Prepared by</dt><dd>{{.R.GeneratedBy}}{{if .R.Branding.Company}}, {{.R.Branding.Company}}{{end}}</dd></div>
+  <div><dt>Scanned</dt><dd>{{.Scanned}}</dd></div>
+  <div><dt>Checks</dt><dd>{{.CheckNames}}</dd></div>
+</dl>
+{{if .R.Notes}}<p>{{.R.Notes}}</p>{{end}}
+
+{{with .R.Audit}}
+<div class="grade">
+  <div class="letter g-{{.Grade}}">{{.Grade}}</div>
+  <div>
+    <div class="score">Score {{.Score}} of 100 · {{.Counts.Passed}} of {{add .Counts.Passed .Counts.Failed}} controls passed</div>
+    <div class="meta">{{.Counts.Failed}} failed · {{.Counts.Accepted}} accepted as risks · {{.Counts.NotApplicable}} not applicable{{if .Counts.Unknown}} · {{.Counts.Unknown}} not checked{{end}}</div>
+    {{if or .Caps .Incomplete}}<ul class="reasons">{{range .Caps}}<li class="cap">{{.}}</li>{{end}}{{range .Incomplete}}<li class="gap">{{.}}</li>{{end}}</ul>{{end}}
+  </div>
+</div>
+<p class="meta">The score weighs each baseline control by severity (critical 10, high 6, medium 3, low 1). The grade is A from 90, B from 80, C from 70, D from 60, then lowered by anything that should stop a handover.</p>
+{{end}}
+
+{{with .R.Comparison}}
+<h2>Since the audit of {{date .Date}}</h2>
+<p>Then: grade <strong>{{.Grade}}</strong>, score {{.Score}}, {{.CriticalThen}} critical and {{.HighThen}} high vulnerabilities with a fix available.</p>
+{{if .Fixed}}<h3>Fixed since then ({{len .Fixed}})</h3><ul>{{range .Fixed}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if .NewFailures}}<h3>Failing now, not then ({{len .NewFailures}})</h3><ul>{{range .NewFailures}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if not (or .Fixed .NewFailures)}}<p>No control changed between the two audits.</p>{{end}}
+{{end}}
+
+<h2>Summary</h2>
+<table>
+  <thead><tr><th>Check</th><th>Result</th><th>Status</th></tr></thead>
+  <tbody>
+  {{if .R.Packages}}<tr><td>Package vulnerabilities</td><td>{{.R.Packages.Actionable.Critical}} critical and {{.R.Packages.Actionable.High}} high with a fix available; {{len .R.Vulnerabilities}} in all</td><td></td></tr>{{end}}
+  {{range .R.CheckResults}}<tr><td>{{.Name}}</td><td>{{.Summary}}</td><td>{{.Status}}</td></tr>{{end}}
+  </tbody>
+</table>
+
+{{with .R.Audit}}
+<h2>Hardening baseline</h2>
+<table>
+  <thead><tr><th>Category</th><th class="num">Passed</th><th class="num">Failed</th><th class="num">Accepted</th><th class="num">N/A</th></tr></thead>
+  <tbody>{{range .Categories}}{{if total .}}<tr><td>{{.Name}}</td><td class="num">{{.Passed}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Accepted}}</td><td class="num">{{add .NotApplicable .Unknown}}</td></tr>{{end}}{{end}}</tbody>
+</table>
+{{if $.Failed}}<h3>Failed controls ({{len $.Failed}})</h3>{{range $.Failed}}{{template "control" .}}{{end}}{{end}}
+{{if $.Accepted}}<h3>Accepted risks ({{len $.Accepted}})</h3>{{range $.Accepted}}{{template "control" .}}{{end}}{{end}}
+{{if $.Passed}}<h3>Passed controls ({{len $.Passed}})</h3>
+<table><tbody>{{range $.Passed}}<tr><td class="id">{{.ID}}</td><td>{{.Title}}</td><td class="meta">{{.Evidence}}</td></tr>{{end}}</tbody></table>{{end}}
+{{if $.Other}}<h3>Not applicable or not checked ({{len $.Other}})</h3>
+<table><tbody>{{range $.Other}}<tr><td class="id">{{.ID}}</td><td>{{.Title}}</td><td class="meta">{{.Evidence}}</td></tr>{{end}}</tbody></table>{{end}}
+{{end}}
+
+{{if .R.Packages}}
+<h2>Vulnerabilities</h2>
+{{if .R.Vulnerabilities}}
+<p class="meta">From the distribution's own security advisories. Those an update or a restart fixes come first.</p>
+<table>
+  <thead><tr><th>CVE</th><th>Package</th><th>Installed</th><th>Fixed in</th><th>Severity</th><th>What clears it</th></tr></thead>
+  <tbody>{{range .Vulnerabilities}}<tr><td>{{.ID}}</td><td>{{.Package}}</td><td>{{.Installed}}</td><td>{{.Fixed}}</td><td><span class="pill s-{{.Severity}}">{{.Severity}}</span></td><td>{{fix .Fix}}</td></tr>{{end}}</tbody>
+</table>
+{{if .MoreVulnerabilities}}<p class="meta">{{.MoreVulnerabilities}} more without a fix from the distribution are in the CSV, Excel and JSON versions of this report.</p>{{end}}
+{{else}}<p>No vulnerable packages were found.</p>{{end}}
+{{end}}
+
+{{range .R.CheckResults}}{{if .Findings}}
+<h2>{{.Name}}</h2>
+<table>
+  <thead><tr><th>Severity</th><th>Finding</th><th>Evidence</th></tr></thead>
+  <tbody>{{range .Findings}}<tr><td><span class="pill s-{{.Severity}}">{{.Severity}}</span></td><td><strong>{{.Title}}</strong><br><span class="meta">{{.Detail}}</span></td><td class="evidence">{{.Evidence}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}{{end}}
+
+{{with .R.Inventory}}
+<h2>Inventory</h2>
+<dl class="facts">
+  <div><dt>Host name</dt><dd>{{.Hostname}}</dd></div>
+  <div><dt>Operating system</dt><dd>{{.OS}}</dd></div>
+  <div><dt>Kernel</dt><dd>{{.Kernel}} ({{.Architecture}})</dd></div>
+  <div><dt>Runs on</dt><dd>{{runsOn .Virtualization}}</dd></div>
+  <div><dt>Processors</dt><dd>{{.CPUs}}</dd></div>
+  <div><dt>Memory</dt><dd>{{bytes .MemoryBytes}}</dd></div>
+  <div><dt>Up for</dt><dd>{{uptime .UptimeSeconds}}</dd></div>
+  <div><dt>Packages</dt><dd>{{.Packages}}</dd></div>
+  <div><dt>Time zone</dt><dd>{{or .Timezone "—"}}{{if .TimeSynced}}, clock synchronised{{end}}</dd></div>
+  <div><dt>Administrators</dt><dd>{{join .Administrators}}</dd></div>
+  <div><dt>Accounts that can log in</dt><dd>{{join .LoginUsers}}</dd></div>
+  <div><dt>Addresses</dt><dd>{{join .Addresses}}</dd></div>
+</dl>
+{{if .Disks}}<h3>Disks</h3>
+<table><thead><tr><th>Mount</th><th class="num">Size</th><th class="num">Used</th><th style="width:30%"></th></tr></thead>
+<tbody>{{range .Disks}}<tr><td>{{.Mount}}</td><td class="num">{{bytes .SizeBytes}}</td><td class="num">{{.UsedPercent}}%</td><td><div class="bar"><span style="width: {{.UsedPercent}}%"></span></div></td></tr>{{end}}</tbody></table>{{end}}
+{{if .Listening}}<h3>Listening services</h3>
+<table><thead><tr><th>Protocol</th><th>Port</th><th>Listens on</th></tr></thead>
+<tbody>{{range .Listening}}<tr><td>{{upper .Protocol}}</td><td>{{.Port}}</td><td>{{if .Exposed}}all interfaces{{else}}{{.Address}}{{end}}</td></tr>{{end}}</tbody></table>{{end}}
+{{end}}
+
+<footer>
+  <p>Report {{.R.ID}}, generated {{.Generated}} by {{.R.Generator}}.{{if .R.Branding.Company}} Prepared by {{.R.Branding.Company}}.{{end}}</p>
+  <p>Fingerprint (SHA-256): <span class="fingerprint">{{.Fingerprint}}</span><br>
+  To check this report wasn't changed, enter its ID and fingerprint on the DeaconGuard server's Verify a report page.</p>
+  <p>Like every DeaconGuard scan, the audit only read the machine: it changed nothing. A clean result means nothing was found in what was checked, not that the machine is guaranteed secure.</p>
+</footer>
+</main>
+</body>
+</html>
+{{define "control"}}<div class="control">
+  <div class="head"><div><span class="id">{{.ID}}</span> <strong>{{.Title}}</strong></div><div><span class="pill s-{{upper .Severity}}">{{upper .Severity}}</span> <span class="pill st-{{.Status}}">{{status .Status}}</span></div></div>
+  <p><span class="label">Found:</span> <span class="evidence">{{.Evidence}}</span></p>
+  <p><span class="label">Why it matters:</span> {{.Rationale}}</p>
+  <p><span class="label">How to fix:</span> {{.Remediation}}</p>
+  {{with .Exception}}<div class="accepted"><span class="label">Accepted {{if .HostID}}for this host{{else}}for every host{{end}}</span> by {{.CreatedBy}}{{if .ExpiresAt}}, until {{date .ExpiresAt}}{{end}}: {{.Reason}}</div>{{end}}
+</div>{{end}}
