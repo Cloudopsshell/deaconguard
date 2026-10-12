@@ -166,16 +166,17 @@ func join(values []string) string {
 }
 
 var page = template.Must(template.New("report.html.tmpl").Funcs(template.FuncMap{
-	"add":    func(a, b int) int { return a + b },
-	"total":  func(c audit.Category) int { return c.Passed + c.Failed + c.Accepted + c.NotApplicable + c.Unknown },
-	"date":   formatDate,
-	"fix":    FixLabel,
-	"status": StatusLabel,
-	"upper":  strings.ToUpper,
-	"join":   join,
-	"bytes":  formatBytes,
-	"uptime": formatUptime,
-	"runsOn": runsOn,
+	"add":         func(a, b int) int { return a + b },
+	"total":       func(c audit.Category) int { return c.Passed + c.Failed + c.Accepted + c.NotApplicable + c.Unknown },
+	"date":        formatDate,
+	"fix":         FixLabel,
+	"status":      StatusLabel,
+	"requirement": RequirementLabel,
+	"upper":       strings.ToUpper,
+	"join":        join,
+	"bytes":       formatBytes,
+	"uptime":      formatUptime,
+	"runsOn":      runsOn,
 }).ParseFS(templates, "templates/report.html.tmpl"))
 
 // HTML renders a report as one self-contained page; downloads are offered

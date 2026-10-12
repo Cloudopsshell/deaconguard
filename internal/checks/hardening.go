@@ -113,6 +113,7 @@ func runHardening(executor *Executor, target platform.Platform) Result {
 	}
 	m := newMachine(target.Family, facts, privileged)
 	result.Inventory = m.inventory(target)
+	result.Facts = m.export()
 	for _, control := range baseline {
 		outcome := ControlResult{
 			ID: control.id, Category: control.category, Title: control.title, Severity: control.severity,
@@ -191,7 +192,7 @@ func newMachine(family platform.Family, facts map[string]string, root bool) *mac
 var sshdDefaults = map[string]string{
 	"permitrootlogin": "prohibit-password", "passwordauthentication": "yes", "permitemptypasswords": "no",
 	"x11forwarding": "no", "maxauthtries": "6", "clientaliveinterval": "0", "hostbasedauthentication": "no",
-	"ignorerhosts": "yes", "logingracetime": "120", "permituserenvironment": "no",
+	"ignorerhosts": "yes", "logingracetime": "120", "permituserenvironment": "no", "banner": "none", "loglevel": "info",
 }
 
 func (m *machine) collected(name string) bool {
@@ -372,4 +373,51 @@ func listening(output string) []Listening {
 		return sockets[a].Protocol < sockets[b].Protocol
 	})
 	return sockets
+}
+
+// Facts are the settings custom policies can test: no file contents beyond
+// these, and nothing from /etc/shadow.
+type Facts struct {
+	// SSHD is the SSH server's effective settings, lowercase; empty without
+	// an SSH server.
+	SSHD map[string]string `json:"sshd,omitempty"`
+	// Root says whether facts that need root were read.
+	Root      bool                `json:"root"`
+	Sysctl    map[string]string   `json:"sysctl"`
+	LoginDefs map[string]string   `json:"login_defs"`
+	Packages  []string            `json:"packages"`
+	Active    []string            `json:"active"`
+	Mounts    map[string][]string `json:"mounts"`
+	Modes     map[string]FileMode `json:"modes"`
+}
+
+// FileMode is a key file's permissions, such as "0640", and owners.
+type FileMode struct {
+	Mode  string `json:"mode"`
+	Owner string `json:"owner"`
+	Group string `json:"group"`
+}
+
+func (m *machine) export() *Facts {
+	facts := &Facts{SSHD: m.sshd, Root: m.root, Sysctl: m.sysctl, LoginDefs: keyValues(m.facts["login.defs"]),
+		Mounts: map[string][]string{}, Modes: map[string]FileMode{}}
+	for name := range m.packages {
+		if name != "" {
+			facts.Packages = append(facts.Packages, name)
+		}
+	}
+	sort.Strings(facts.Packages)
+	for name := range m.active {
+		facts.Active = append(facts.Active, name)
+	}
+	sort.Strings(facts.Active)
+	for _, line := range lines([]byte(m.facts["mounts"])) {
+		if fields := strings.Fields(line); len(fields) >= 4 {
+			facts.Mounts[fields[1]] = strings.Split(fields[3], ",")
+		}
+	}
+	for path, mode := range m.modes {
+		facts.Modes[path] = FileMode{Mode: fmt.Sprintf("%04o", mode.mode), Owner: mode.owner, Group: mode.group}
+	}
+	return facts
 }

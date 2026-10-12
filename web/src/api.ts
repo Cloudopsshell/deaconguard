@@ -216,6 +216,42 @@ export interface AuditSummary {
   checks: { id: CheckId; name: string; status: CheckStatus; summary: string; findings: number; privileged: boolean }[];
   packages: FixSummary | null;
   severity: SeverityCounts;
+  /** The admins' own controls; they don't change the grade. */
+  policies: PolicyResult[];
+}
+
+export interface PolicyResult {
+  id: string;
+  name: string;
+  counts: ControlCounts;
+  controls: AuditControl[];
+}
+
+export type RequirementStatus = "met" | "met_accepted" | "not_met" | "not_checked" | "not_evaluated";
+
+export interface Framework {
+  id: string;
+  name: string;
+  short: string;
+}
+
+export interface ComplianceResult {
+  framework: Framework;
+  requirements: { id: string; name: string; status: RequirementStatus; controls: { id: string; title: string; status: ControlStatus }[] }[];
+  met: number;
+  not_met: number;
+  other: number;
+}
+
+export interface Policy {
+  id: string;
+  name: string;
+  source: string;
+  enabled: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  controls: number;
 }
 
 export interface AuditListItem extends Scan {
@@ -228,6 +264,7 @@ export interface AuditDetail {
   scan: Scan;
   host: Host;
   summary?: AuditSummary;
+  compliance?: ComplianceResult[];
 }
 
 /** A frozen report of an audit or scan, downloadable in several formats. */
@@ -662,7 +699,13 @@ export const api = {
     request<AuditException>("POST", "/api/exceptions", input),
   removeException: (id: string) => request<null>("DELETE", `/api/exceptions/${id}`),
   auditSettings: () => request<{ audit_on_enroll: boolean }>("GET", "/api/settings/audit"),
-  createReport: (input: { scan_id: string; client: string; notes: string; compare_with: string }) => request<ReportRecord>("POST", "/api/reports", input),
+  createReport: (input: { scan_id: string; client: string; notes: string; compare_with: string; frameworks: string[] }) =>
+    request<ReportRecord>("POST", "/api/reports", input),
+  frameworks: () => request<Framework[]>("GET", "/api/frameworks"),
+  policies: () => request<{ policies: Policy[]; example: string; files: string[] }>("GET", "/api/policies"),
+  addPolicy: (source: string) => request<Policy>("POST", "/api/policies", { source }),
+  updatePolicy: (id: string, change: { source?: string; enabled?: boolean }) => request<Policy>("PATCH", `/api/policies/${id}`, change),
+  deletePolicy: (id: string) => request<null>("DELETE", `/api/policies/${id}`),
   reports: (query: { scanId?: string; hostId?: string }) =>
     request<ReportRecord[]>("GET", `/api/reports?${new URLSearchParams({ scan_id: query.scanId ?? "", host_id: query.hostId ?? "" })}`),
   deleteReport: (id: string) => request<null>("DELETE", `/api/reports/${id}`),

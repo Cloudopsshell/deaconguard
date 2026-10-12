@@ -146,6 +146,8 @@ func PDF(report Report, fingerprint string) ([]byte, error) {
 	w.summary()
 	w.comparison()
 	w.controls()
+	w.policies()
+	w.compliance()
 	w.vulnerabilities()
 	w.findings()
 	w.inventory()
@@ -503,4 +505,50 @@ func timezone(zone string, synced bool) string {
 		zone += ", clock synchronised"
 	}
 	return zone
+}
+
+var reqFG = map[string]rgb{"met": green, "met_accepted": {55, 48, 163}, "not_met": red, "not_checked": amber, "not_evaluated": muted}
+
+func (w *pdfWriter) policies() {
+	for _, result := range w.r.Policies {
+		w.heading("Policy: " + result.Name)
+		w.text(fmt.Sprintf("Your organisation's own controls, tested on the same settings; they don't change the grade. %d passed · %d failed · %d accepted · %d not applicable or not checked.",
+			result.Counts.Passed, result.Counts.Failed, result.Counts.Accepted, result.Counts.NotApplicable+result.Counts.Unknown), 9, "", muted)
+		w.pdf.Ln(2)
+		for _, control := range result.Controls {
+			if control.Status == checks.ControlFail || control.Status == audit.Accepted {
+				w.controlBlock(control)
+			}
+		}
+		widths := []float64{22, 64, 24, 64}
+		for _, control := range result.Controls {
+			if control.Status != checks.ControlFail && control.Status != audit.Accepted {
+				w.row(widths, []string{control.ID, control.Title, StatusLabel(control.Status), control.Evidence}, []rgb{muted, {}, statFG[control.Status], muted}, false)
+			}
+		}
+	}
+}
+
+func (w *pdfWriter) compliance() {
+	for _, result := range w.r.Compliance {
+		w.heading(result.Framework.Name)
+		other := ""
+		if result.Other > 0 {
+			other = fmt.Sprintf(", %d not checked", result.Other)
+		}
+		w.text(fmt.Sprintf("The requirements this audit gives evidence for: %d met, %d not met%s. This is DeaconGuard's mapping, for guidance. "+
+			"The framework also has requirements about policies, people and processes that no scan can check, so this is not a certification.",
+			result.Met, result.NotMet, other), 9, "", muted)
+		w.pdf.Ln(2)
+		widths := []float64{70, 30, 74}
+		w.row(widths, []string{"Requirement", "Status", "Evidence"}, nil, true)
+		for _, requirement := range result.Requirements {
+			var evidence []string
+			for _, control := range requirement.Controls {
+				evidence = append(evidence, control.ID+" "+StatusLabel(control.Status))
+			}
+			w.row(widths, []string{requirement.ID + "  " + requirement.Name, RequirementLabel(requirement.Status), strings.Join(evidence, ", ")},
+				[]rgb{{}, reqFG[requirement.Status], muted}, false)
+		}
+	}
 }
