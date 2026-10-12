@@ -128,6 +128,9 @@ type Result struct {
 	// Controls and Inventory are set by the hardening audit only.
 	Controls  []ControlResult `json:"controls,omitempty"`
 	Inventory *Inventory      `json:"inventory,omitempty"`
+	// Facts are the settings the hardening audit read, for custom policies
+	// the server evaluates.
+	Facts *Facts `json:"facts,omitempty"`
 }
 
 func (result *Result) add(finding Finding) {

@@ -160,6 +160,11 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/settings/reports/logo", s.getLogo)
 	mux.HandleFunc("PUT /api/settings/reports/logo", s.needs(store.RoleAdmin, s.uploadLogo))
 	mux.HandleFunc("DELETE /api/settings/reports/logo", s.needs(store.RoleAdmin, s.removeLogo))
+	mux.HandleFunc("GET /api/policies", s.listPolicies)
+	mux.HandleFunc("POST /api/policies", s.needs(store.RoleAdmin, s.addPolicy))
+	mux.HandleFunc("PATCH /api/policies/{id}", s.needs(store.RoleAdmin, s.updatePolicy))
+	mux.HandleFunc("DELETE /api/policies/{id}", s.needs(store.RoleAdmin, s.deletePolicy))
+	mux.HandleFunc("GET /api/frameworks", s.listFrameworks)
 	mux.HandleFunc("GET /share/{token}", s.openShare)
 	mux.HandleFunc("GET /share/{token}/{file}", s.openShare)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

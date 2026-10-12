@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"deaconguard/internal/checks"
+	"deaconguard/internal/policy"
 	"deaconguard/internal/store"
 )
 
@@ -63,6 +64,57 @@ type Summary struct {
 	Checks     []Check              `json:"checks"`
 	Packages   *store.FixSummary    `json:"packages"`
 	Severity   store.SeverityCounts `json:"severity"`
+	// Policies are the admins' own controls, tested on the same settings.
+	// They are shown and reported, but don't change the grade.
+	Policies []PolicyResult `json:"policies"`
+
+	// What custom policies test.
+	facts     *checks.Facts
+	listening []checks.Listening
+	accepted  map[string]store.Exception
+}
+
+// PolicyResult is one custom policy's controls on this audit.
+type PolicyResult struct {
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	Counts   Counts    `json:"counts"`
+	Controls []Control `json:"controls"`
+}
+
+// NamedPolicy is an enabled policy with its stored ID.
+type NamedPolicy struct {
+	ID     string
+	Policy policy.Policy
+}
+
+// ApplyPolicies tests custom policies against what the audit read. A
+// failed policy control can be accepted like a baseline one.
+func (s *Summary) ApplyPolicies(policies []NamedPolicy) {
+	s.Policies = []PolicyResult{}
+	for _, named := range policies {
+		result := PolicyResult{ID: named.ID, Name: named.Policy.Name, Controls: []Control{}}
+		for _, outcome := range policy.Evaluate(named.Policy, s.facts, s.listening) {
+			control := Control{ControlResult: outcome}
+			switch outcome.Status {
+			case checks.ControlPass:
+				result.Counts.Passed++
+			case checks.ControlFail:
+				if exception, ok := s.accepted[outcome.ID]; ok {
+					control.Status, control.Exception = Accepted, &exception
+					result.Counts.Accepted++
+				} else {
+					result.Counts.Failed++
+				}
+			case checks.ControlNA:
+				result.Counts.NotApplicable++
+			default:
+				result.Counts.Unknown++
+			}
+			result.Controls = append(result.Controls, control)
+		}
+		s.Policies = append(s.Policies, result)
+	}
 }
 
 // Checks every audit runs. The advanced antivirus scan is optional.
@@ -131,6 +183,12 @@ func Grade(scan store.Scan, report map[string]any, exceptions []store.Exception,
 		summary.Incomplete = append(summary.Incomplete, "The hardening baseline did not run.")
 	}
 	summary.Inventory = hardening.Inventory
+	summary.facts = hardening.Facts
+	if hardening.Inventory != nil {
+		summary.listening = hardening.Inventory.Listening
+	}
+	summary.accepted = accepted
+	summary.Policies = []PolicyResult{}
 	categories := map[string]*Category{}
 	for _, name := range checks.Categories() {
 		categories[name] = &Category{Name: name}
