@@ -34,7 +34,8 @@
   .pill { display: inline-block; border-radius: 999px; padding: 0 8px; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .s-CRITICAL, .st-fail { background: #fee2e2; color: var(--red); } .s-HIGH { background: #ffedd5; color: var(--orange); }
   .s-MEDIUM { background: #fef3c7; color: var(--amber); } .s-LOW, .s-UNKNOWN, .st-na, .st-unknown { background: #f1f5f9; color: #475569; }
-  .st-pass { background: #d1fae5; color: var(--green); } .st-accepted { background: #e0e7ff; color: #3730a3; }
+  .st-pass, .req-met { background: #d1fae5; color: var(--green); } .req-met_accepted { background: #e0e7ff; color: #3730a3; }
+  .req-not_met { background: #fee2e2; color: var(--red); } .req-not_checked, .req-not_evaluated { background: #fef3c7; color: var(--amber); } .st-accepted { background: #e0e7ff; color: #3730a3; }
   .control { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; break-inside: avoid; }
   .control .head { display: flex; justify-content: space-between; gap: 12px; }
   .control .id { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
@@ -111,6 +112,22 @@
 <table><tbody>{{range $.Passed}}<tr><td class="id">{{.ID}}</td><td>{{.Title}}</td><td class="meta">{{.Evidence}}</td></tr>{{end}}</tbody></table>{{end}}
 {{if $.Other}}<h3>Not applicable or not checked ({{len $.Other}})</h3>
 <table><tbody>{{range $.Other}}<tr><td class="id">{{.ID}}</td><td>{{.Title}}</td><td class="meta">{{.Evidence}}</td></tr>{{end}}</tbody></table>{{end}}
+{{end}}
+
+{{range .R.Policies}}
+<h2>Policy: {{.Name}}</h2>
+<p class="meta">Your organisation's own controls, tested on the same settings. They don't change the grade. {{.Counts.Passed}} passed · {{.Counts.Failed}} failed · {{.Counts.Accepted}} accepted · {{add .Counts.NotApplicable .Counts.Unknown}} not applicable or not checked.</p>
+{{range .Controls}}{{if or (eq .Status "fail") (eq .Status "accepted")}}{{template "control" .}}{{end}}{{end}}
+<table><tbody>{{range .Controls}}{{if not (or (eq .Status "fail") (eq .Status "accepted"))}}<tr><td class="id">{{.ID}}</td><td>{{.Title}}</td><td><span class="pill st-{{.Status}}">{{status .Status}}</span></td><td class="meta">{{.Evidence}}</td></tr>{{end}}{{end}}</tbody></table>
+{{end}}
+
+{{range .R.Compliance}}
+<h2>{{.Framework.Name}}</h2>
+<p class="meta">The requirements this audit gives evidence for: {{.Met}} met, {{.NotMet}} not met{{if .Other}}, {{.Other}} not checked{{end}}. This is DeaconGuard's mapping, for guidance. The framework also has requirements about policies, people and processes that no scan can check, so this is not a certification.</p>
+<table>
+  <thead><tr><th>Requirement</th><th>Status</th><th>Evidence</th></tr></thead>
+  <tbody>{{range .Requirements}}<tr><td><strong>{{.ID}}</strong> {{.Name}}</td><td><span class="pill req-{{.Status}}">{{requirement .Status}}</span></td><td class="meta">{{range $i, $c := .Controls}}{{if $i}}, {{end}}{{$c.ID}} {{status $c.Status}}{{end}}</td></tr>{{end}}</tbody>
+</table>
 {{end}}
 
 {{if .R.Packages}}

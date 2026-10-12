@@ -15,6 +15,7 @@ import (
 
 	"deaconguard/internal/audit"
 	"deaconguard/internal/checks"
+	"deaconguard/internal/compliance"
 	"deaconguard/internal/store"
 )
 
@@ -52,6 +53,8 @@ type Report struct {
 	Audit      *AuditPart `json:"audit,omitempty"`
 
 	Comparison      *Comparison          `json:"comparison,omitempty"`
+	Policies        []audit.PolicyResult `json:"policies,omitempty"`
+	Compliance      []compliance.Result  `json:"compliance,omitempty"`
 	Packages        *store.FixSummary    `json:"packages,omitempty"`
 	Severity        store.SeverityCounts `json:"severity"`
 	Vulnerabilities []Vulnerability      `json:"vulnerabilities"`
@@ -112,12 +115,14 @@ type Source struct {
 	Summary     *audit.Summary
 	Base        *store.Scan
 	BaseSummary *audit.Summary
-	Branding    Branding
-	Client      string
-	Notes       string
-	By          string
-	Now         time.Time
-	Version     string
+	// Frameworks to include a compliance mapping for.
+	Frameworks []string
+	Branding   Branding
+	Client     string
+	Notes      string
+	By         string
+	Now        time.Time
+	Version    string
 }
 
 // Build freezes a report.
@@ -137,6 +142,12 @@ func Build(source Source) (Report, error) {
 		report.Audit = &AuditPart{Grade: summary.Grade, Score: summary.Score, Caps: summary.Caps, Incomplete: summary.Incomplete,
 			Counts: summary.Counts, Categories: summary.Categories, Controls: summary.Controls}
 		report.Inventory = summary.Inventory
+		report.Policies = summary.Policies
+		for _, id := range source.Frameworks {
+			if framework, found := compliance.Find(id); found {
+				report.Compliance = append(report.Compliance, compliance.Evaluate(*summary, framework))
+			}
+		}
 		if source.Base != nil && source.BaseSummary != nil {
 			report.Comparison = compare(*source.Base, *source.BaseSummary, *summary)
 		}
@@ -297,4 +308,19 @@ func StatusLabel(status string) string {
 		return "Not applicable"
 	}
 	return "Not checked"
+}
+
+// RequirementLabel names a compliance requirement's status.
+func RequirementLabel(status string) string {
+	switch status {
+	case compliance.Met:
+		return "Met"
+	case compliance.MetAccepted:
+		return "Met, risk accepted"
+	case compliance.NotMet:
+		return "Not met"
+	case compliance.NotChecked:
+		return "Not checked"
+	}
+	return "Not applicable"
 }

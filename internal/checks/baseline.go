@@ -286,6 +286,69 @@ var baseline = []control{
 			}
 			return pass("no user ID is shared")
 		}},
+	{id: "ACC-09", category: categoryAccounts, severity: "low", title: "Unused accounts are locked after 90 days",
+		rationale:   "Accounts nobody uses anymore, often of people who left, are easy to take over unnoticed.",
+		remediation: "Set INACTIVE=35 (or at most 90) in /etc/default/useradd, and for existing accounts: chage --inactive 35 NAME.",
+		check: func(m *machine) (string, string) {
+			value := keyValues(m.facts["useradd"])["inactive"]
+			days, err := strconv.Atoi(value)
+			if err != nil || days < 0 {
+				return fail("INACTIVE is not set in /etc/default/useradd, so unused accounts never lock")
+			}
+			if days > 90 {
+				return fail("INACTIVE=%d", days)
+			}
+			return pass("INACTIVE=%d", days)
+		}},
+	{id: "ACC-10", category: categoryAccounts, severity: "medium", title: "Passwords can't reuse the last 4",
+		rationale:   "Without a history, people cycle back to an old, possibly leaked password.",
+		remediation: "Add remember=4 (or more) to pam_pwhistory or pam_unix in the PAM password stack.",
+		check: func(m *machine) (string, string) {
+			best := 0
+			for _, line := range lines([]byte(m.facts["pam"])) {
+				if !strings.Contains(line, "pam_pwhistory") && !strings.Contains(line, "pam_unix") {
+					continue
+				}
+				for _, field := range strings.Fields(line) {
+					if value, found := strings.CutPrefix(field, "remember="); found {
+						if remember, err := strconv.Atoi(value); err == nil && remember > best {
+							best = remember
+						}
+					}
+				}
+			}
+			if best >= 4 {
+				return pass("remember=%d", best)
+			}
+			if best > 0 {
+				return fail("remember=%d", best)
+			}
+			return fail("no password history is configured in /etc/pam.d")
+		}},
+	{id: "ACC-11", category: categoryAccounts, severity: "medium", title: "Accounts lock after at most 10 failed logins",
+		rationale:   "A high limit leaves room for thousands of guesses a day.",
+		remediation: "Set deny = 10 or lower in /etc/security/faillock.conf.",
+		check: func(m *machine) (string, string) {
+			if !strings.Contains(m.facts["pam"], "pam_faillock") && !strings.Contains(m.facts["pam"], "pam_tally2") {
+				return notApplicable("no lockout is configured; see ACC-05")
+			}
+			deny := 3 // pam_faillock's default
+			source := "pam_faillock's default"
+			if value, err := strconv.Atoi(keyValues(m.facts["faillock"])["deny"]); err == nil {
+				deny, source = value, "/etc/security/faillock.conf"
+			}
+			for _, field := range strings.Fields(m.facts["pam"]) {
+				if value, found := strings.CutPrefix(field, "deny="); found {
+					if parsed, err := strconv.Atoi(value); err == nil {
+						deny, source = parsed, "/etc/pam.d"
+					}
+				}
+			}
+			if deny == 0 || deny > 10 {
+				return fail("deny = %d (from %s)", deny, source)
+			}
+			return pass("deny = %d (from %s)", deny, source)
+		}},
 
 	// SSH.
 	{id: "SSH-01", category: categorySSH, severity: "high", title: "Root cannot log in over SSH with a password",
@@ -360,6 +423,22 @@ var baseline = []control{
 			}
 			return modeAtMost("/etc/ssh/sshd_config", 0o600, false)(m)
 		}},
+	{id: "SSH-13", category: categorySSH, severity: "low", title: "SSH shows a warning banner before login",
+		rationale:   "A banner states that access is restricted and monitored, which many policies and some laws require.",
+		remediation: "Write the notice to /etc/issue.net and set Banner /etc/issue.net.",
+		check: func(m *machine) (string, string) {
+			if m.sshd == nil {
+				return m.noSSH()
+			}
+			if banner := m.sshd["banner"]; banner != "" && banner != "none" {
+				return pass("Banner %s (from %s)", banner, m.sshdSource)
+			}
+			return fail("no Banner is set (from %s)", m.sshdSource)
+		}},
+	{id: "SSH-14", category: categorySSH, severity: "low", title: "SSH logs every login",
+		rationale:   "Login records are the first thing looked at after an incident.",
+		remediation: "Set LogLevel INFO or VERBOSE.",
+		check:       sshdIs("loglevel", "info", "verbose")},
 
 	// Network.
 	{id: "NET-01", category: categoryNetwork, severity: "medium", title: "IP forwarding is off",
@@ -443,6 +522,22 @@ var baseline = []control{
 				return ControlPass, hardEvidence + "; " + softEvidence
 			}
 			return hard, hardEvidence
+		}},
+	{id: "KRN-07", category: categoryKernel, severity: "low", title: "Core dumps are off for everyone",
+		rationale:   "A crashing program's memory can hold passwords and keys, written to disk for anyone who finds it.",
+		remediation: "Add '* hard core 0' to /etc/security/limits.conf, and Storage=none to /etc/systemd/coredump.conf.",
+		check: func(m *machine) (string, string) {
+			text := m.facts["core-limits"]
+			for _, line := range lines([]byte(text)) {
+				fields := strings.Fields(line)
+				if len(fields) == 4 && fields[0] == "*" && fields[1] == "hard" && fields[2] == "core" && fields[3] == "0" {
+					return pass("* hard core 0 in the limits configuration")
+				}
+			}
+			if strings.EqualFold(keyValues(text)["storage"], "none") {
+				return pass("systemd-coredump Storage=none")
+			}
+			return fail("neither '* hard core 0' nor systemd-coredump Storage=none is set")
 		}},
 
 	// Services and firewall.
@@ -530,6 +625,21 @@ var baseline = []control{
 			}
 			return notApplicable("no mail server listens on port 25")
 		}},
+	{id: "SVC-07", category: categoryServices, severity: "low", title: "USB storage can't be used",
+		rationale:   "USB drives are a way to copy data off a server, or to bring malware onto it.",
+		remediation: "Add 'install usb-storage /bin/false' to a file in /etc/modprobe.d/.",
+		check: func(m *machine) (string, string) {
+			text := m.facts["usb-storage"]
+			switch {
+			case !m.collected("usb-storage"):
+				return unknown("modprobe is not available")
+			case strings.Contains(text, "/bin/false") || strings.Contains(text, "/bin/true"):
+				return pass("usb-storage is disabled in modprobe.d")
+			case strings.Contains(strings.ToLower(text), "not found"):
+				return notApplicable("this kernel has no usb-storage module")
+			}
+			return fail("usb-storage would load")
+		}},
 
 	// Logging and auditing.
 	{id: "LOG-01", category: categoryLogging, severity: "medium", title: "The audit daemon is running",
@@ -584,6 +694,19 @@ var baseline = []control{
 				return pass("journald stores logs on disk")
 			}
 			return fail("journald keeps logs in memory only, and no syslog service runs")
+		}},
+	{id: "LOG-05", category: categoryLogging, severity: "low", title: "Log files aren't readable by everyone",
+		rationale:   "Logs often contain user names, addresses and sometimes secrets typed in the wrong place.",
+		remediation: "Remove read access for others: chmod o-r FILE, and fix the program or logrotate setting that creates it.",
+		check: func(m *machine) (string, string) {
+			found, ok := m.rootLines("readable-logs")
+			if !ok {
+				return unknown(needsRoot)
+			}
+			if len(found) > 0 {
+				return fail("%d readable by everyone: %s", len(found), listOrNone(found, 5))
+			}
+			return pass("no file in /var/log is readable by everyone")
 		}},
 
 	// Files and permissions.
@@ -713,6 +836,34 @@ var baseline = []control{
 			}
 			return notApplicable("no GRUB configuration was found")
 		}},
+	{id: "FS-13", category: categoryFiles, severity: "low", title: "Home directories are private",
+		rationale:   "Other accounts can read files left in a home directory that's open to them.",
+		remediation: "chmod 750 /home/NAME (or 700).",
+		check: func(m *machine) (string, string) {
+			var open []string
+			homes := 0
+			for _, line := range lines([]byte(m.facts["homes"])) {
+				fields := strings.Fields(line)
+				if len(fields) != 3 {
+					continue
+				}
+				mode, err := strconv.ParseInt(fields[0], 8, 32)
+				if err != nil {
+					continue
+				}
+				homes++
+				if mode&0o027 != 0 {
+					open = append(open, fmt.Sprintf("%s %04o", fields[2], mode))
+				}
+			}
+			if homes == 0 {
+				return notApplicable("there are no home directories in /home")
+			}
+			if len(open) > 0 {
+				return fail("open to other accounts: %s", listOrNone(open, 5))
+			}
+			return pass("%d home directories are private", homes)
+		}},
 
 	// Updates.
 	{id: "UPD-01", category: categoryUpdates, severity: "medium", title: "Security updates install automatically",
@@ -736,6 +887,23 @@ var baseline = []control{
 				return fail("updates are waiting for a reboot")
 			}
 			return pass("no reboot is pending")
+		}},
+	{id: "UPD-03", category: categoryUpdates, severity: "medium", title: "Packages are only installed from signed sources",
+		rationale:   "Unsigned packages could be replaced in transit or on a mirror without anyone noticing.",
+		remediation: "Set gpgcheck=1 for every repository (RHEL, Amazon Linux); remove trusted=yes and AllowUnauthenticated from APT's configuration.",
+		check: func(m *machine) (string, string) {
+			var unsigned []string
+			for _, line := range lines([]byte(m.facts["package-signing"])) {
+				compact := strings.ToLower(strings.Join(strings.Fields(line), ""))
+				if compact == "gpgcheck=0" || compact == "gpgcheck=false" || strings.Contains(compact, "trusted=yes") ||
+					strings.Contains(compact, "allowunauthenticated\"true\"") || strings.Contains(compact, "allow-insecure=yes") {
+					unsigned = append(unsigned, strings.TrimSpace(line))
+				}
+			}
+			if len(unsigned) > 0 {
+				return fail("signatures are turned off: %s", listOrNone(unsigned, 3))
+			}
+			return pass("no repository turns package signatures off")
 		}},
 
 	// Time.

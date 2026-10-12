@@ -24,7 +24,10 @@ func auditReport(host store.Host, selected []string, _ scan.Options) (map[string
 	results[checks.Hardening] = checks.Result{Status: checks.StatusCompleted, Privileged: true, Controls: []checks.ControlResult{
 		{ID: "SSH-01", Category: "SSH", Severity: "high", Status: checks.ControlPass, Title: "Root cannot log in"},
 		{ID: "ACC-02", Category: "Accounts and passwords", Severity: "critical", Status: checks.ControlFail, Title: "No empty passwords", Evidence: "guest"},
-	}, Inventory: &checks.Inventory{Hostname: "ip-10-92-0-52", OS: "Ubuntu 24.04 LTS"}}
+	}, Inventory: &checks.Inventory{Hostname: "ip-10-92-0-52", OS: "Ubuntu 24.04 LTS",
+		Listening: []checks.Listening{{Protocol: "tcp", Address: "0.0.0.0", Port: 3306, Exposed: true}}},
+		Facts: &checks.Facts{SSHD: map[string]string{"permitrootlogin": "no"}, LoginDefs: map[string]string{"pass_max_days": "60"},
+			Packages: []string{"openssh-server"}, Active: []string{"node_exporter"}}}
 	return map[string]any{"host_id": host.ID, "address": host.Address, "os": "Ubuntu 24.04 LTS", "findings": []any{}, "check_results": results}, nil
 }
 

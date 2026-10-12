@@ -24,6 +24,22 @@ func rows(report Report) [][]string {
 				StatusLabel(control.Status), details, control.Remediation})
 		}
 	}
+	for _, result := range report.Policies {
+		for _, control := range result.Controls {
+			table = append(table, []string{"Policy: " + result.Name, control.ID, control.Title, strings.ToUpper(control.Severity),
+				StatusLabel(control.Status), control.Evidence, control.Remediation})
+		}
+	}
+	for _, result := range report.Compliance {
+		for _, requirement := range result.Requirements {
+			var evidence []string
+			for _, control := range requirement.Controls {
+				evidence = append(evidence, control.ID+" "+StatusLabel(control.Status))
+			}
+			table = append(table, []string{result.Framework.Short + " requirement", requirement.ID, requirement.Name, "",
+				RequirementLabel(requirement.Status), strings.Join(evidence, ", "), ""})
+		}
+	}
 	for _, vulnerability := range report.Vulnerabilities {
 		table = append(table, []string{"Vulnerability", vulnerability.ID, vulnerability.Package + " " + vulnerability.Installed,
 			vulnerability.Severity, FixLabel(vulnerability.Fix), vulnerability.Title, fixedIn(vulnerability)})
