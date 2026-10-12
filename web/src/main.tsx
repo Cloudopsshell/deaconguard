@@ -22,6 +22,7 @@ import { Audits } from "./pages/Audits";
 import { AuditView } from "./pages/AuditView";
 import { Settings } from "./pages/Settings";
 import { Verify } from "./pages/Verify";
+import { Policies } from "./pages/Policies";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -53,6 +54,7 @@ const router = createBrowserRouter([
           { path: "/audits/:auditId", element: <AuditView /> },
           { path: "/settings", element: <Settings /> },
           { path: "/verify", element: <Verify /> },
+          { path: "/policies", element: <Policies /> },
           { path: "*", element: <NotFound /> },
         ],
       },
