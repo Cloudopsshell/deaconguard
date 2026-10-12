@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, ExternalLink, Search, ShieldCheck } from "lucide-react";
+import { ReportsPanel } from "../components/ReportsPanel";
 import { api, type CheckId, type Finding, type FixState, type Report, type Severity } from "../api";
 import { actionable, fixCommand, fixMeta, fixOf, fixOrder } from "../lib/fixes";
 import { CheckResultView } from "../components/CheckResultView";
@@ -49,7 +50,12 @@ export function ScanReport() {
           <ErrorMessage error={scan.error || "This scan did not produce a report."} />
         </Card>
       ) : (
-        <ScanTabs report={report} checks={scan.checks} />
+        <>
+          <div className="mb-6">
+            <ReportsPanel scan={scan} />
+          </div>
+          <ScanTabs report={report} checks={scan.checks} />
+        </>
       )}
     </>
   );

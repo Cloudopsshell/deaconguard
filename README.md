@@ -314,9 +314,19 @@ A server audit checks one machine from top to bottom and grades it A to F: for h
 
 See [Server audits](https://docs.deaconguard.io/usage/audits) for the full list of controls.
 
+## Reports
+
+**Create report** on an audit or scan freezes it as a report for a client: a **PDF** with a cover page (your logo, company and contact line from **Settings**, the client's name, the grade and score), a summary, what changed since an earlier audit, every failed control with its evidence and fix, accepted risks, vulnerabilities and the inventory. The same report downloads as **HTML**, **Excel** (Summary, Items with filters, Inventory), **CSV** and **JSON**. The server makes the PDF itself; nothing extra is installed.
+
+- **Share** gives a link that opens the report without signing in, for 1 to 30 days, until revoked; every view is in the audit log. Only a hash of the link is stored.
+- Each report carries a SHA-256 **fingerprint**; **Verify a report** checks a report's ID and fingerprint against what the server made.
+- Reports are kept until someone deletes them, even if their scan is deleted.
+
+See [Reports](https://docs.deaconguard.io/usage/reports).
+
 ## Web UI
 
-`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents**, **Accounts**, **My account** and **Audit log** pages. Both have **Server audits**. Light, dark, or **System** mode (following your computer) and five color themes (Indigo, Ocean, Teal, Plum, Graphite) are at the bottom of the sidebar; severity colors never change. On a server the choice is saved to your account. Both have a **Logs** page. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
+`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents**, **Accounts**, **My account**, **Settings** and **Audit log** pages. Both have **Server audits**, reports and **Verify a report**. Light, dark, or **System** mode (following your computer) and five color themes (Indigo, Ocean, Teal, Plum, Graphite) are at the bottom of the sidebar; severity colors never change. On a server the choice is saved to your account. Both have a **Logs** page. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
 
 The local dashboard only listens on a loopback address and rejects requests addressed to other host names. Both reject requests sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command DeaconGuard runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
 
