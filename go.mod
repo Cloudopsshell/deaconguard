@@ -7,6 +7,7 @@ require (
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/net v0.60.0
 	golang.org/x/term v0.46.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
 )
 
