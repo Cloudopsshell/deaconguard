@@ -8,6 +8,24 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-12
+
+### Added
+
+- **Reports.** **Create report** on an audit's or a scan's page freezes it as a report for a client, with an optional client name and notes, and, for audits, a comparison with an earlier audit of the host: the controls fixed since then, those that started failing, and the earlier grade.
+- **Downloads in five formats**, all rendered from the same frozen report:
+  - **PDF**: a cover page with your logo, company, contact line, the client, the grade and score; a summary; changes since the earlier audit; failed controls with evidence, why they matter and how to fix them; accepted risks; passed controls; vulnerabilities (fixable ones listed, the rest grouped by package); other findings; the inventory. Made by the server, with nothing to install.
+  - **HTML**, one page that prints well; **Excel**, with Summary, Items (filterable) and Inventory sheets; **CSV**; **JSON**.
+- **Branding:** a new admin **Settings** page sets the company name, contact line and logo (PNG or JPEG, up to 256 KB) for every new report.
+- **Share links:** a link that opens a report without signing in, with its downloads, for 1 to 30 days until revoked. Only a hash of it is stored; views are counted and recorded in the audit log.
+- **Verify a report:** every report shows its ID and a SHA-256 fingerprint; the new page checks them against what the server made.
+- Creating, downloading, sharing and deleting reports, and changing the branding, are recorded in the audit log.
+
+### Changed
+
+- Spreadsheet cells that would start a formula are prefixed, since evidence comes from the scanned machine.
+- **Upgrading:** the database gains reports and share links (schema 13).
+
 ## [0.12.0] - 2026-10-12
 
 ### Added
@@ -315,7 +333,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.9.2...v0.10.0

@@ -44,7 +44,7 @@ func request(t *testing.T, s *Server, method, target string, body any) *httptest
 		reader = bytes.NewReader(nil)
 	}
 	req := httptest.NewRequest(method, "http://127.0.0.1:7480"+target, reader)
-	if method == http.MethodPost || method == http.MethodPatch {
+	if method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	recorder := httptest.NewRecorder()
