@@ -8,6 +8,19 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-12
+
+### Added
+
+- **Compliance views.** Every baseline control, and the checks for vulnerabilities, file integrity and malware, are mapped to requirements of **NIST SP 800-53 Rev. 5**, **PCI DSS v4.0**, the **HIPAA Security Rule** and **ISO/IEC 27001:2022 Annex A**. An audit's page has a **Compliance** card with a tab per framework showing each requirement as met, met with an accepted risk, not met or not checked, with the controls behind it. Reports can include the mapping for the frameworks you choose. It's DeaconGuard's mapping, for guidance, not a certification; requirements are referred to by number.
+- **Custom policies.** Admins add their own controls in YAML on a new **Policies** page (from **Settings**): SSH and kernel settings, login.defs, packages, services, mounts, listening ports and the permissions of key files. Policies test only what the audit already reads and never run anything. Results show on audits and in reports, failed controls can have accepted risks, and the grade isn't affected. Saving a policy says exactly what's wrong with it.
+- **10 more baseline controls, 72 in all:** password history, locking unused accounts, a lockout threshold, the SSH banner and log level, core dumps, USB storage, signed package sources, private home directories and log file permissions.
+
+### Changed
+
+- The hardening check sends the settings it read with its results, so the server can test policies. It now reads every kernel setting.
+- **Upgrading:** the database gains policies (schema 14). Upgrade agents to 0.14.0 for the new controls and for policies: an older agent's audit has the 62 controls it knows, and its policy controls show as not checked.
+
 ## [0.13.0] - 2026-10-12
 
 ### Added
@@ -333,7 +346,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.10.0...v0.11.0
