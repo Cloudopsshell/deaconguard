@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageUp, Trash2 } from "lucide-react";
 import { api } from "../api";
@@ -38,6 +39,17 @@ export function Settings() {
   return (
     <>
       <PageHeader title="Settings" description="Settings for everyone using this server." />
+      <Card className="mb-6">
+        <CardHeader
+          title="Policies"
+          description="Your organisation's own controls, tested in every audit next to the baseline."
+          action={
+            <Link to="/policies" className="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+              Manage policies
+            </Link>
+          }
+        />
+      </Card>
       <Card>
         <CardHeader
           title="Reports"
