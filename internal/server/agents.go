@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"deaconguard/internal/agentapi"
+	"deaconguard/internal/audit"
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/scan"
@@ -224,7 +224,32 @@ func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {
 		store.Audit("agent", "agent.enroll", host.Address, fmt.Sprintf("%s, DeaconGuard %s", request.OS, request.Version), remote)
 		serverLog(host.ID, store.LogInfo, "Agent enrolled: %s (%s, DeaconGuard %s)", host.Address, limitText(request.OS, 128), limitText(request.Version, 32))
 		writeJSON(w, http.StatusCreated, agentapi.EnrollResponse{HostID: host.ID, Credential: credential})
+		h.auditNewMachine(host, request.Version)
 	}
+}
+
+// auditNewMachine queues a handover audit of a machine that just enrolled,
+// when admins turned that on and its agent can run one.
+func (h *agentHub) auditNewMachine(host store.Host, version string) {
+	on, err := store.AuditOnEnroll()
+	if err != nil || !on {
+		return
+	}
+	if !agentapi.SupportsCheck(version, checks.Hardening) {
+		serverLog(host.ID, store.LogWarning, "Not auditing %s on enrollment: its agent %s is older than 0.12.0", host.Address, version)
+		return
+	}
+	record, err := h.runner.start(host, audit.Checks, true)
+	if err == nil {
+		err = store.MarkAudit(record.ID)
+	}
+	if err != nil {
+		serverLog(host.ID, store.LogError, "Could not audit %s on enrollment: %v", host.Address, err)
+		return
+	}
+	store.Audit("server", "audit.start", host.Address, "new machine enrolled", "")
+	serverLog(host.ID, store.LogInfo, "Audit of %s queued because it just enrolled", host.Address)
+	h.wake(host.ID)
 }
 
 // job hands the agent its next queued scan, waiting up to JobWait for one.
@@ -474,15 +499,18 @@ func (h *agentHub) yaraRules(w http.ResponseWriter, r *http.Request, host store.
 
 // checkAgentVersion refuses checks an agent host's agent cannot run.
 func checkAgentVersion(host store.Host, selected []string) error {
-	if host.Transport != store.TransportAgent || !slices.Contains(selected, checks.YARA) {
+	if host.Transport != store.TransportAgent {
 		return nil
 	}
 	agents, err := store.Agents()
 	if err != nil {
 		return err
 	}
-	if version := agents[host.ID].Version; !agentapi.SupportsYARA(version) {
-		return agentapi.ErrNeedsNewerAgent(host.Address, version)
+	version := agents[host.ID].Version
+	for _, check := range selected {
+		if !agentapi.SupportsCheck(version, check) {
+			return agentapi.ErrAgentTooOld(host.Address, version, check)
+		}
 	}
 	return nil
 }

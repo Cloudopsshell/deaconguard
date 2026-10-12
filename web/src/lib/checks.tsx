@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { Bug, FileCheck2, Radar, ScanSearch, SlidersHorizontal, Skull } from "lucide-react";
+import { Bug, FileCheck2, Radar, ScanSearch, ShieldCheck, Skull, SlidersHorizontal } from "lucide-react";
 import type { CheckId, CheckStatus, SeverityCounts } from "../api";
 import { severityOrder } from "./format";
 
@@ -10,6 +10,7 @@ export const checkMeta: Record<CheckId, { label: string; short: string; icon: Co
   integrity: { label: "File integrity", short: "Integrity", icon: FileCheck2 },
   malware: { label: "Malware indicators", short: "Malware", icon: Skull },
   config: { label: "Configuration", short: "Config", icon: SlidersHorizontal },
+  hardening: { label: "Hardening", short: "Hardening", icon: ShieldCheck },
   antivirus: { label: "Antivirus", short: "ClamAV", icon: ScanSearch },
   yara: { label: "Advanced antivirus", short: "YARA", icon: Radar },
 };
