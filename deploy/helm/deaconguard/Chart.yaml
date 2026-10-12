@@ -1,0 +1,19 @@
+apiVersion: v2
+name: deaconguard
+description: DeaconGuard, a Linux security scanner. The server, with its dashboard, and an agent on every node.
+type: application
+# The release workflow sets both to the release's version.
+version: 0.15.0
+appVersion: "0.15.0"
+home: https://deaconguard.io
+icon: https://deaconguard.io/img/logo.svg
+sources:
+  - https://github.com/Cloudopsshell/deaconguard
+keywords:
+  - security
+  - vulnerability
+  - compliance
+  - audit
+maintainers:
+  - name: CloudOpsShell
+    email: opensource@cloudopsshell.com

@@ -1,0 +1,83 @@
+# DeaconGuard with Docker Compose: https://docs.deaconguard.io/installation/docker
+#
+#   printf '%s' 'a-long-password' > admin-password
+#   chmod 600 admin-password && sudo chown 65532 admin-password
+#   docker compose up -d
+#
+# Then sign in at https://THIS-MACHINE:8443 as admin. To scan this machine
+# too, create a token on the Agents page, save it in ./enrollment-token, and
+# start the agent:
+#
+#   docker compose --profile agent up -d
+#
+# Scan other machines by installing the agent on them as usual.
+
+name: deaconguard
+
+services:
+  server:
+    image: ghcr.io/cloudopsshell/deaconguard:0.15.0
+    command: [serve, --listen, "0.0.0.0:8443", --agent-listen, "0.0.0.0:8444"]
+    environment:
+      # The image's own user owns /home/nonroot, so a new volume there is
+      # writable without root.
+      DEACONGUARD_HOME: /home/nonroot
+      # The first account, created when there is none; ignored after that.
+      DEACONGUARD_ADMIN_USER: admin
+      DEACONGUARD_ADMIN_PASSWORD_FILE: /run/secrets/admin-password
+    secrets:
+      - admin-password
+    ports:
+      # The dashboard. Allow it only from your administrators' networks.
+      - "8443:8443"
+      # Agents only.
+      - "8444:8444"
+    volumes:
+      - data:/home/nonroot
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # The agent scans this machine, not the container: it reads the machine's
+  # root filesystem, read-only at /host, and runs its checks there with the
+  # machine's own tools. It needs root and the machine's process and network
+  # view for that.
+  agent:
+    profiles: [agent]
+    image: ghcr.io/cloudopsshell/deaconguard:0.15.0
+    command: [agent, run]
+    user: "0"
+    network_mode: host
+    pid: host
+    environment:
+      DEACONGUARD_HOST_ROOT: /host
+      DEACONGUARD_AGENT_CONFIG: /var/lib/deaconguard-agent/agent.json
+      # Used once, to enroll; the identity is kept in the agent volume.
+      DEACONGUARD_ENROLL_TOKEN_FILE: /run/secrets/enrollment-token
+    secrets:
+      - enrollment-token
+    volumes:
+      - /:/host:ro
+      # The advanced malware scan writes its rules to a temporary file.
+      - /tmp:/host/tmp
+      - agent:/var/lib/deaconguard-agent
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+secrets:
+  admin-password:
+    file: ./admin-password
+  enrollment-token:
+    file: ./enrollment-token
+
+volumes:
+  data:
+  agent:

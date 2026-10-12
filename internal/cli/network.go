@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,9 +39,13 @@ const (
 
 func runServe(arguments []string, output io.Writer) error {
 	listen, agentListen, certificatePath, keyPath := defaultListen, "", "", ""
+	var proxies []string
+	if configured := os.Getenv("DEACONGUARD_TRUSTED_PROXIES"); configured != "" {
+		proxies = strings.Split(configured, ",")
+	}
 	for index := 0; index < len(arguments); index++ {
 		if index+1 >= len(arguments) {
-			return fmt.Errorf("usage: deaconguard serve [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE]")
+			return fmt.Errorf("usage: deaconguard serve [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE] [--trusted-proxy CIDR]...")
 		}
 		switch arguments[index] {
 		case "--listen":
@@ -50,6 +56,8 @@ func runServe(arguments []string, output io.Writer) error {
 			certificatePath = arguments[index+1]
 		case "--tls-key":
 			keyPath = arguments[index+1]
+		case "--trusted-proxy":
+			proxies = append(proxies, arguments[index+1])
 		default:
 			return fmt.Errorf("unknown serve option %q", arguments[index])
 		}
@@ -57,6 +65,9 @@ func runServe(arguments []string, output io.Writer) error {
 	}
 	if (certificatePath == "") != (keyPath == "") {
 		return fmt.Errorf("--tls-cert and --tls-key go together")
+	}
+	if err := server.SetTrustedProxies(proxies); err != nil {
+		return err
 	}
 	if agentListen != "" {
 		if _, port, err := net.SplitHostPort(agentListen); err != nil || port == "" {
@@ -93,6 +104,9 @@ func runServe(arguments []string, output io.Writer) error {
 		return err
 	}
 	pin := agentapi.PublicKeyPin(certificate.Leaf)
+	if err := bootstrapAdmin(output); err != nil {
+		return err
+	}
 	handler, err := server.NewNetwork(web.Files(), nil, pin)
 	if err != nil {
 		return err
@@ -372,11 +386,56 @@ func promptNewPassword(terminal *os.File, diagnostics io.Writer) ([]byte, error)
 	return password, nil
 }
 
+const tokenUsage = "usage: deaconguard token create --server-url https://HOST:8443 [--reusable [--days N] [--name NAME]] [--quiet]"
+
 func runToken(arguments []string, output io.Writer) error {
-	if len(arguments) != 3 || arguments[0] != "create" || arguments[1] != "--server-url" {
-		return fmt.Errorf("usage: deaconguard token create --server-url https://HOST:8443")
+	if len(arguments) == 0 || arguments[0] != "create" {
+		return errors.New(tokenUsage)
 	}
-	serverURL := strings.TrimSuffix(strings.TrimSpace(arguments[2]), "/")
+	var serverURL string
+	var options store.TokenOptions
+	quiet := false
+	for rest := arguments[1:]; len(rest) > 0; rest = rest[1:] {
+		value := func() (string, error) {
+			if len(rest) < 2 {
+				return "", errors.New(tokenUsage)
+			}
+			rest = rest[1:]
+			return rest[0], nil
+		}
+		var err error
+		switch rest[0] {
+		case "--server-url":
+			serverURL, err = value()
+		case "--reusable":
+			options.Reusable = true
+		case "--name":
+			options.Name, err = value()
+		case "--days":
+			var text string
+			if text, err = value(); err == nil {
+				days, convertError := strconv.Atoi(text)
+				if convertError != nil || days < 1 {
+					return fmt.Errorf("--days takes a number of days, from 1 to 365")
+				}
+				options.Lifetime = time.Duration(days) * 24 * time.Hour
+			}
+		case "--quiet":
+			quiet = true
+		default:
+			return errors.New(tokenUsage)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if serverURL == "" {
+		return errors.New(tokenUsage)
+	}
+	if !options.Reusable && (options.Lifetime != 0 || options.Name != "") {
+		return errors.New("--days and --name are for reusable tokens: add --reusable")
+	}
+	serverURL = strings.TrimSuffix(strings.TrimSpace(serverURL), "/")
 	if err := agentapi.ValidateServerURL(serverURL); err != nil {
 		return err
 	}
@@ -387,12 +446,23 @@ func runToken(arguments []string, output io.Writer) error {
 	if pin == "" {
 		return fmt.Errorf("start the server once first, so it has a certificate: deaconguard serve --listen 0.0.0.0:8443")
 	}
-	token, secret, err := store.CreateEnrollmentToken(serverURL, local.Username()+" (cli)")
+	token, secret, err := store.CreateEnrollmentToken(serverURL, local.Username()+" (cli)", options)
 	if err != nil {
 		return err
 	}
-	store.Audit(local.Username()+" (cli)", "token.create", token.ID[:8], "for "+serverURL+", expires "+token.ExpiresAt, "")
+	store.Audit(local.Username()+" (cli)", "token.create", token.ID[:8], token.Describe(), "")
 	encoded := agentapi.Token{ServerURL: serverURL, Pin: pin, Secret: secret}.Encode()
+	if quiet {
+		fmt.Fprintln(output, encoded)
+		return nil
+	}
+	if token.Reusable {
+		fmt.Fprintf(output, "Reusable enrollment token, for any number of machines until %s:\n\n  %s\n\n", token.ExpiresAt, encoded)
+		fmt.Fprintln(output, "Keep it secret: anyone with it can enroll a machine. Revoke it in the dashboard when you no longer need it.")
+		fmt.Fprintf(output, "For a Kubernetes DaemonSet, store it in a secret:\n\n  kubectl -n deaconguard-agent create secret generic deaconguard-enrollment --from-literal=token='%s'\n\n", encoded)
+		fmt.Fprintf(output, "Or install the agent on a machine with it:\n\n  %s\n", buildinfo.AgentInstallCommand(encoded))
+		return nil
+	}
 	fmt.Fprintf(output, "One-time enrollment token, valid until %s:\n\n  %s\n\n", token.ExpiresAt, encoded)
 	fmt.Fprintf(output, "On the machine to scan, run this as a user with sudo rights (as root, leave out \"sudo -E\"):\n\n  %s\n\n", buildinfo.AgentInstallCommand(encoded))
 	fmt.Fprintln(output, "If DeaconGuard is already installed there, run: sudo deaconguard setup agent (it asks for the token)")
@@ -435,15 +505,26 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 		if len(arguments) != 1 {
 			return fmt.Errorf("usage: deaconguard agent run")
 		}
-		config, err := agent.LoadConfig(path)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		config, err := loadOrEnroll(ctx, path, diagnostics)
 		if err != nil {
 			return err
 		}
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		return agent.Run(ctx, config, path, func(format string, values ...any) {
-			fmt.Fprintf(diagnostics, format+"\n", values...)
-		})
+		logf := func(format string, values ...any) { fmt.Fprintf(diagnostics, format+"\n", values...) }
+		err = agent.Run(ctx, config, path, logf)
+		// An agent with a token in its environment, such as a DaemonSet's,
+		// enrolls again when the server no longer knows it: after the server
+		// was reinstalled, or the host removed. Revoke the token to stop that.
+		if token := enrollToken(); errors.Is(err, agent.ErrRemoved) && token != "" {
+			logf("The server no longer knows this agent; enrolling again with the token from the environment.")
+			if config, err = agent.Enroll(ctx, token, path, true); err != nil {
+				return err
+			}
+			logf("Enrolled %s with %s as host %s", local.Hostname(), config.ServerURL, config.HostID)
+			err = agent.Run(ctx, config, path, logf)
+		}
+		return err
 	case "status":
 		config, err := agent.LoadConfig(path)
 		if err != nil {
@@ -525,4 +606,95 @@ func waitForAgent(id string) (map[string]any, error) {
 		}
 		return store.GetReport(id)
 	}
+}
+
+// bootstrapAdmin creates the first account from the environment, for
+// containers, which have no setup to ask for one: DEACONGUARD_ADMIN_USER,
+// and the password in the file DEACONGUARD_ADMIN_PASSWORD_FILE (such as a
+// Kubernetes or Compose secret) or in DEACONGUARD_ADMIN_PASSWORD. It does
+// nothing once any account exists, so the password can't be reset this way.
+func bootstrapAdmin(output io.Writer) error {
+	username := strings.TrimSpace(os.Getenv("DEACONGUARD_ADMIN_USER"))
+	if username == "" {
+		return nil
+	}
+	users, err := store.ListUsers()
+	if err != nil || len(users) > 0 {
+		return err
+	}
+	var password []byte
+	if path := os.Getenv("DEACONGUARD_ADMIN_PASSWORD_FILE"); path != "" {
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read DEACONGUARD_ADMIN_PASSWORD_FILE: %w", err)
+		}
+		password = bytes.TrimRight(contents, "\r\n")
+	} else {
+		password = []byte(os.Getenv("DEACONGUARD_ADMIN_PASSWORD"))
+	}
+	defer clear(password)
+	if len(password) == 0 {
+		return errors.New("DEACONGUARD_ADMIN_USER is set without DEACONGUARD_ADMIN_PASSWORD_FILE or DEACONGUARD_ADMIN_PASSWORD")
+	}
+	if _, err := store.AddUser(username, password, store.RoleAdmin, false); err != nil {
+		return fmt.Errorf("create the first account from the environment: %w", err)
+	}
+	store.Audit("server", "user.add", username, "admin; first account, from the environment", "")
+	fmt.Fprintf(output, "Created the first account, %s, from the environment.\n", username)
+	return nil
+}
+
+// enrollToken is the enrollment token in the environment, if any: in the file
+// DEACONGUARD_ENROLL_TOKEN_FILE names (such as a mounted secret, which may not
+// exist once every node has enrolled), or in DEACONGUARD_ENROLL_TOKEN.
+func enrollToken() string {
+	if file := os.Getenv("DEACONGUARD_ENROLL_TOKEN_FILE"); file != "" {
+		contents, err := os.ReadFile(file)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(contents))
+	}
+	return strings.TrimSpace(os.Getenv("DEACONGUARD_ENROLL_TOKEN"))
+}
+
+// loadOrEnroll loads the agent's configuration or, when there is none yet
+// and the environment has an enrollment token, enrolls first. That lets an
+// agent in a container, such as one pod of a DaemonSet, enroll itself with a
+// reusable token; see enrollToken.
+func loadOrEnroll(ctx context.Context, path string, diagnostics io.Writer) (agent.Config, error) {
+	config, err := agent.LoadConfig(path)
+	if err == nil {
+		// A token for a server with another certificate means the server
+		// was replaced, such as reinstalled in a cluster: enroll with it.
+		if token := enrollToken(); token != "" {
+			if parsed, parseError := agentapi.ParseToken(token); parseError == nil && parsed.Pin != config.Pin {
+				fmt.Fprintf(diagnostics, "The enrollment token is for a server with another certificate than %s; enrolling with it.\n", config.ServerURL)
+				enrolled, enrollError := agent.Enroll(ctx, token, path, true)
+				if enrollError != nil {
+					fmt.Fprintf(diagnostics, "Could not enroll with the token, so keeping the enrollment with %s: %v\n", config.ServerURL, enrollError)
+					return config, nil
+				}
+				fmt.Fprintf(diagnostics, "Enrolled %s with %s as host %s; saved %s\n", local.Hostname(), enrolled.ServerURL, enrolled.HostID, path)
+				return enrolled, nil
+			}
+		}
+		return config, nil
+	}
+	if !errors.Is(err, agent.ErrNotEnrolled) {
+		return config, err
+	}
+	token := enrollToken()
+	if file := os.Getenv("DEACONGUARD_ENROLL_TOKEN_FILE"); token == "" && file != "" {
+		return agent.Config{}, fmt.Errorf("this agent is not enrolled yet and has no token: create an enrollment token on the server's Agents page and put it in %s (in Kubernetes, the deaconguard-enrollment secret)", file)
+	}
+	if token == "" {
+		return agent.Config{}, err
+	}
+	config, err = agent.Enroll(ctx, token, path, false)
+	if err != nil {
+		return agent.Config{}, err
+	}
+	fmt.Fprintf(diagnostics, "Enrolled %s with %s as host %s; saved %s\n", local.Hostname(), config.ServerURL, config.HostID, path)
+	return config, nil
 }

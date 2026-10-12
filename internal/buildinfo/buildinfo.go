@@ -94,7 +94,7 @@ var releaseVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[
 const InstallURL = "https://get.deaconguard.io"
 
 // AgentInstallCommand is the command line that installs the DeaconGuard agent
-// and enrolls it with token, a one-time enrollment token; an empty token makes
+// and enrolls it with token, an enrollment token; an empty token makes
 // the installer ask for it. A release build pins its own version, so agents
 // match their server; other builds install the latest release. The installer
 // needs root; `sudo -E` passes the variables to it through the environment,

@@ -407,8 +407,11 @@ Setup (as root, after installing the .deb or .rpm; install.sh runs these):
 Web UI and server:
   deaconguard serve                       local web UI at http://127.0.0.1:7480, no sign-in
   deaconguard serve --listen 0.0.0.0:8443 [--agent-listen 0.0.0.0:8444] [--tls-cert FILE --tls-key FILE]
+                    [--trusted-proxy CIDR]...
                                        server: HTTPS dashboard with sign-in, agents enroll;
-                                       --agent-listen gives agents a port of their own
+                                       --agent-listen gives agents a port of their own;
+                                       --trusted-proxy believes X-Forwarded-For from a
+                                       reverse proxy, such as an ingress controller
   deaconguard user add USERNAME [--role admin|operator|viewer] [--password-stdin]
                                        roles: admin (default here), operator, viewer
   deaconguard user passwd USERNAME [--password-stdin]
@@ -416,11 +419,21 @@ Web UI and server:
   deaconguard user mfa-reset USERNAME   turn off two-step sign-in, for a lost phone
   deaconguard user list | remove USERNAME
   deaconguard token create --server-url https://HOST:8443   one-time agent token, valid 24 hours
+  deaconguard token create --server-url URL --reusable [--days N] [--name NAME] [--quiet]
+                                       a token for many machines, such as a DaemonSet's,
+                                       for N days (30 by default, up to 365)
 
 Agent (on each machine to scan):
   deaconguard agent enroll TOKEN [--force]   enroll with the server that made TOKEN
   deaconguard agent run                      wait for scans (the deaconguard-agent service)
   deaconguard agent status
+
+In a container (https://docs.deaconguard.io/installation/kubernetes):
+  DEACONGUARD_ADMIN_USER, DEACONGUARD_ADMIN_PASSWORD_FILE   serve creates the first account
+  DEACONGUARD_TRUSTED_PROXIES          like --trusted-proxy, comma-separated
+  DEACONGUARD_HOST_ROOT=/host          the agent scans the host mounted there
+  DEACONGUARD_ENROLL_TOKEN_FILE        agent run enrolls with this token when needed
+  DEACONGUARD_HOSTNAME                 the name the agent reports, such as the node's
 
   deaconguard version`)
 }

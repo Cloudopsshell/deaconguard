@@ -1,0 +1,172 @@
+{{- if .Values.server.enabled }}
+{{- $selector := dict "root" . "component" "server" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "deaconguard.fullname" . }}
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  {{- with .Values.server.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.server.service.type }}
+  selector:
+    {{- include "deaconguard.selector" $selector | nindent 4 }}
+  ports:
+    - name: dashboard
+      port: {{ .Values.server.service.dashboardPort }}
+      targetPort: dashboard
+    - name: agents
+      port: {{ .Values.server.service.agentPort }}
+      targetPort: agents
+---
+# One server: its data is one SQLite database, on a volume of its own.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "deaconguard.fullname" . }}
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  serviceName: {{ include "deaconguard.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "deaconguard.selector" $selector | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "deaconguard.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+      {{- with .Values.server.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: {{ include "deaconguard.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - --listen
+            - "0.0.0.0:8443"
+            - --agent-listen
+            - "0.0.0.0:8444"
+            {{- if .Values.server.tls.existingSecret }}
+            - --tls-cert
+            - /run/secrets/deaconguard-tls/tls.crt
+            - --tls-key
+            - /run/secrets/deaconguard-tls/tls.key
+            {{- end }}
+            {{- range .Values.server.trustedProxies }}
+            - --trusted-proxy
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: DEACONGUARD_HOME
+              value: /home/nonroot
+            - name: DEACONGUARD_ADMIN_USER
+              value: {{ .Values.server.admin.username | quote }}
+            - name: DEACONGUARD_ADMIN_PASSWORD_FILE
+              value: /run/secrets/deaconguard-admin/{{ .Values.server.admin.secretKey }}
+          ports:
+            - name: dashboard
+              containerPort: 8443
+            - name: agents
+              containerPort: 8444
+          readinessProbe:
+            httpGet:
+              path: /api/version
+              port: dashboard
+              scheme: HTTPS
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/version
+              port: dashboard
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          {{- with .Values.server.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /home/nonroot
+            - name: tmp
+              mountPath: /tmp
+            - name: admin
+              mountPath: /run/secrets/deaconguard-admin
+              readOnly: true
+            {{- if .Values.server.tls.existingSecret }}
+            - name: tls
+              mountPath: /run/secrets/deaconguard-tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: admin
+          secret:
+            secretName: {{ include "deaconguard.adminSecret" . }}
+            # Needed only for the first start, to create the first account.
+            optional: true
+        {{- if .Values.server.tls.existingSecret }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.server.tls.existingSecret }}
+        {{- end }}
+        {{- if .Values.server.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.server.persistence.existingClaim }}
+        {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if not .Values.server.persistence.existingClaim }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.server.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.server.persistence.size }}
+  {{- end }}
+{{- end }}
