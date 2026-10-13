@@ -212,7 +212,7 @@ export interface TrendPoint {
   likely: number;
 }
 
-export type ChannelKind = "email" | "slack" | "teams" | "webhook";
+export type ChannelKind = "email" | "slack" | "teams" | "webhook" | "syslog" | "splunk" | "jira" | "servicenow";
 export type NotificationEvent = "exploited" | "critical" | "malware" | "integrity" | "scan_failed" | "audit" | "agent_offline" | "digest";
 
 /** A channel's settings. Saved secrets come back as "set" (password, secret) or the address's host (url); send them empty to keep them. */
@@ -226,6 +226,37 @@ export interface ChannelConfig {
   to?: string[];
   url?: string;
   secret?: string;
+  /** Syslog: tcp, tls or udp. */
+  protocol?: "tcp" | "tls" | "udp";
+  /** Splunk index. */
+  index?: string;
+  /** Jira project key and issue type. */
+  project?: string;
+  issue_type?: string;
+  /** ServiceNow table. */
+  table?: string;
+}
+
+/** Fix deadlines, in days from when a host first had a vulnerability. */
+export interface SLA {
+  enabled: boolean;
+  exploited: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+export interface MaintenanceWindow {
+  id: string;
+  name: string;
+  tags: string[];
+  starts_at: string;
+  ends_at: string;
+  skip_scans: boolean;
+  created_by: string;
+  created_at: string;
+  status: "upcoming" | "active" | "ended";
 }
 
 export interface Delivery {
@@ -269,6 +300,22 @@ export interface ChannelInput {
   digest_days: number[];
   digest_time: string;
   timezone: string;
+}
+
+/** A token for scripts and tools to use the API as an account. */
+export interface APIToken {
+  id: string;
+  user_id: string;
+  username: string;
+  name: string;
+  role: Role;
+  created_at: string;
+  /** Empty: lasts until revoked. */
+  expires_at: string;
+  last_used_at: string;
+  last_used_from: string;
+  revoked_at: string;
+  status: "active" | "expired" | "revoked";
 }
 
 export interface TagCount {
@@ -675,6 +722,9 @@ export interface Vulnerability {
   ransomware?: boolean;
   epss?: number;
   cvss_score?: number;
+  first_seen?: string;
+  due_at?: string;
+  overdue_host_count: number;
 }
 
 export interface AffectedPackage {
@@ -695,6 +745,9 @@ export interface AffectedPackage {
   ransomware?: boolean;
   epss?: number;
   cvss_score?: number;
+  first_seen?: string;
+  due_at?: string;
+  overdue?: boolean;
 }
 
 export interface Summary {
@@ -715,6 +768,7 @@ export interface Summary {
   top_vulnerabilities: Vulnerability[];
   checks: Partial<Record<CheckId, CheckTotals>>;
   exploit: { known: number; known_fixable: number; likely: number; hosts_with_known: number; hosts_without_data: number };
+  sla: { enabled: boolean; overdue: number; hosts_overdue: number; due_soon: number };
 }
 
 /** A question a paused scan is waiting for the user to answer. */
@@ -867,6 +921,17 @@ export const api = {
   deleteScan: (id: string) => request<{ ok: boolean }>("DELETE", `/api/scans/${id}`),
   vulnerabilities: () => request<Vulnerability[]>("GET", "/api/vulnerabilities"),
   tags: () => request<TagCount[]>("GET", "/api/tags"),
+  sla: () => request<SLA>("GET", "/api/settings/sla"),
+  setSLA: (sla: SLA) => request<SLA>("PUT", "/api/settings/sla", sla),
+  maintenance: () => request<MaintenanceWindow[]>("GET", "/api/maintenance"),
+  addMaintenance: (input: { name: string; tags: string[]; starts_at: string; ends_at: string; skip_scans: boolean }) =>
+    request<MaintenanceWindow>("POST", "/api/maintenance", input),
+  deleteMaintenance: (id: string) => request<MaintenanceWindow>("DELETE", `/api/maintenance/${id}`),
+  apiTokens: () => request<APIToken[]>("GET", "/api/account/tokens"),
+  createAPIToken: (input: { name: string; role: Role; days: number }) => request<APIToken & { token: string }>("POST", "/api/account/tokens", input),
+  revokeOwnAPIToken: (id: string) => request<APIToken>("DELETE", `/api/account/tokens/${id}`),
+  allAPITokens: () => request<APIToken[]>("GET", "/api/tokens"),
+  revokeAPIToken: (id: string) => request<APIToken>("DELETE", `/api/tokens/${id}`),
   notifications: () =>
     request<{ channels: Channel[]; deliveries: Delivery[]; dashboard_url: string; events: NotificationEvent[] }>("GET", "/api/notifications"),
   createChannel: (input: ChannelInput) => request<Channel>("POST", "/api/notifications/channels", input),

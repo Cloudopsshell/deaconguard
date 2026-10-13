@@ -8,6 +8,7 @@ import { checkMeta } from "../lib/checks";
 import { dateTime, timeAgo } from "../lib/format";
 import { useRefreshAll } from "../lib/hooks";
 import { browserTimezone, timezones } from "../lib/zones";
+import { MaintenanceWindows } from "../components/MaintenanceWindows";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const everyDay = [0, 1, 2, 3, 4, 5, 6];
@@ -154,6 +155,7 @@ export function Schedules() {
         </div>
       )}
       {editing && <ScheduleDialog schedule={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      <MaintenanceWindows />
       {deleting && <DeleteScheduleDialog schedule={deleting} onClose={() => setDeleting(null)} />}
     </>
   );
