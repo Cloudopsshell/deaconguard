@@ -96,6 +96,7 @@
   <thead><tr><th>Check</th><th>Result</th><th>Status</th></tr></thead>
   <tbody>
   {{if .R.Packages}}<tr><td>Package vulnerabilities</td><td>{{.R.Packages.Actionable.Critical}} critical and {{.R.Packages.Actionable.High}} high with a fix available; {{len .R.Vulnerabilities}} in all</td><td></td></tr>{{end}}
+  {{with .R.Exploit}}<tr><td>Exploitation</td><td>{{.Known}} known to be exploited (CISA KEV), {{.KnownFixable}} of them with a fix available; {{.Likely}} likely to be exploited (EPSS 10% or more)</td><td></td></tr>{{end}}
   {{range .R.CheckResults}}<tr><td>{{.Name}}</td><td>{{.Summary}}</td><td>{{.Status}}</td></tr>{{end}}
   </tbody>
 </table>
@@ -133,17 +134,17 @@
 {{if .R.Packages}}
 <h2>Vulnerabilities</h2>
 {{if .R.Vulnerabilities}}
-<p class="meta">From the distribution's own security advisories.</p>
+<p class="meta">From the distribution's own security advisories.{{with .R.Exploit}} Exploitation from CISA's Known Exploited Vulnerabilities catalog{{if .KEVVersion}} ({{.KEVVersion}}){{end}} and FIRST's EPSS{{if .EPSSDate}} ({{.EPSSDate}}){{end}}; known exploited ones come first.{{end}}</p>
 {{if .Vulnerabilities}}<h3>Fixed by an update or a restart ({{len .Vulnerabilities}})</h3>
 <table>
-  <thead><tr><th>CVE</th><th>Package</th><th>Installed</th><th>Fixed in</th><th>Severity</th><th>What clears it</th></tr></thead>
-  <tbody>{{range .Vulnerabilities}}<tr><td>{{.ID}}</td><td>{{.Package}}</td><td>{{.Installed}}</td><td>{{.Fixed}}</td><td><span class="pill s-{{.Severity}}">{{.Severity}}</span></td><td>{{fix .Fix}}</td></tr>{{end}}</tbody>
+  <thead><tr><th>CVE</th><th>Package</th><th>Installed</th><th>Fixed in</th><th>Severity</th><th class="num">CVSS</th><th>Exploitation</th><th>What clears it</th></tr></thead>
+  <tbody>{{range .Vulnerabilities}}<tr><td>{{.ID}}</td><td>{{.Package}}</td><td>{{.Installed}}</td><td>{{.Fixed}}</td><td><span class="pill s-{{.Severity}}">{{.Severity}}</span></td><td class="num">{{.CVSS}}</td><td>{{if .KEV}}<span class="pill s-CRITICAL">{{.Exploitation}}</span>{{else}}{{.Exploitation}}{{end}}</td><td>{{fix .Fix}}</td></tr>{{end}}</tbody>
 </table>{{else}}<p>Nothing an update or a restart would fix.</p>{{end}}
 {{if .Waiting}}<h3>Waiting on the distribution, by package ({{len .Waiting}} packages)</h3>
 <p class="meta">Updating can't fix these yet. The CSV, Excel and JSON versions list every CVE.</p>
 <table>
-  <thead><tr><th>Package</th><th>Installed</th><th class="num">CVEs</th><th>Highest severity</th><th>What clears it</th></tr></thead>
-  <tbody>{{range .Waiting}}<tr><td>{{.Package}}</td><td>{{.Installed}}</td><td class="num">{{.Count}}</td><td><span class="pill s-{{.Severity}}">{{.Severity}}</span></td><td>{{fix .Fix}}</td></tr>{{end}}</tbody>
+  <thead><tr><th>Package</th><th>Installed</th><th class="num">CVEs</th><th class="num">Known exploited</th><th>Highest severity</th><th>What clears it</th></tr></thead>
+  <tbody>{{range .Waiting}}<tr><td>{{.Package}}</td><td>{{.Installed}}</td><td class="num">{{.Count}}</td><td class="num">{{if .Exploited}}{{.Exploited}}{{end}}</td><td><span class="pill s-{{.Severity}}">{{.Severity}}</span></td><td>{{fix .Fix}}</td></tr>{{end}}</tbody>
 </table>{{end}}
 {{else}}<p>No vulnerable packages were found.</p>{{end}}
 {{end}}

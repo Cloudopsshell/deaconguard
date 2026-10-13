@@ -24,10 +24,12 @@ type Report struct {
 	FixCounts        map[string]int        `json:"fix_counts"`
 	Coverage         string                `json:"coverage"`
 	AdvisoryDatabase advisory.FeedMetadata `json:"advisory_database"`
-	Maintenance      string                `json:"maintenance"`
-	PackageManager   string                `json:"package_manager"`
-	PackageCount     int                   `json:"package_count"`
-	Evaluator        string                `json:"evaluator"`
+	// ExploitData is the KEV and EPSS data the findings were marked with.
+	ExploitData    advisory.ExploitData `json:"exploit_data"`
+	Maintenance    string               `json:"maintenance"`
+	PackageManager string               `json:"package_manager"`
+	PackageCount   int                  `json:"package_count"`
+	Evaluator      string               `json:"evaluator"`
 }
 
 func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, now time.Time) (Report, error) {
@@ -91,6 +93,7 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 		return Report{}, fmt.Errorf("scan %s %s advisory data: %w", target.Family, target.VersionID, err)
 	}
 	advisory.Classify(evaluation.Findings, target.Family, packages, kernel)
+	exploitData := advisory.Enrich(evaluation.Findings, client, now)
 	fixCounts := make(map[string]int, len(advisory.FixStates))
 	for _, state := range advisory.FixStates {
 		fixCounts[state] = 0
@@ -108,6 +111,7 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 		Unsupported:      evaluation.Unsupported,
 		Coverage:         coverage(target.Family),
 		AdvisoryDatabase: feed.Metadata,
+		ExploitData:      exploitData,
 		Maintenance:      maintenance(target),
 		PackageManager:   packageManager,
 		Evaluator:        "DeaconGuard Go scanner",

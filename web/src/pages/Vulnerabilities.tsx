@@ -4,16 +4,24 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, ShieldCheck } from "lucide-react";
 import { api } from "../api";
 import { Card, CardHeader, EmptyState, ErrorMessage, Loading, PageHeader, SeverityBadge, Table, Td, Th, cx } from "../components/ui";
+import { CVSSScore, ExploitBadge } from "../lib/exploit";
+
+type Show = "fixable" | "exploited" | "all";
 
 export function Vulnerabilities() {
   const [query, setQuery] = useState("");
-  const [fixableOnly, setFixableOnly] = useState(true);
+  const [show, setShow] = useState<Show>(() => (new URLSearchParams(window.location.search).get("show") === "exploited" ? "exploited" : "fixable"));
+  const fixableOnly = show === "fixable";
   const { data, error, isPending } = useQuery({ queryKey: ["vulnerabilities"], queryFn: api.vulnerabilities });
   const fixableCount = data?.filter((item) => item.fixable_host_count > 0).length ?? 0;
+  const exploited = (item: { priority: string }) => item.priority === "exploited" || item.priority === "likely";
+  const exploitedCount = data?.filter(exploited).length ?? 0;
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const shown = (data ?? []).filter((item) => !fixableOnly || item.fixable_host_count > 0);
+    const shown = (data ?? []).filter((item) =>
+      show === "fixable" ? item.fixable_host_count > 0 : show === "exploited" ? exploited(item) : true,
+    );
     if (!needle) return shown;
     return shown.filter(
       (item) =>
@@ -21,13 +29,13 @@ export function Vulnerabilities() {
         item.title.toLowerCase().includes(needle) ||
         item.packages.some((name) => name.toLowerCase().includes(needle)),
     );
-  }, [data, query, fixableOnly]);
+  }, [data, query, show]);
 
   return (
     <>
       <PageHeader
         title="Vulnerabilities"
-        description="Every CVE found in the latest successful scan of each registered host. Fix now shows those an update or a restart fixes; the rest wait on the distribution."
+        description="Every CVE found in the latest successful scan of each registered host, most urgent first: known exploited (CISA KEV), then likely exploited (EPSS 10% or more), then by severity. Fix now shows those an update or a restart fixes; the rest wait on the distribution."
       />
       <Card>
         <CardHeader
@@ -36,18 +44,19 @@ export function Vulnerabilities() {
           action={
             <div className="flex flex-wrap items-center gap-3">
               <div className="inline-flex rounded-lg ring-1 ring-slate-300 ring-inset dark:ring-slate-700" role="group" aria-label="Show">
-                {[
-                  { value: true, label: `Fix now (${fixableCount.toLocaleString()})` },
-                  { value: false, label: `All (${(data?.length ?? 0).toLocaleString()})` },
-                ].map((option) => (
+                {([
+                  { value: "fixable", label: `Fix now (${fixableCount.toLocaleString()})` },
+                  { value: "exploited", label: `Exploited (${exploitedCount.toLocaleString()})` },
+                  { value: "all", label: `All (${(data?.length ?? 0).toLocaleString()})` },
+                ] as { value: Show; label: string }[]).map((option) => (
                   <button
-                    key={String(option.value)}
+                    key={option.value}
                     type="button"
-                    aria-pressed={fixableOnly === option.value}
-                    onClick={() => setFixableOnly(option.value)}
+                    aria-pressed={show === option.value}
+                    onClick={() => setShow(option.value)}
                     className={cx(
                       "px-3 py-1.5 text-sm first:rounded-l-lg last:rounded-r-lg",
-                      fixableOnly === option.value
+                      show === option.value
                         ? "bg-slate-900 font-semibold text-white dark:bg-slate-100 dark:text-slate-900"
                         : "text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800",
                     )}
@@ -82,6 +91,12 @@ export function Vulnerabilities() {
             title="Nothing to fix now"
             description={`No update or restart fixes any of the ${data.length.toLocaleString()} CVEs found; they wait on the distribution. Choose All to see them.`}
           />
+        ) : data.length > 0 && filtered.length === 0 && show === "exploited" && !query ? (
+          <EmptyState
+            icon={<ShieldCheck className="size-6" />}
+            title="Nothing known or likely to be exploited"
+            description="None of the CVEs found is in CISA's Known Exploited Vulnerabilities catalog or has an EPSS of 10% or more. Hosts last scanned before 0.16.0 have no exploit data until they are scanned again."
+          />
         ) : data.length === 0 ? (
           <EmptyState
             icon={<ShieldCheck className="size-6" />}
@@ -94,6 +109,8 @@ export function Vulnerabilities() {
               <tr>
                 <Th>CVE</Th>
                 <Th>Severity</Th>
+                <Th className="text-right">CVSS</Th>
+                <Th>Exploitation</Th>
                 <Th>Packages</Th>
                 <Th>Fix</Th>
                 <Th className="text-right">Hosts</Th>
@@ -115,6 +132,12 @@ export function Vulnerabilities() {
                   </Td>
                   <Td>
                     <SeverityBadge severity={item.severity} />
+                  </Td>
+                  <Td className="text-right">
+                    <CVSSScore score={item.cvss_score} />
+                  </Td>
+                  <Td>
+                    <ExploitBadge kev={item.kev} ransomware={item.ransomware} due={item.kev_due} epss={item.epss} />
                   </Td>
                   <Td className="max-w-xs text-slate-600 dark:text-slate-300">{item.packages.join(", ")}</Td>
                   <Td className="text-xs whitespace-nowrap text-slate-600 dark:text-slate-300">

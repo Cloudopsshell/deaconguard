@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,6 +122,9 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/hosts/{id}", s.getHost)
 	mux.HandleFunc("PATCH /api/hosts/{id}", s.needs(store.RoleOperator, s.updateHost))
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.needs(store.RoleAdmin, s.removeHost))
+	mux.HandleFunc("PUT /api/hosts/{id}/tags", s.needs(store.RoleOperator, s.setHostTags))
+	mux.HandleFunc("GET /api/tags", s.listTags)
+	mux.HandleFunc("GET /api/trends", s.trends)
 	mux.HandleFunc("GET /api/checks", s.listChecks)
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, buildinfo.Get()) })
 	mux.HandleFunc("GET /api/capabilities", s.capabilities)
@@ -334,6 +338,17 @@ type summary struct {
 	HostSummaries    []store.HostSummary     `json:"host_summaries"`
 	Checks           map[string]*checkTotals `json:"checks"`
 	TopVulnerability []store.Vulnerability   `json:"top_vulnerabilities"`
+	// Exploit sums the hosts' latest exploit counts. HostsWithoutData
+	// counts scanned hosts whose latest scan had no KEV or EPSS data.
+	Exploit exploitTotals `json:"exploit"`
+}
+
+type exploitTotals struct {
+	Known            int `json:"known"`
+	KnownFixable     int `json:"known_fixable"`
+	Likely           int `json:"likely"`
+	HostsWithKnown   int `json:"hosts_with_known"`
+	HostsWithoutData int `json:"hosts_without_data"`
 }
 
 // staleAfter is how old a host's latest package results may be before the
@@ -408,6 +423,16 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 			result.StaleHosts = append(result.StaleHosts, staleHost{ID: host.ID, Address: host.Address, ScannedAt: report.StartedAt, Scheduled: host.NextScan != nil})
 		}
 		result.ScannedHosts++
+		if report.Exploit.Data {
+			result.Exploit.Known += report.Exploit.Known
+			result.Exploit.KnownFixable += report.Exploit.KnownFixable
+			result.Exploit.Likely += report.Exploit.Likely
+			if report.Exploit.Known > 0 {
+				result.Exploit.HostsWithKnown++
+			}
+		} else {
+			result.Exploit.HostsWithoutData++
+		}
 		result.Findings += report.FindingCount
 		result.Unsupported += report.UnsupportedCount
 		result.Severity.Critical += report.Severity.Critical
@@ -532,6 +557,58 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "host.sudo", host.Address, fmt.Sprintf("allow sudo: %t", *request.AllowSudo))
 	writeJSON(w, http.StatusOK, host)
+}
+
+type tagsRequest struct {
+	Tags []string `json:"tags"`
+}
+
+func (s *Server) setHostTags(w http.ResponseWriter, r *http.Request) {
+	var request tagsRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	host, err := store.GetHost(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	tags, err := store.SetHostTags(host.ID, request.Tags)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.audit(r, "host.tags", host.Address, "tags: "+strings.Join(tags, ", "))
+	writeJSON(w, http.StatusOK, tagsRequest{Tags: tags})
+}
+
+func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
+	tags, err := store.Tags()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tags)
+}
+
+// trends returns daily vulnerability counts: ?days=90 (1 to 365), and
+// optionally ?host=ID or ?tag=TAG.
+func (s *Server) trends(w http.ResponseWriter, r *http.Request) {
+	days := 90
+	if text := r.URL.Query().Get("days"); text != "" {
+		value, err := strconv.Atoi(text)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("days must be a number"))
+			return
+		}
+		days = value
+	}
+	points, err := store.Trends(days, store.TrendFilter{HostID: r.URL.Query().Get("host"), Tag: r.URL.Query().Get("tag")}, time.Now())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, points)
 }
 
 func (s *Server) listChecks(w http.ResponseWriter, r *http.Request) {

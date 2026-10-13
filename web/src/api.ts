@@ -166,6 +166,55 @@ export interface Scan {
   has_log: boolean;
   /** A handover audit: every check, graded together. */
   audit: boolean;
+  /** Package findings by what is known about them being exploited; all zero, with data false, before 0.16.0 or without KEV and EPSS data. */
+  exploit?: ExploitCounts;
+}
+
+export interface ExploitCounts {
+  /** In CISA's Known Exploited Vulnerabilities catalog. */
+  known: number;
+  known_fixable: number;
+  /** EPSS of 10% or more. */
+  likely: number;
+  /** The scan had KEV or EPSS data, so zeros mean none. */
+  data: boolean;
+}
+
+/** How urgently to fix a vulnerability: known exploited, likely exploited, critical or high, other. */
+export type Priority = "exploited" | "likely" | "severe" | "other";
+
+/** What is known about a CVE being exploited, from CISA KEV and FIRST EPSS. */
+export interface Exploit {
+  kev: boolean;
+  kev_added?: string;
+  kev_due?: string;
+  ransomware?: boolean;
+  /** Probability, 0 to 1, of exploitation in the next 30 days. */
+  epss?: number;
+  epss_percentile?: number;
+}
+
+export interface ExploitSource {
+  available: boolean;
+  version?: string;
+  error?: string;
+}
+
+export interface TrendPoint {
+  day: string;
+  hosts: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  unknown: number;
+  exploited: number;
+  likely: number;
+}
+
+export interface TagCount {
+  tag: string;
+  hosts: number;
 }
 
 export type ControlStatus = "pass" | "fail" | "na" | "unknown" | "accepted";
@@ -350,6 +399,7 @@ export interface HostSummary extends Host {
   next_scan?: NextScan;
   /** The machine the DeaconGuard server runs on, scanned by its own agent. */
   this_server?: boolean;
+  tags: string[];
 }
 
 export interface HostDetail extends HostSummary {
@@ -377,6 +427,12 @@ export interface Finding {
   severity: Severity;
   /** The generic CVSS rating, when the distribution publishes it too. */
   cvss_severity?: string;
+  /** CVSS v3 base score and vector, from Ubuntu and Red Hat. */
+  cvss_score?: number;
+  cvss_vector?: string;
+  /** Missing before 0.16.0, or when no KEV or EPSS data was available. */
+  exploit?: Exploit;
+  priority?: Priority;
   url: string;
   title: string;
 }
@@ -535,6 +591,8 @@ export interface Report {
     feed_age_hours: number;
     feed_refresh_error?: string;
   };
+  /** Missing before 0.16.0. */
+  exploit_data?: { kev: ExploitSource; epss: ExploitSource };
 }
 
 export interface ScanDetail {
@@ -551,6 +609,13 @@ export interface Vulnerability {
   /** Hosts where installing updates or restarting fixes it. */
   fixable_host_count: number;
   packages: string[];
+  /** Empty for findings from before 0.16.0. */
+  priority: Priority | "";
+  kev: boolean;
+  kev_due?: string;
+  ransomware?: boolean;
+  epss?: number;
+  cvss_score?: number;
 }
 
 export interface AffectedPackage {
@@ -565,6 +630,12 @@ export interface AffectedPackage {
   severity: Severity;
   url: string;
   title: string;
+  priority?: Priority | "";
+  kev?: boolean;
+  kev_due?: string;
+  ransomware?: boolean;
+  epss?: number;
+  cvss_score?: number;
 }
 
 export interface Summary {
@@ -584,6 +655,7 @@ export interface Summary {
   host_summaries: HostSummary[];
   top_vulnerabilities: Vulnerability[];
   checks: Partial<Record<CheckId, CheckTotals>>;
+  exploit: { known: number; known_fixable: number; likely: number; hosts_with_known: number; hosts_without_data: number };
 }
 
 /** A question a paused scan is waiting for the user to answer. */
@@ -735,6 +807,14 @@ export const api = {
   setAuditOnEnroll: (on: boolean) => request<{ audit_on_enroll: boolean }>("PATCH", "/api/settings/audit", { audit_on_enroll: on }),
   deleteScan: (id: string) => request<{ ok: boolean }>("DELETE", `/api/scans/${id}`),
   vulnerabilities: () => request<Vulnerability[]>("GET", "/api/vulnerabilities"),
+  tags: () => request<TagCount[]>("GET", "/api/tags"),
+  setHostTags: (id: string, tags: string[]) => request<{ tags: string[] }>("PUT", `/api/hosts/${id}/tags`, { tags }),
+  trends: (days: number, filter: { host?: string; tag?: string } = {}) => {
+    const parameters = new URLSearchParams({ days: String(days) });
+    if (filter.host) parameters.set("host", filter.host);
+    if (filter.tag) parameters.set("tag", filter.tag);
+    return request<TrendPoint[]>("GET", `/api/trends?${parameters}`);
+  },
   vulnerability: (cve: string) =>
     request<AffectedPackage[]>("GET", `/api/vulnerabilities/${encodeURIComponent(cve)}`),
 };

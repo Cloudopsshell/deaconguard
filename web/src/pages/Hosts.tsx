@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Play, Plus, RadioTower, Server, Trash2 } from "lucide-react";
+import { Flame, Play, Plus, RadioTower, Server, Trash2 } from "lucide-react";
+import { TagChips, TagFilter } from "../components/Tags";
 import { useCan } from "../lib/role";
 import { api, type HostSummary } from "../api";
 import {
@@ -31,7 +32,9 @@ export function Hosts() {
   const canEnroll = useCan("admin");
   const [searchParams, setSearchParams] = useSearchParams();
   const adding = searchParams.get("add") === "1";
-  const setAdding = (open: boolean) => setSearchParams(open ? { add: "1" } : {}, { replace: true });
+  const tag = searchParams.get("tag") ?? "";
+  const setAdding = (open: boolean) => setSearchParams(open ? { add: "1" } : tag ? { tag } : {}, { replace: true });
+  const setTag = (value: string) => setSearchParams(value ? { tag: value } : {}, { replace: true });
 
   const capabilities = useQuery({ queryKey: ["capabilities"], queryFn: api.capabilities, staleTime: Infinity });
   const network = capabilities.data?.agents ?? false;
@@ -100,6 +103,8 @@ export function Hosts() {
             }
           />
         ) : (
+          <>
+          <TagFilter tags={[...new Set(data.flatMap((host) => host.tags))].sort()} selected={tag} onSelect={setTag} />
           <Table>
             <thead>
               <tr>
@@ -113,11 +118,14 @@ export function Hosts() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {data.map((host) => (
-                <HostRow key={host.id} host={host} />
-              ))}
+              {data
+                .filter((host) => !tag || host.tags.includes(tag))
+                .map((host) => (
+                  <HostRow key={host.id} host={host} />
+                ))}
             </tbody>
           </Table>
+          </>
         )}
       </Card>
       <AddHostDialog
@@ -156,6 +164,7 @@ function HostRow({ host }: { host: HostSummary }) {
           {shortConnectionLabel(host)}
           {host.transport === "agent" && (agentOnline(host) ? " · online" : " · offline")}
         </p>
+        <TagChips tags={host.tags} className="mt-1" />
       </Td>
       <Td className="text-slate-600 dark:text-slate-300">{host.last_report?.os || host.agent?.os || "—"}</Td>
       <Td>
@@ -172,6 +181,12 @@ function HostRow({ host }: { host: HostSummary }) {
         {host.last_report ? (
           <div className="space-y-1">
             <PackageCountsInline summary={host.last_report} />
+            {(host.last_report.exploit?.known ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-300">
+                <Flame className="size-3.5" aria-hidden />
+                {host.last_report.exploit!.known} known exploited
+              </span>
+            )}
             <CoverageNotes scan={host.last_report} />
           </div>
         ) : (

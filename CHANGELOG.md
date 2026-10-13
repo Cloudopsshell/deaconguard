@@ -8,6 +8,25 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-13
+
+### Added
+
+- **Which vulnerabilities to fix first.** Every package vulnerability is checked against CISA's **Known Exploited Vulnerabilities** catalog and gets its **EPSS** score, FIRST's chance of it being exploited in the next 30 days; the server downloads both at most every 12 hours. Vulnerabilities are ordered known exploited first, then likely exploited (EPSS 10% or more), then by severity, on the dashboard, the **Vulnerabilities** page (new **Exploited** filter), each scan, reports and `deaconguard report`. A scan that couldn't get the data says so and marks nothing.
+- **CVSS scores:** the CVSS v3 base score and vector from Ubuntu's and Red Hat's feeds, on each vulnerability.
+- **The dashboard** has a **Known exploited** tile, and **Most exposed hosts** puts hosts with known exploited vulnerabilities first. A CVE's page shows its KEV entry, EPSS and CVSS.
+- **Trends:** a chart of open vulnerabilities by severity, and those known to be exploited, over 30, 90 or 365 days, on the dashboard and each host's page. Upgrading fills it from the scans already kept.
+- **Host tags,** such as `prod` or `team:web`: operators and admins set them on a host's page; the **Hosts** page and the dashboard's chart filter by them. Changes are in the audit log.
+- **Reports** show each vulnerability's CVSS score and exploitation, and how many are known or likely to be exploited. CSV and Excel have **CVSS**, **EPSS** and **Known exploited** columns.
+
+### Changed
+
+- **Audits:** a vulnerability known to be exploited (CISA KEV) with a fix available lowers the grade to D at most.
+- The PDF's vulnerability table shows the fixed version with "(restart)" when a restart is all that is left, instead of a separate column.
+- CSV and Excel exports have three more columns at the end.
+- The server reaches `www.cisa.gov` and `epss.empiricalsecurity.com` over HTTPS for exploit data.
+- **Upgrading:** the database gains exploit data, tags and trends (schema 16). Hosts have exploit data from their next scan.
+
 ## [0.15.0] - 2026-10-13
 
 ### Added
@@ -363,7 +382,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.12.0...v0.13.0
