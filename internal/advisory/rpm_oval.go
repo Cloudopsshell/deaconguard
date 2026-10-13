@@ -36,6 +36,10 @@ type ovalMetadata struct {
 	References  []ovalReference `xml:"reference"`
 	Advisory    struct {
 		Severity string `xml:"severity,attr"`
+		CVEs     []struct {
+			ID    string `xml:",chardata"`
+			CVSS3 string `xml:"cvss3,attr"`
+		} `xml:"cve"`
 	} `xml:"advisory"`
 }
 
@@ -184,9 +188,11 @@ func evaluateRedHatOVALXML(data []byte, packages []inventory.Package) (DebianEva
 				if len(parts) == 2 {
 					installed = parts[1]
 				}
+				score, vector := redHatCVSS(definition.Metadata, cve.ID)
 				result.Findings = append(result.Findings, Finding{
 					ID: cve.ID, Package: packageName, InstalledVersion: installed,
 					FixedVersion: evaluation.items[itemName], Severity: normalizeSeverity(definition.Metadata.Advisory.Severity),
+					CVSSScore: score, CVSSVector: vector,
 					URL: cve.URL, Title: definition.Metadata.Title,
 				})
 			}
@@ -418,4 +424,16 @@ func normalizeSeverity(value string) string {
 		}
 		return "UNKNOWN"
 	}
+}
+
+// redHatCVSS is the CVSS v3 score and vector Red Hat gives the CVE id, from
+// its cvss3 attribute: "7.5/CVSS:3.1/AV:N/...".
+func redHatCVSS(metadata ovalMetadata, id string) (float64, string) {
+	for _, cve := range metadata.Advisory.CVEs {
+		if strings.TrimSpace(cve.ID) == id {
+			score, vector, _ := strings.Cut(cve.CVSS3, "/")
+			return parseCVSS(score, vector)
+		}
+	}
+	return 0, ""
 }

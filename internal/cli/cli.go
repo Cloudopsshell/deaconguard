@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"golang.org/x/term"
@@ -301,6 +302,18 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 		}
 		fmt.Fprintf(output, "Advisory data: %s, age %v hours\n", freshness, database["feed_age_hours"])
 	}
+	if data, ok := report["exploit_data"].(map[string]any); ok {
+		parts := []string{}
+		for _, source := range []struct{ key, name, what string }{{"kev", "CISA KEV", "catalog"}, {"epss", "EPSS", "scores of"}} {
+			values, _ := data[source.key].(map[string]any)
+			if values != nil && values["available"] == true {
+				parts = append(parts, fmt.Sprintf("%s %s %v", source.name, source.what, values["version"]))
+			} else {
+				parts = append(parts, source.name+" unavailable")
+			}
+		}
+		fmt.Fprintf(output, "Exploit data: %s\n", strings.Join(parts, "; "))
+	}
 	if unsupported, ok := report["unsupported_cves"].([]any); ok && len(unsupported) > 0 {
 		fmt.Fprintf(output, "Rules not fully evaluated: %d\n", len(unsupported))
 		for _, value := range unsupported {
@@ -311,6 +324,21 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 		}
 	}
 	if findings, ok := report["findings"].([]any); ok {
+		// Known and likely exploited first, as the dashboard lists them.
+		rank := map[any]int{"exploited": 0, "likely": 1}
+		sort.SliceStable(findings, func(a, b int) bool {
+			left, _ := findings[a].(map[string]any)
+			right, _ := findings[b].(map[string]any)
+			leftRank, leftFound := rank[left["priority"]]
+			rightRank, rightFound := rank[right["priority"]]
+			if !leftFound {
+				leftRank = 2
+			}
+			if !rightFound {
+				rightRank = 2
+			}
+			return leftRank < rightRank
+		})
 		for _, value := range findings {
 			item, ok := value.(map[string]any)
 			if !ok {
@@ -324,6 +352,13 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 			for _, line := range fixLines {
 				if item["fix"] == line.state && line.state != "available" && line.state != "none" {
 					action = "  [" + line.short + "]"
+				}
+			}
+			if exploit, ok := item["exploit"].(map[string]any); ok {
+				if exploit["kev"] == true {
+					action += "  [KNOWN EXPLOITED]"
+				} else if epss, ok := exploit["epss"].(float64); ok && epss >= 0.1 {
+					action += fmt.Sprintf("  [EPSS %.0f%%]", epss*100)
 				}
 			}
 			fmt.Fprintf(output, "%-8v %-18v %v %v -> %v%s\n", item["severity"], item["id"], item["package"], item["installed_version"], fixed, action)

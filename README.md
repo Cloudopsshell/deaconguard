@@ -24,7 +24,7 @@ One binary does two jobs, and they are kept apart on purpose:
 
 | Component | Runs as | Listens on | Reaches |
 | --- | --- | --- | --- |
-| `deaconguard-server` | `deaconguard` user, no root | `0.0.0.0:8443` (HTTPS) | the distributions' advisory feeds |
+| `deaconguard-server` | `deaconguard` user, no root | `0.0.0.0:8443` (HTTPS) | the distributions' advisory feeds, CISA KEV and EPSS |
 | `deaconguard-agent` | root | nothing | only its server |
 
 Agents enroll once with a token from the server: a one-time token, valid for 24 hours, or a [reusable one](#reusable-tokens) for many machines, such as a Kubernetes cluster's nodes. Machines to scan need no open ports and no internet access, because the server evaluates their packages against the advisories. More on how they trust each other: [Architecture](https://docs.deaconguard.io/architecture).
@@ -41,7 +41,7 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 - **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself. The server also runs [in a container](#docker-compose-and-kubernetes), with Docker, Compose or Kubernetes, and the agent runs on every Kubernetes node as a DaemonSet.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
 - **Server memory:** give the server at least **1 GB of memory** (RAM plus swap). It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB. With too little, Linux stops the server mid-scan, and the dashboard says so after it restarts.
-- **Network:** the server needs HTTPS access to the distributions' advisory feeds. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
+- **Network:** the server needs HTTPS access to the distributions' advisory feeds, and to `www.cisa.gov` and `epss.empiricalsecurity.com` for exploit data. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
 
 ## Install
 
@@ -328,7 +328,7 @@ Each release's notes list the Go version and main libraries it was built with, a
 All data lives in one directory: `/var/lib/deaconguard/` for the server service, `~/.local/share/deaconguard/` otherwise, or the path in `DEACONGUARD_HOME`. In a container it is `/home/nonroot`, on the `data` volume with Compose or the server's PersistentVolumeClaim in Kubernetes; stop the server (`docker compose stop server`, or scale the StatefulSet to 0) before copying it. It holds:
 - `deaconguard.db`: hosts, scan results, activity logs, accounts, tokens and the audit log. Passwords are stored as PBKDF2 hashes; recovery codes, tokens and credentials as SHA-256 hashes. Authenticator keys for two-step sign-in are stored as is, because checking a code needs them, so keep backups as safe as the server.
 - `tls/`: the server's certificate and key. Keep them: agents trust this key.
-- `feeds/`: a cache that is downloaded again if missing.
+- `feeds/`: a cache of advisory and exploit data, downloaded again if missing.
 
 Files are readable only by their owner. To back up, stop the server (`sudo systemctl stop deaconguard-server`, or `deaconguard serve`) and copy the directory:
 
@@ -364,6 +364,16 @@ Each scan runs the checks you choose, in the web UI's scan dialog or with `deaco
 
 Every command is a fixed string in DeaconGuard's source; nothing from the user or the host is inserted into it.
 
+### Which vulnerabilities to fix first
+
+The server marks every package vulnerability with what is known about attackers using it, from two public sources it downloads at most every 12 hours:
+
+- **Known exploited:** the CVE is in CISA's [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) catalog, with the date US federal agencies must fix it by, and whether it is used in ransomware.
+- **Likely exploited:** [EPSS](https://www.first.org/epss/), from FIRST, gives the CVE a 10% or higher chance of being exploited in the next 30 days. Every CVE shows its EPSS score.
+- The **CVSS** v3 base score and vector, where the distribution publishes them (Ubuntu and Red Hat; Debian and Amazon Linux don't).
+
+Lists put known exploited first, then likely exploited, then by severity: the dashboard, **Vulnerabilities** (with an **Exploited** filter), each scan, reports, and `deaconguard report`. A known exploited vulnerability with a fix lowers an audit's grade to D at most. When KEV or EPSS can't be downloaded and isn't cached, the scan says so, and its vulnerabilities are not marked either way: missing data is never shown as "not exploited". Scans from before 0.16.0 have no exploit data until the host is scanned again.
+
 By default checks run as the user running DeaconGuard, which cannot see other users' processes, protected files, or firewall rules; results then say they have partial coverage. Allow sudo (`--allow-sudo` when adding the machine or scanning it once, `deaconguard host sudo HOST_ID on`, or the switch on the host page) to run the same read-only commands through `sudo`. If sudo needs a password, the UI or terminal asks for it once per scan and keeps it in memory only; declining continues the scan without sudo. A skipped or failed check is never shown as clean.
 
 ## Server audits
@@ -371,7 +381,7 @@ By default checks run as the user running DeaconGuard, which cannot see other us
 A server audit checks one machine from top to bottom and grades it A to F: for handing a newly built server over to a client or team, or checking where an existing one stands. It runs every check above, including the 72-control hardening baseline, plus an antivirus scan (optionally the advanced one) and an inventory of the machine (OS, hardware, disks, addresses, listening services, administrators). Like every scan, it only reads.
 
 - **Run one** with **Run audit** on a host's page, `deaconguard audit HOST_ID [--advanced]` on the server (as the `deaconguard` user), or `deaconguard audit --local` on any machine. An admin can turn on **Audit new machines when they enroll** on the **Server audits** page, so a new server has an audit ready by its handover.
-- **The grade:** the score is the share of applicable baseline controls that pass, weighted by severity (critical 10, high 6, medium 3, low 1): A from 90, B from 80, C from 70, D from 60. Malware caps it at F; system files that differ from their packages at D; fixable critical vulnerabilities or a failed critical control at C; fixable high vulnerabilities at B. The audit page says what holds the grade back and what couldn't be checked.
+- **The grade:** the score is the share of applicable baseline controls that pass, weighted by severity (critical 10, high 6, medium 3, low 1): A from 90, B from 80, C from 70, D from 60. Malware caps it at F; system files that differ from their packages, or a [known exploited](#which-vulnerabilities-to-fix-first) vulnerability with a fix, at D; fixable critical vulnerabilities or a failed critical control at C; fixable high vulnerabilities at B. The audit page says what holds the grade back and what couldn't be checked.
 - **The audit page** lists every control with its evidence, why it matters and how to fix it, and the inventory. Audits are kept until someone deletes them.
 - **Accepted risks:** an admin can accept a failed control's risk with a reason, for one host or every host, until an expiry date (90 days by default) or indefinitely. It then shows as accepted and leaves the score; the audit log records it.
 
@@ -382,7 +392,7 @@ See [Server audits](https://docs.deaconguard.io/usage/audits) for the full list 
 
 ## Reports
 
-**Create report** on an audit or scan freezes it as a report for a client: a **PDF** with a cover page (your logo, company and contact line from **Settings**, the client's name, the grade and score), a summary, what changed since an earlier audit, every failed control with its evidence and fix, accepted risks, vulnerabilities and the inventory. The same report downloads as **HTML**, **Excel** (Summary, Items with filters, Inventory), **CSV** and **JSON**. The server makes the PDF itself; nothing extra is installed.
+**Create report** on an audit or scan freezes it as a report for a client: a **PDF** with a cover page (your logo, company and contact line from **Settings**, the client's name, the grade and score), a summary, what changed since an earlier audit, every failed control with its evidence and fix, accepted risks, vulnerabilities with their CVSS score and exploitation (known exploited first), and the inventory. The same report downloads as **HTML**, **Excel** (Summary, Items with filters, Inventory), **CSV** and **JSON**. The server makes the PDF itself; nothing extra is installed.
 
 - **Share** gives a link that opens the report without signing in, for 1 to 30 days, until revoked; every view is in the audit log. Only a hash of the link is stored.
 - Each report carries a SHA-256 **fingerprint**; **Verify a report** checks a report's ID and fingerprint against what the server made.
@@ -392,7 +402,7 @@ See [Reports](https://docs.deaconguard.io/usage/reports).
 
 ## Web UI
 
-`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents**, **Accounts**, **My account**, **Settings** and **Audit log** pages. Both have **Server audits**, reports and **Verify a report**. Light, dark, or **System** mode (following your computer) and five color themes (Indigo, Ocean, Teal, Plum, Graphite) are at the bottom of the sidebar; severity colors never change. On a server the choice is saved to your account. Both have a **Logs** page. It shows each host's results, a severity overview, per-check results, full scan reports with search and filters, and scan history. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
+`deaconguard serve` starts a local dashboard at <http://127.0.0.1:7480> (change the port with `--listen 127.0.0.1:PORT`); [the server](#run-the-server) serves the same dashboard over HTTPS with sign-in, plus the **Agents**, **Accounts**, **My account**, **Settings** and **Audit log** pages. Both have **Server audits**, reports and **Verify a report**. Light, dark, or **System** mode (following your computer) and five color themes (Indigo, Ocean, Teal, Plum, Graphite) are at the bottom of the sidebar; severity colors never change. On a server the choice is saved to your account. Both have a **Logs** page. It shows each host's results, a severity overview, how many vulnerabilities are known to be exploited, a chart of open vulnerabilities over the last 30, 90 or 365 days (also on each host's page), per-check results, full scan reports with search and filters, and scan history. **Tags** group hosts, such as `prod` or `team:web`: operators and admins add them on a host's page, the **Hosts** page filters by them, and the dashboard's chart can show one tag's hosts. Hosts can be added, removed, and scanned from the browser; the CLI and the UI share the same data.
 
 The local dashboard only listens on a loopback address and rejects requests addressed to other host names. Both reject requests sent from other websites. While a scan runs, the host's page shows a live console with each step, every fixed command DeaconGuard runs (marked when it goes through sudo), how long each took, and findings as each check completes; it never shows command output or credentials. Each scan's activity log is saved with its results, so **View logs** in the scan history replays it later. Scan history keeps the 10 most recent scans per host, plus any older scan that still holds a check's latest result, and each scan can be deleted.
 

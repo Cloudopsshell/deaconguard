@@ -266,6 +266,9 @@ func Grade(scan store.Scan, report map[string]any, exceptions []store.Exception,
 	if changed := severe(results[checks.Integrity]); changed > 0 {
 		summary.cap("D", fmt.Sprintf("%s from what %s installed", count(changed, "system file differs", "system files differ"), pick(changed, "its package", "their packages")))
 	}
+	if scan.Exploit.KnownFixable > 0 {
+		summary.cap("D", count(scan.Exploit.KnownFixable, "vulnerability known to be exploited (CISA KEV) has a fix available", "vulnerabilities known to be exploited (CISA KEV) have a fix available"))
+	}
 	if scan.Fixes != nil && scan.Fixes.Actionable.Critical > 0 {
 		summary.cap("C", count(scan.Fixes.Actionable.Critical, "critical vulnerability has a fix available", "critical vulnerabilities have a fix available"))
 	}

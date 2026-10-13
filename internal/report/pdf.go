@@ -272,6 +272,10 @@ func (w *pdfWriter) summary() {
 	if r.Packages != nil {
 		w.row(widths, []string{"Package vulnerabilities", fmt.Sprintf("%d critical and %d high with a fix available; %d in all",
 			r.Packages.Actionable.Critical, r.Packages.Actionable.High, len(r.Vulnerabilities)), ""}, nil, false)
+		if e := r.Exploit; e != nil {
+			w.row(widths, []string{"Exploitation", fmt.Sprintf("%d known to be exploited (CISA KEV), %d of them with a fix available; %d likely to be exploited (EPSS 10%% or more)",
+				e.Known, e.KnownFixable, e.Likely), ""}, nil, false)
+		}
 	}
 	for _, check := range r.CheckResults {
 		w.row(widths, []string{check.Name, check.Summary, check.Status}, nil, false)
@@ -406,31 +410,46 @@ func (w *pdfWriter) vulnerabilities() {
 		return
 	}
 	v := newView(r, "")
-	w.text("From the distribution's own security advisories.", 9, "", muted)
+	source := "From the distribution's own security advisories."
+	if e := r.Exploit; e != nil {
+		source += " Exploitation from CISA's Known Exploited Vulnerabilities catalog and FIRST's EPSS; known exploited ones come first."
+	}
+	w.text(source, 9, "", muted)
 	w.subheading(fmt.Sprintf("Fixed by an update or a restart (%d)", len(v.Vulnerabilities)))
 	if len(v.Vulnerabilities) == 0 {
 		w.text("Nothing an update or a restart would fix.", 10, "", ink)
 	} else {
-		widths := []float64{28, 40, 38, 38, 16, 14}
-		w.row(widths, []string{"CVE", "Package", "Installed", "Fixed in", "Severity", "Clears"}, nil, true)
+		// What clears it goes with the fixed version: an update, unless a
+		// restart is all that is left.
+		widths := []float64{31, 28, 27, 30, 18, 12, 28}
+		w.row(widths, []string{"CVE", "Package", "Installed", "Fixed in", "Severity", "CVSS", "Exploitation"}, nil, true)
 		for _, vulnerability := range v.Vulnerabilities {
-			clears := "Update"
+			fixed := vulnerability.Fixed
 			if vulnerability.Fix == "reboot" {
-				clears = "Restart"
+				fixed += " (restart)"
 			}
-			w.row(widths, []string{vulnerability.ID, vulnerability.Package, vulnerability.Installed, vulnerability.Fixed, vulnerability.Severity, clears},
-				[]rgb{{}, {}, {}, {}, sevFG[vulnerability.Severity], {}}, false)
+			exploitColor := rgb{}
+			if vulnerability.KEV {
+				exploitColor = sevFG["CRITICAL"]
+			}
+			w.row(widths, []string{vulnerability.ID, vulnerability.Package, vulnerability.Installed, fixed, vulnerability.Severity,
+				vulnerability.CVSS(), vulnerability.Exploitation()},
+				[]rgb{{}, {}, {}, {}, sevFG[vulnerability.Severity], {}, exploitColor}, false)
 		}
 	}
 	if len(v.Waiting) > 0 {
 		w.subheading(fmt.Sprintf("Waiting on the distribution, by package (%d packages)", len(v.Waiting)))
 		w.text("Updating can't fix these yet. The CSV, Excel and JSON versions list every CVE.", 9, "", muted)
 		w.pdf.Ln(1)
-		widths := []float64{50, 46, 16, 26, 36}
-		w.row(widths, []string{"Package", "Installed", "CVEs", "Highest", "What clears it"}, nil, true)
+		widths := []float64{46, 42, 14, 20, 22, 30}
+		w.row(widths, []string{"Package", "Installed", "CVEs", "Exploited", "Highest", "What clears it"}, nil, true)
 		for _, group := range v.Waiting {
-			w.row(widths, []string{group.Package, group.Installed, fmt.Sprint(group.Count), group.Severity, FixLabel(group.Fix)},
-				[]rgb{{}, {}, {}, sevFG[group.Severity], {}}, false)
+			exploited, exploitColor := "", rgb{}
+			if group.Exploited > 0 {
+				exploited, exploitColor = fmt.Sprint(group.Exploited), sevFG["CRITICAL"]
+			}
+			w.row(widths, []string{group.Package, group.Installed, fmt.Sprint(group.Count), exploited, group.Severity, FixLabel(group.Fix)},
+				[]rgb{{}, {}, {}, exploitColor, sevFG[group.Severity], {}}, false)
 		}
 	}
 }
