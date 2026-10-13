@@ -117,7 +117,11 @@ func (s *Server) emit(message notify.Message) {
 	}
 	var hostTags []string
 	if message.HostID != "" {
-		hostTags = tagsOf(message.HostID)
+		hostTags, _ = store.HostTags(message.HostID)
+		if window, inWindow, err := store.InMaintenance(hostTags, time.Now()); err == nil && inWindow && message.Event != notify.EventTest {
+			serverLog(message.HostID, store.LogInfo, "Held back a notification during the maintenance window %q: %s", window.Name, message.Title)
+			return
+		}
 	}
 	if message.At.IsZero() {
 		message.At = time.Now().UTC()
@@ -155,19 +159,6 @@ func (s *Server) wakeNotifier() {
 	case s.notifier.wake <- struct{}{}:
 	default:
 	}
-}
-
-func tagsOf(hostID string) []string {
-	hosts, err := store.HostSummaries()
-	if err != nil {
-		return nil
-	}
-	for _, host := range hosts {
-		if host.ID == hostID {
-			return host.Tags
-		}
-	}
-	return nil
 }
 
 // deliverDue sends the queued notifications that are due, retrying failures
@@ -444,6 +435,16 @@ func digest(channel store.Channel) (notify.Message, error) {
 		fmt.Sprintf("%d of %d hosts have results; %d not scanned in the last 7 days; %d whose last scan failed.", scanned, hosts, stale, failed),
 		fmt.Sprintf("To fix now: %d critical, %d high, %d medium, %d low.", severity.Critical, severity.High, severity.Medium, severity.Low),
 		fmt.Sprintf("Known exploited (CISA KEV): %d, %d of them with a fix. Likely exploited (EPSS 10%% or more): %d.", known, knownFixable, likely),
+	}
+	if sla, err := store.GetSLA(); err == nil && sla.Enabled {
+		overdue, overdueHosts := map[string]bool{}, map[string]bool{}
+		for _, finding := range findings {
+			if tagged[finding.HostID] && finding.Overdue {
+				overdue[finding.HostID+" "+finding.CVE] = true
+				overdueHosts[finding.HostID] = true
+			}
+		}
+		lines = append(lines, fmt.Sprintf("Past their fix deadline: %d, on %d hosts.", len(overdue), len(overdueHosts)))
 	}
 	var top []string
 	for _, vulnerability := range result.TopVulnerability {

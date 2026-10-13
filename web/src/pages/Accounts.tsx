@@ -5,6 +5,7 @@ import { ShieldAlert, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { api, roleLabels, type Account, type Role } from "../api";
 import { Button, Card, CardHeader, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, Table, Td, Th, cx } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
+import { AllAPITokens } from "../components/account/APITokens";
 
 type Action = { kind: "create" } | { kind: "password" | "reset" | "remove" | "role"; account: Account };
 
@@ -238,6 +239,8 @@ export function Accounts() {
           <code className="font-mono text-xs">sudo -u deaconguard deaconguard user mfa-reset NAME</code> on the server.
         </p>
       </div>
+
+      <AllAPITokens />
 
       <Dialog open={managing !== null} onClose={() => setManaging(null)} title={managing ? `Manage ${managing.username}` : ""}>
         {managing && (

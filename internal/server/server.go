@@ -109,6 +109,11 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/account/mfa/remove", s.removeOwnMFA)
 	mux.HandleFunc("POST /api/account/recovery-codes", s.newRecoveryCodes)
 	mux.HandleFunc("DELETE /api/account/sessions/{id}", s.endOwnSession)
+	mux.HandleFunc("GET /api/account/tokens", s.networkOnly(s.listOwnAPITokens))
+	mux.HandleFunc("POST /api/account/tokens", s.networkOnly(s.createAPIToken))
+	mux.HandleFunc("DELETE /api/account/tokens/{id}", s.networkOnly(s.revokeOwnAPIToken))
+	mux.HandleFunc("GET /api/tokens", s.needs(store.RoleAdmin, s.networkOnly(s.listAPITokens)))
+	mux.HandleFunc("DELETE /api/tokens/{id}", s.needs(store.RoleAdmin, s.networkOnly(s.revokeAPIToken)))
 	// Accounts exist only when DeaconGuard serves on the network.
 	mux.HandleFunc("GET /api/users", s.needs(store.RoleAdmin, s.networkOnly(s.listUsers)))
 	mux.HandleFunc("POST /api/users", s.needs(store.RoleAdmin, s.networkOnly(s.createUser)))
@@ -129,6 +134,11 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.needs(store.RoleAdmin, s.removeHost))
 	mux.HandleFunc("PUT /api/hosts/{id}/tags", s.needs(store.RoleOperator, s.setHostTags))
 	mux.HandleFunc("GET /api/tags", s.listTags)
+	mux.HandleFunc("GET /api/settings/sla", s.getSLA)
+	mux.HandleFunc("PUT /api/settings/sla", s.needs(store.RoleAdmin, s.updateSLA))
+	mux.HandleFunc("GET /api/maintenance", s.listMaintenance)
+	mux.HandleFunc("POST /api/maintenance", s.needs(store.RoleOperator, s.addMaintenance))
+	mux.HandleFunc("DELETE /api/maintenance/{id}", s.needs(store.RoleOperator, s.deleteMaintenance))
 	mux.HandleFunc("GET /api/trends", s.trends)
 	mux.HandleFunc("GET /api/checks", s.listChecks)
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, buildinfo.Get()) })
@@ -357,6 +367,16 @@ type summary struct {
 	// Exploit sums the hosts' latest exploit counts. HostsWithoutData
 	// counts scanned hosts whose latest scan had no KEV or EPSS data.
 	Exploit exploitTotals `json:"exploit"`
+	// SLA counts fixable vulnerabilities past their fix deadline, and due in
+	// the next 7 days, host by host; Enabled is false when deadlines are off.
+	SLA slaTotals `json:"sla"`
+}
+
+type slaTotals struct {
+	Enabled      bool `json:"enabled"`
+	Overdue      int  `json:"overdue"`
+	HostsOverdue int  `json:"hosts_overdue"`
+	DueSoon      int  `json:"due_soon"`
 }
 
 type exploitTotals struct {
@@ -491,6 +511,33 @@ func buildSummary() (summary, error) {
 		vulnerabilities = vulnerabilities[:10]
 	}
 	result.TopVulnerability = vulnerabilities
+	if sla, err := store.GetSLA(); err == nil && sla.Enabled {
+		result.SLA.Enabled = true
+		findings, err := store.LatestFindings()
+		if err != nil {
+			return summary{}, err
+		}
+		// Counted once per host and CVE: one CVE often affects several
+		// packages of the same source.
+		hostsOverdue, counted := map[string]bool{}, map[string]bool{}
+		soon := time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339)
+		for _, finding := range findings {
+			key := finding.HostID + " " + finding.CVE
+			if counted[key] {
+				continue
+			}
+			switch {
+			case finding.Overdue:
+				counted[key] = true
+				result.SLA.Overdue++
+				hostsOverdue[finding.HostID] = true
+			case finding.DueAt != "" && finding.DueAt <= soon && (finding.Fix == "available" || finding.Fix == "reboot"):
+				counted[key] = true
+				result.SLA.DueSoon++
+			}
+		}
+		result.SLA.HostsOverdue = len(hostsOverdue)
+	}
 	return result, nil
 }
 

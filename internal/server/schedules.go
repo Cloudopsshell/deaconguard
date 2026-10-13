@@ -91,7 +91,11 @@ func (s *Server) runSchedule(item store.Schedule) (started, skipped int) {
 			continue
 		}
 		reason := ""
+		tags, _ := store.HostTags(host.ID)
+		window, inWindow, _ := store.InMaintenance(tags, time.Now())
 		switch {
+		case inWindow && window.SkipScans:
+			reason = "it is in the maintenance window \"" + window.Name + "\""
 		case host.Transport == store.TransportAgent && !s.network:
 			reason = "agent hosts are scanned only when DeaconGuard serves on the network"
 		default:
