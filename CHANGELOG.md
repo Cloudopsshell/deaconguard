@@ -8,6 +8,20 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-14
+
+### Added
+
+- **More distributions:** Rocky Linux 8 to 10 (Rocky's errata from its repositories), AlmaLinux 8 to 10 and Oracle Linux 8 to 10 (their OVAL errata), Fedora 40 and later (security updates from the updates repository, and the archive once a release ends), openSUSE Leap 15.6 and 16.0, and SUSE Linux Enterprise Server and Desktop 15 SP6 and later and 16 (SUSE's CVE OVAL). The install script sets up servers and agents on all of them, with zypper on SUSE.
+- **Signing keys:** agents report each RPM package's signing key. On the RHEL rebuilds, Oracle Linux and SUSE, advisories only match packages signed by the distribution, so a third-party package with the same name isn't reported against them. Earlier agents' packages are assumed to be the distribution's, and the scan's coverage says so.
+- **Release lifecycle:** every scan says whether the release still gets security fixes: supported (until when), extended support only (Ubuntu Pro, Debian LTS, SUSE LTSS), end of life, or unknown, with a link to the vendor's lifecycle page. Fedora's dates come from Bodhi. The dashboard lists hosts past regular support; the hosts list, host pages, scan pages and reports show it. An audit of an end-of-life release is graded D at most, and of one on extended support B at most.
+- The pending-reboot and automatic-updates checks understand Fedora's dnf5 (`dnf5-automatic`), and SUSE's `/run/reboot-needed` and `os-update`. SUSE scans suggest `zypper patch` and `zypper purge-kernels`.
+
+### Changed
+
+- The `.rpm` package depends on `/usr/sbin/useradd` instead of `shadow-utils`, which SUSE calls `shadow`.
+- **Upgrading:** the database keeps each scan's release lifecycle (schema 20). Alpine, planned for this release, moves to 0.21.0 with container scanning.
+
 ## [0.18.0] - 2026-10-13
 
 ### Added
@@ -412,7 +426,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.15.0...v0.16.0

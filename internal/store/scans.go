@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/runstate"
 )
 
@@ -134,6 +135,9 @@ type Scan struct {
 	// ExploitData is false when the scan had neither KEV nor EPSS data, so
 	// zeros mean unknown.
 	Exploit ExploitCounts `json:"exploit"`
+	// Lifecycle says whether the scanned release still got security fixes;
+	// nil for scans before 0.19.0 and those that didn't detect the release.
+	Lifecycle *lifecycle.Lifecycle `json:"lifecycle,omitempty"`
 }
 
 // ExploitCounts counts a scan's findings by what is known about them being
@@ -150,7 +154,22 @@ const CheckPackages = "packages"
 
 const scanColumns = `id, host_id, address, status, error, started_at, finished_at, os,
 	finding_count, unsupported_count, critical, high, medium, low, unknown, feed_stale, checks, events_json IS NOT NULL, fix_summary, audit,
-	exploited, exploited_fixable, likely, exploit_data`
+	exploited, exploited_fixable, likely, exploit_data, lifecycle`
+
+// reportLifecycle is the report's release lifecycle in JSON, or ” when
+// the report has none (agents before 0.19.0).
+func reportLifecycle(report map[string]any) string {
+	raw, ok := report["lifecycle"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	var life lifecycle.Lifecycle
+	if encoded, err := json.Marshal(raw); err != nil || json.Unmarshal(encoded, &life) != nil || life.State == "" {
+		return ""
+	}
+	encoded, _ := json.Marshal(life)
+	return string(encoded)
+}
 
 func encodeChecks(checks []string) string { return "," + strings.Join(checks, ",") + "," }
 
@@ -168,13 +187,19 @@ func scanScan(row rowScanner) (Scan, error) {
 	var scan Scan
 	var finishedAt sql.NullString
 	var feedStale int
-	var checks, fixSummary string
+	var checks, fixSummary, life string
 	err := row.Scan(&scan.ID, &scan.HostID, &scan.Address, &scan.Status, &scan.Error, &scan.StartedAt, &finishedAt, &scan.OS, &scan.FindingCount, &scan.UnsupportedCount,
 		&scan.Severity.Critical, &scan.Severity.High, &scan.Severity.Medium, &scan.Severity.Low, &scan.Severity.Unknown,
 		&feedStale, &checks, &scan.HasLog, &fixSummary, &scan.Audit,
-		&scan.Exploit.Known, &scan.Exploit.KnownFixable, &scan.Exploit.Likely, &scan.Exploit.Data)
+		&scan.Exploit.Known, &scan.Exploit.KnownFixable, &scan.Exploit.Likely, &scan.Exploit.Data, &life)
 	if err != nil {
 		return Scan{}, err
+	}
+	if life != "" {
+		var decoded lifecycle.Lifecycle
+		if json.Unmarshal([]byte(life), &decoded) == nil && decoded.State != "" {
+			scan.Lifecycle = &decoded
+		}
 	}
 	scan.Fixes = decodeFixSummary(fixSummary)
 	if finishedAt.Valid {
@@ -1077,11 +1102,11 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 	}
 	result, err := tx.Exec(`UPDATE scans SET status = ?, error = '', finished_at = ?, os = ?,
 		finding_count = ?, unsupported_count = ?, critical = ?, high = ?, medium = ?, low = ?, unknown = ?,
-		feed_stale = ?, report_json = ?, fix_summary = ?, exploited = ?, exploited_fixable = ?, likely = ?, exploit_data = ?
+		feed_stale = ?, report_json = ?, fix_summary = ?, exploited = ?, exploited_fixable = ?, likely = ?, exploit_data = ?, lifecycle = ?
 		WHERE id = ? AND status = ?`,
 		ScanSucceeded, finishedAt, operatingSystem, len(findings), unsupported,
 		counts.Critical, counts.High, counts.Medium, counts.Low, counts.Unknown,
-		feedStale, string(encoded), fixSummary, exploit.Known, exploit.KnownFixable, exploit.Likely, exploit.Data, id, ScanRunning)
+		feedStale, string(encoded), fixSummary, exploit.Known, exploit.KnownFixable, exploit.Likely, exploit.Data, reportLifecycle(report), id, ScanRunning)
 	if err != nil {
 		return err
 	}

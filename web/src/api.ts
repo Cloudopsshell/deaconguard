@@ -168,6 +168,18 @@ export interface Scan {
   audit: boolean;
   /** Package findings by what is known about them being exploited; all zero, with data false, before 0.16.0 or without KEV and EPSS data. */
   exploit?: ExploitCounts;
+  /** Whether the release still got security fixes; missing before 0.19.0. */
+  lifecycle?: Lifecycle;
+}
+
+/** Whether a release still gets security fixes from its vendor. */
+export interface Lifecycle {
+  state: "supported" | "extended" | "ended" | "unknown";
+  /** When the current phase ends (or ended), as YYYY-MM or YYYY-MM-DD. */
+  until?: string;
+  note: string;
+  /** The vendor's lifecycle page. */
+  source?: string;
 }
 
 export interface ExploitCounts {
@@ -689,6 +701,8 @@ export interface Report {
   unsupported_cves: UnsupportedRule[] | null;
   coverage: string;
   maintenance: string;
+  /** Missing before 0.19.0. */
+  lifecycle?: Lifecycle;
   package_manager: string;
   advisory_database: {
     source: string;
@@ -764,6 +778,8 @@ export interface Summary {
   hosts_to_update: number;
   /** Hosts whose latest package results are older than 7 days. */
   stale_hosts?: { id: string; address: string; scanned_at: string; scheduled: boolean }[];
+  /** Hosts whose release is past regular support (extended) or gets no security fixes (ended). Missing before 0.19.0. */
+  release_hosts?: { id: string; address: string; os: string; state: "extended" | "ended"; note: string }[];
   host_summaries: HostSummary[];
   top_vulnerabilities: Vulnerability[];
   checks: Partial<Record<CheckId, CheckTotals>>;

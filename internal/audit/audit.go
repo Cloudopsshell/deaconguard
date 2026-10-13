@@ -2,7 +2,8 @@
 // including the hardening baseline. The grade starts from the share of
 // baseline controls that pass, weighted by severity, and is then capped by
 // anything that should stop a handover: malware, changed system files,
-// fixable critical or high vulnerabilities, and failed critical controls.
+// fixable critical or high vulnerabilities, failed critical controls, and a
+// release past its vendor's support.
 package audit
 
 import (
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"deaconguard/internal/checks"
+	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/policy"
 	"deaconguard/internal/store"
 )
@@ -268,6 +270,14 @@ func Grade(scan store.Scan, report map[string]any, exceptions []store.Exception,
 	}
 	if scan.Exploit.KnownFixable > 0 {
 		summary.cap("D", count(scan.Exploit.KnownFixable, "vulnerability known to be exploited (CISA KEV) has a fix available", "vulnerabilities known to be exploited (CISA KEV) have a fix available"))
+	}
+	if life := scan.Lifecycle; life != nil {
+		switch life.State {
+		case lifecycle.Ended:
+			summary.cap("D", "The release no longer gets security fixes: "+life.Note)
+		case lifecycle.Extended:
+			summary.cap("B", "The release is past regular support: "+life.Note)
+		}
 	}
 	if scan.Fixes != nil && scan.Fixes.Actionable.Critical > 0 {
 		summary.cap("C", count(scan.Fixes.Actionable.Critical, "critical vulnerability has a fix available", "critical vulnerabilities have a fix available"))

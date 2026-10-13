@@ -200,6 +200,9 @@ func (w *pdfWriter) cover(fingerprint string) {
 	if r.OS != "" {
 		w.text(r.OS, 11, "", muted)
 	}
+	if support := r.Support(); support != "" {
+		w.text("Release support: "+support, 9, "", muted)
+	}
 	pdf.Ln(10)
 
 	facts := [][2]string{}

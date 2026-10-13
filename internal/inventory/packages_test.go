@@ -34,6 +34,18 @@ func TestParseRPMQuery(t *testing.T) {
 	}
 }
 
+func TestParseRPMQuerySigningKey(t *testing.T) {
+	contents := "openssl-libs\t1\t3.5.1\t1.el9\topenssl-3.5.1-1.el9.src.rpm\taarch64\tRSA/SHA256, Mon 01 Sep 2026 10:00:00 AM UTC, Key ID D36CB86CB86B3716\n" +
+		"local-tool\t(none)\t1.0\t1\tlocal-tool-1.0-1.src.rpm\tx86_64\t(none)\n"
+	packages, err := ParseRPMQuery(contents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packages[0].SigningKey != "d36cb86cb86b3716" || packages[1].SigningKey != "" {
+		t.Fatalf("signing keys: %q %q", packages[0].SigningKey, packages[1].SigningKey)
+	}
+}
+
 func TestRejectsMalformedRPMInventory(t *testing.T) {
 	if _, err := ParseRPMQuery("broken row"); err == nil {
 		t.Fatal("expected malformed RPM row to fail")
