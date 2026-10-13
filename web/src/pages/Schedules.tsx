@@ -7,6 +7,7 @@ import { Button, Card, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHea
 import { checkMeta } from "../lib/checks";
 import { dateTime, timeAgo } from "../lib/format";
 import { useRefreshAll } from "../lib/hooks";
+import { browserTimezone, timezones } from "../lib/zones";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const everyDay = [0, 1, 2, 3, 4, 5, 6];
@@ -14,24 +15,6 @@ const weekdays = [1, 2, 3, 4, 5];
 
 /** The checks a schedule can run; the advanced antivirus scan is a level of the antivirus check. */
 const scheduleChecks: CheckId[] = ["packages", "integrity", "malware", "config", "antivirus"];
-
-function browserTimezone() {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    return "UTC";
-  }
-}
-
-function timezones(current: string) {
-  let zones: string[] = [];
-  try {
-    zones = (Intl as unknown as { supportedValuesOf(key: string): string[] }).supportedValuesOf("timeZone");
-  } catch {
-    // Older browsers list no zones; the current one and UTC remain.
-  }
-  return [...new Set(["UTC", current, ...zones])];
-}
 
 /**
  * The editable fields of a schedule. The server refuses unknown fields, so

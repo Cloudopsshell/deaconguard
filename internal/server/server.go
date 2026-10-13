@@ -50,6 +50,8 @@ type Server struct {
 	limiter *failureLimiter
 	// scheduler runs scheduled scans once StartScheduler is called.
 	scheduler *scheduler
+	// notifier sends notifications once StartScheduler is called.
+	notifier *notifier
 	// agentHandler serves only the agent API, for a listener of its own;
 	// agentPort is that listener's port, once SetAgentPort is called.
 	agentHandler http.Handler
@@ -88,9 +90,12 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	}
 	s := &Server{
 		runner: newRunner(scan), ui: ui, network: network, pin: pin, limiter: newFailureLimiter(), scheduler: &scheduler{},
+		notifier:       &notifier{wake: make(chan struct{}, 1)},
 		localAvailable: func() error { _, err := local.New(); return err },
 	}
 	s.agents = newAgentHub(s.runner)
+	s.runner.onFinish = s.scanFinished
+	s.agents.presence.onQuiet = s.agentQuiet
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/session", s.session)
 	mux.HandleFunc("POST /api/login", s.login)
@@ -171,6 +176,12 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("PATCH /api/policies/{id}", s.needs(store.RoleAdmin, s.updatePolicy))
 	mux.HandleFunc("DELETE /api/policies/{id}", s.needs(store.RoleAdmin, s.deletePolicy))
 	mux.HandleFunc("GET /api/frameworks", s.listFrameworks)
+	mux.HandleFunc("GET /api/notifications", s.needs(store.RoleAdmin, s.listNotifications))
+	mux.HandleFunc("POST /api/notifications/channels", s.needs(store.RoleAdmin, s.createChannel))
+	mux.HandleFunc("PATCH /api/notifications/channels/{id}", s.needs(store.RoleAdmin, s.updateChannel))
+	mux.HandleFunc("DELETE /api/notifications/channels/{id}", s.needs(store.RoleAdmin, s.deleteChannel))
+	mux.HandleFunc("POST /api/notifications/channels/{id}/test", s.needs(store.RoleAdmin, s.testChannel))
+	mux.HandleFunc("PUT /api/notifications/settings", s.needs(store.RoleAdmin, s.updateNotificationSettings))
 	mux.HandleFunc("GET /share/{token}", s.openShare)
 	mux.HandleFunc("GET /share/{token}/{file}", s.openShare)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -232,13 +243,18 @@ func agentOnly(agentMux http.Handler) http.Handler {
 	})
 }
 
-// StartScheduler starts the scheduled scans; Close stops them.
-func (s *Server) StartScheduler() { s.startScheduler() }
+// StartScheduler starts the scheduled scans, digests and notifications;
+// Close stops them.
+func (s *Server) StartScheduler() {
+	s.startScheduler()
+	s.startNotifier()
+}
 
 // Close cancels questions waiting for an answer and blocks until background
 // scans finish.
 func (s *Server) Close() {
 	s.stopScheduler()
+	s.stopNotifier()
 	s.agents.stop()
 	s.runner.close()
 }
@@ -374,15 +390,24 @@ type checkTotals struct {
 }
 
 func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
-	hosts, err := store.HostSummaries()
+	result, err := buildSummary()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// buildSummary sums every host's latest results, for the dashboard and the
+// notification digest.
+func buildSummary() (summary, error) {
+	hosts, err := store.HostSummaries()
+	if err != nil {
+		return summary{}, err
+	}
 	vulnerabilities, err := store.Vulnerabilities()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return summary{}, err
 	}
 	result := summary{Hosts: len(hosts), UniqueCVEs: len(vulnerabilities), HostSummaries: hosts, Checks: make(map[string]*checkTotals),
 		Fixes: store.FixSummary{Counts: make(map[string]int)}, StaleHosts: make([]staleHost, 0)}
@@ -466,7 +491,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		vulnerabilities = vulnerabilities[:10]
 	}
 	result.TopVulnerability = vulnerabilities
-	writeJSON(w, http.StatusOK, result)
+	return result, nil
 }
 
 func (s *Server) listHosts(w http.ResponseWriter, r *http.Request) {
