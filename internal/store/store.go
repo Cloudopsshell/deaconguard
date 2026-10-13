@@ -206,6 +206,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 17 {
+		if err := execInTx(db, schemaV17); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -576,6 +581,43 @@ INSERT OR REPLACE INTO host_trends (host_id, day, critical, high, medium, low, u
 	WHERE s.status = 'succeeded' AND s.finished_at IS NOT NULL AND s.checks LIKE '%,packages,%'
 	ORDER BY s.finished_at, s.rowid;
 PRAGMA user_version = 16;`
+
+// schemaV17 adds notification channels (email, Slack, Teams, webhooks) and
+// the log of what was sent to them.
+const schemaV17 = `
+CREATE TABLE notification_channels (
+	id             TEXT PRIMARY KEY,
+	name           TEXT NOT NULL,
+	kind           TEXT NOT NULL,
+	config         TEXT NOT NULL,
+	enabled        INTEGER NOT NULL DEFAULT 1,
+	events         TEXT NOT NULL DEFAULT '',
+	tags           TEXT NOT NULL DEFAULT '',
+	digest         TEXT NOT NULL DEFAULT '',
+	digest_days    TEXT NOT NULL DEFAULT '',
+	digest_time    TEXT NOT NULL DEFAULT '08:00',
+	timezone       TEXT NOT NULL DEFAULT 'UTC',
+	next_digest_at TEXT NOT NULL DEFAULT '',
+	created_by     TEXT NOT NULL DEFAULT '',
+	created_at     TEXT NOT NULL,
+	updated_at     TEXT NOT NULL
+);
+CREATE TABLE notification_deliveries (
+	id              INTEGER PRIMARY KEY AUTOINCREMENT,
+	channel_id      TEXT NOT NULL REFERENCES notification_channels (id) ON DELETE CASCADE,
+	event           TEXT NOT NULL,
+	title           TEXT NOT NULL,
+	message         TEXT NOT NULL,
+	status          TEXT NOT NULL,
+	attempts        INTEGER NOT NULL DEFAULT 0,
+	next_attempt_at TEXT NOT NULL,
+	error           TEXT NOT NULL DEFAULT '',
+	created_at      TEXT NOT NULL,
+	sent_at         TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX notification_deliveries_due ON notification_deliveries (status, next_attempt_at);
+CREATE INDEX notification_deliveries_channel ON notification_deliveries (channel_id, id DESC);
+PRAGMA user_version = 17;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.
