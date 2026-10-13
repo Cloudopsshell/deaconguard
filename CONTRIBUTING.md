@@ -49,6 +49,18 @@ DeaconGuard runs on other people's servers, so these rules are not negotiable:
 - A scan that fails or cannot evaluate something must never be reported as clean.
 - Only enable a distribution when its official advisory source and evaluator have been verified.
 
+## Third-party content
+
+DeaconGuard is MIT-licensed, and every release ships its dependencies inside the binary. CI enforces these rules, in the **Licences and third-party content** job:
+
+- **Dependencies** must be MIT, ISC, BSD-2-Clause, BSD-3-Clause or Apache-2.0, for Go modules and the web UI's runtime packages alike. Copyleft (GPL, LGPL, AGPL) and source-available licences (SSPL, BUSL) can't be used. If a dependency needs another licence, read it and ask in the pull request before adding it to the list in `.github/workflows/ci.yml`.
+- **No CIS Benchmark material.** Its licence forbids using it in a product. Don't copy, paraphrase line by line, or name CIS Benchmarks or CIS Controls. Base hardening controls on public-domain sources (DISA STIG, NIST SP 800-53, NSA/CISA guides) or permissively licensed ones (ComplianceAsCode, BSD), and write them in our own words.
+- **Copyrighted standards** (PCI DSS, ISO/IEC 27001) are referenced by requirement number and a short title in our own words, never their text. A test keeps titles to 10 words.
+- **Advisory data and detection rules** (distribution feeds, CISA KEV, EPSS, YARA Forge) are downloaded by the server when it runs. Don't add them to the repository or the binary; test fixtures are small and written for the tests.
+- **Images, icons and fonts** are our own or come with a licence that allows redistribution. Don't use distributions' or other companies' logos.
+
+Run the checks locally with `sh scripts/check-content.sh` and `go run github.com/google/go-licenses/v2@v2.0.1 check ./... --allowed_licenses=MIT,ISC,BSD-2-Clause,BSD-3-Clause,Apache-2.0`.
+
 ## Security issues
 
 Do not open public issues for vulnerabilities. Follow [SECURITY.md](SECURITY.md) instead.
