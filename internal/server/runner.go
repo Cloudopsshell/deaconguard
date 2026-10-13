@@ -57,6 +57,9 @@ type runner struct {
 	prompts map[string]*Prompt
 	logs    map[string]*eventLog
 	wg      sync.WaitGroup
+	// onFinish, when set, hears about every finished scan, after it is
+	// saved: err is why it failed, or nil.
+	onFinish func(host store.Host, scanID string, err error)
 }
 
 func newRunner(scanner scanFunc) *runner {
@@ -191,6 +194,9 @@ func (r *runner) finish(host store.Host, scanID string, log *eventLog, report ma
 	_, _ = store.PruneScans(host.ID, store.KeepScansPerHost)
 	log.add(done)
 	log.finish(done.Status)
+	if r.onFinish != nil {
+		r.onFinish(host, scanID, err)
+	}
 }
 
 // ask pauses the scan until the user answers prompt in the browser.

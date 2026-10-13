@@ -41,7 +41,7 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 - **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself. The server also runs [in a container](#docker-compose-and-kubernetes), with Docker, Compose or Kubernetes, and the agent runs on every Kubernetes node as a DaemonSet.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
 - **Server memory:** give the server at least **1 GB of memory** (RAM plus swap). It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB. With too little, Linux stops the server mid-scan, and the dashboard says so after it restarts.
-- **Network:** the server needs HTTPS access to the distributions' advisory feeds, and to `www.cisa.gov` and `epss.empiricalsecurity.com` for exploit data. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
+- **Network:** the server needs HTTPS access to the distributions' advisory feeds, and to `www.cisa.gov` and `epss.empiricalsecurity.com` for exploit data. With [notifications](#notifications), it also reaches your mail server and webhooks. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
 
 ## Install
 
@@ -326,7 +326,7 @@ Each release's notes list the Go version and main libraries it was built with, a
 ## Back up and restore
 
 All data lives in one directory: `/var/lib/deaconguard/` for the server service, `~/.local/share/deaconguard/` otherwise, or the path in `DEACONGUARD_HOME`. In a container it is `/home/nonroot`, on the `data` volume with Compose or the server's PersistentVolumeClaim in Kubernetes; stop the server (`docker compose stop server`, or scale the StatefulSet to 0) before copying it. It holds:
-- `deaconguard.db`: hosts, scan results, activity logs, accounts, tokens and the audit log. Passwords are stored as PBKDF2 hashes; recovery codes, tokens and credentials as SHA-256 hashes. Authenticator keys for two-step sign-in are stored as is, because checking a code needs them, so keep backups as safe as the server.
+- `deaconguard.db`: hosts, scan results, activity logs, accounts, tokens, notification channels (with mail passwords and webhook addresses) and the audit log. Passwords are stored as PBKDF2 hashes; recovery codes, tokens and credentials as SHA-256 hashes. Authenticator keys for two-step sign-in are stored as is, because checking a code needs them, so keep backups as safe as the server.
 - `tls/`: the server's certificate and key. Keep them: agents trust this key.
 - `feeds/`: a cache of advisory and exploit data, downloaded again if missing.
 
@@ -389,6 +389,23 @@ See [Server audits](https://docs.deaconguard.io/usage/audits) for the full list 
 
 - **Compliance:** each audit can be read for **NIST SP 800-53 Rev. 5**, **PCI DSS v4.0**, the **HIPAA Security Rule** and **ISO/IEC 27001:2022 Annex A**: every baseline control, and the vulnerability, integrity and malware checks, are mapped to requirement numbers, shown as met, not met or not checked, and included in reports for the frameworks you choose. It's DeaconGuard's mapping for guidance, not a certification. See [Compliance](https://docs.deaconguard.io/usage/compliance).
 - **Policies:** admins add their own controls in YAML under **Settings → Policies** (an SSH or kernel setting, login.defs, a package, a service, a mount, a port, or a key file's permissions). They test only what the audit already reads, never run anything, show on audits and reports, and don't change the grade. See [Policies](https://docs.deaconguard.io/usage/policies).
+
+## Notifications
+
+Admins add channels under **Settings → Notifications**: **email** (through your mail server, with STARTTLS or TLS), **Slack** (an incoming webhook), **Microsoft Teams** (a Workflows webhook) or any **webhook** (JSON, optionally signed). Each channel chooses its events, and optionally only hosts with certain [tags](#web-ui):
+
+| Event | Sent when |
+| --- | --- |
+| Known exploited vulnerabilities | a host has vulnerabilities in CISA's KEV catalog that its previous scan didn't |
+| New critical vulnerabilities | a host has new critical vulnerabilities an update fixes |
+| Malware | a scan finds malware or signs of compromise |
+| Changed system files | system files differ from what their packages installed |
+| Failed scans | a scan fails |
+| Audits | an audit finishes, with its grade and what holds it back |
+| Agents offline | an agent stops checking in |
+| Digest | daily, or weekly on chosen days, at a time in a time zone: every host's numbers and the known exploited vulnerabilities to fix first; email attaches every open vulnerability as CSV |
+
+Only what is new is sent: a vulnerability already reported for a host isn't reported again. Set the dashboard's address on the same page so messages link to the host or scan. **Test** sends a message at once and shows the result; failed messages are retried after 1, 5 and 30 minutes, and the page lists everything sent in the last 30 days. Webhook requests carry `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp`, and, with a secret, `X-DeaconGuard-Signature: sha256=` and the HMAC-SHA256 of the timestamp, a dot, and the body. Passwords, webhook addresses and secrets are kept in the server's database and never shown again; channel changes are in the audit log. See [Notifications](https://docs.deaconguard.io/usage/notifications).
 
 ## Reports
 
