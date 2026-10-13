@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -277,4 +278,65 @@ func mustZone(t *testing.T, name string) *time.Location {
 		t.Fatal(err)
 	}
 	return zone
+}
+
+func TestMaintenanceHoldsBackNotificationsAndScans(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	h := newHook(t)
+	addChannel(t, s, cookie, map[string]any{"name": "all", "kind": "webhook", "config": map[string]any{"url": h.server.URL}, "events": []string{"agent_offline"}})
+	host, _ := store.AddLocalHost("web-01", "root")
+	if _, err := store.SetHostTags(host.ID, []string{"prod"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	response := do(t, s, call{method: http.MethodPost, path: "/api/maintenance", cookie: cookie, body: map[string]any{
+		"name": "Patching", "tags": []string{"prod"}, "starts_at": now.Add(-time.Minute).Format(time.RFC3339),
+		"ends_at": now.Add(time.Hour).Format(time.RFC3339), "skip_scans": true}})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("add window: %d %s", response.Code, response.Body.String())
+	}
+	window := decode[store.MaintenanceWindow](t, response)
+	s.agentQuiet(host.ID, host.Address, now)
+	s.deliverDue(context.Background(), time.Now())
+	if len(h.events()) != 0 {
+		t.Fatalf("a notification went out during maintenance: %v", h.events())
+	}
+	schedule, err := store.SaveSchedule(store.Schedule{Name: "nightly", Enabled: true, Checks: []string{"packages"}, AllHosts: true, Days: []int{1}, Time: "02:00", Timezone: "UTC"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started, skipped := s.runSchedule(schedule); started != 0 || skipped != 1 {
+		t.Fatalf("schedule during maintenance: %d started, %d skipped", started, skipped)
+	}
+	if response := do(t, s, call{method: http.MethodDelete, path: "/api/maintenance/" + window.ID, cookie: cookie}); response.Code != http.StatusOK {
+		t.Fatalf("delete: %d", response.Code)
+	}
+	s.agentQuiet(host.ID, host.Address, now)
+	s.deliverDue(context.Background(), time.Now())
+	if len(h.events()) != 1 {
+		t.Fatalf("after the window: %v", h.events())
+	}
+}
+
+func TestOverdueCountsEachCVEOncePerHost(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	host, _ := store.AddLocalHost("web-01", "root")
+	second := kevFinding("CVE-2024-38475")
+	second["package"] = "apache2-bin"
+	completePackages(t, host, kevFinding("CVE-2024-38475"), second)
+	past := time.Now().Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	db, err := sql.Open("sqlite", store.DatabasePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("UPDATE host_cve_seen SET first_seen = ?", past); err != nil {
+		t.Fatal(err)
+	}
+	result := decode[summary](t, do(t, s, call{method: http.MethodGet, path: "/api/summary", cookie: cookie}))
+	if !result.SLA.Enabled || result.SLA.Overdue != 1 || result.SLA.HostsOverdue != 1 {
+		t.Fatalf("sla: %+v", result.SLA)
+	}
 }

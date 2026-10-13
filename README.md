@@ -392,7 +392,7 @@ See [Server audits](https://docs.deaconguard.io/usage/audits) for the full list 
 
 ## Notifications
 
-Admins add channels under **Settings → Notifications**: **email** (through your mail server, with STARTTLS or TLS), **Slack** (an incoming webhook), **Microsoft Teams** (a Workflows webhook) or any **webhook** (JSON, optionally signed). Each channel chooses its events, and optionally only hosts with certain [tags](#web-ui):
+Admins add channels under **Settings → Notifications**: **email** (through your mail server, with STARTTLS or TLS), **Slack** (an incoming webhook), **Microsoft Teams** (a Workflows webhook), any **webhook** (JSON, optionally signed), a SIEM through **syslog** (RFC 5424 over TCP, TLS or UDP) or **Splunk** (HTTP Event Collector), or a ticket in **Jira** (Cloud or Data Center) or **ServiceNow** for each event. Each channel chooses its events, and optionally only hosts with certain [tags](#web-ui):
 
 | Event | Sent when |
 | --- | --- |
@@ -406,6 +406,22 @@ Admins add channels under **Settings → Notifications**: **email** (through you
 | Digest | daily, or weekly on chosen days, at a time in a time zone: every host's numbers and the known exploited vulnerabilities to fix first; email attaches every open vulnerability as CSV |
 
 Only what is new is sent: a vulnerability already reported for a host isn't reported again. Set the dashboard's address on the same page so messages link to the host or scan. **Test** sends a message at once and shows the result; failed messages are retried after 1, 5 and 30 minutes, and the page lists everything sent in the last 30 days. Webhook requests carry `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp`, and, with a secret, `X-DeaconGuard-Signature: sha256=` and the HMAC-SHA256 of the timestamp, a dot, and the body. Passwords, webhook addresses and secrets are kept in the server's database and never shown again; channel changes are in the audit log. See [Notifications](https://docs.deaconguard.io/usage/notifications).
+
+## Fix deadlines and maintenance windows
+
+**Fix deadlines** say how long a vulnerability may stay unfixed on a host, counted from the scan that first found it there: 14 days for those known to be exploited, then 15 for critical, 30 for high, 90 for medium and 180 for low, changeable under **Settings**. One fixed and back later starts again. The dashboard says how many fixes are past their deadline, the **Vulnerabilities** page has an **Overdue** filter and a **Due** column, each CVE's page shows each host's deadline, and the digest counts them. Only vulnerabilities an update or a restart fixes can be overdue.
+
+**Maintenance windows**, on the **Schedules** page, cover a time when hosts are patched or restarted: every host, or those with given tags, for up to 7 days. Notifications about those hosts are held back meanwhile, and their scheduled scans can be skipped; the **Logs** page says what was held back or skipped.
+
+## API
+
+Everything the dashboard does goes through the JSON API under `/api/`. Scripts and other tools use it with an **API token**: create one under **My account → API tokens** with a name, a role up to your own, and how long it lasts (up to 365 days, or until revoked), then send it as `Authorization: Bearer dgt_…`:
+
+```sh
+curl -H "Authorization: Bearer $DEACONGUARD_TOKEN" https://SERVER:8443/api/vulnerabilities
+```
+
+A token acts as its account: it never has more than the account's role, follows the account if it is demoted, and stops when the account is disabled. Tokens can't manage accounts, tokens or sign-in. The token is shown once; only its hash is stored. Each one shows when and from where it was last used, its actions are in the audit log as `NAME (API token TOKEN)`, and admins see and revoke everyone's on the **Accounts** page. Wrong tokens are limited per address like sign-ins. See [API](https://docs.deaconguard.io/reference/api).
 
 ## Reports
 
