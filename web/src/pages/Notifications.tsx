@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, CheckCircle2, Clock, Mail, MessageSquare, Pencil, Plus, Send, Trash2, Webhook, XCircle } from "lucide-react";
+import { BellRing, CheckCircle2, Clock, Database, Mail, MessageSquare, Pencil, Plus, Send, Ticket, Trash2, Webhook, XCircle } from "lucide-react";
 import {
   api,
   type Channel,
@@ -19,7 +19,14 @@ const kinds: { kind: ChannelKind; label: string; detail: string; icon: ReactNode
   { kind: "slack", label: "Slack", detail: "An incoming webhook", icon: <MessageSquare className="size-4" /> },
   { kind: "teams", label: "Microsoft Teams", detail: "A Workflows webhook", icon: <MessageSquare className="size-4" /> },
   { kind: "webhook", label: "Webhook", detail: "JSON to any address, signed", icon: <Webhook className="size-4" /> },
+  { kind: "syslog", label: "Syslog", detail: "RFC 5424 to your SIEM", icon: <Database className="size-4" /> },
+  { kind: "splunk", label: "Splunk", detail: "HTTP Event Collector", icon: <Database className="size-4" /> },
+  { kind: "jira", label: "Jira", detail: "Opens an issue per event", icon: <Ticket className="size-4" /> },
+  { kind: "servicenow", label: "ServiceNow", detail: "Opens an incident per event", icon: <Ticket className="size-4" /> },
 ];
+
+const selectClass =
+  "mt-1 block w-full rounded-lg border-0 bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600 dark:bg-slate-950 dark:ring-slate-700";
 
 const eventMeta: Record<NotificationEvent, { label: string; detail: string }> = {
   exploited: { label: "Known exploited vulnerabilities", detail: "A host has vulnerabilities in CISA's KEV catalog it didn't have at its last scan" },
@@ -81,6 +88,8 @@ function DeliveryStatus({ delivery }: { delivery: Delivery }) {
 
 function where(channel: Channel) {
   if (channel.kind === "email") return (channel.config.to ?? []).join(", ");
+  if (channel.kind === "syslog") return `${channel.config.protocol?.toUpperCase()} ${channel.config.host}:${channel.config.port}`;
+  if (channel.kind === "jira") return `${channel.config.url} · project ${channel.config.project}`;
   return channel.config.url ?? "";
 }
 
@@ -314,10 +323,19 @@ function ChannelDialog({ channel, onClose }: { channel: Channel | null; onClose:
   const [tags, setTags] = useState(input.tags.join(", "));
   const save = useMutation({
     mutationFn: () => {
+      const c = input.config;
       const config: ChannelConfig =
         kind === "email"
-          ? { ...input.config, to: recipients.split(/[,;\s]+/).filter(Boolean), url: undefined, secret: undefined }
-          : { url: input.config.url, secret: kind === "webhook" ? input.config.secret : undefined };
+          ? { host: c.host, port: c.port, tls: c.tls, username: c.username, password: c.password, from: c.from, to: recipients.split(/[,;\s]+/).filter(Boolean) }
+          : kind === "syslog"
+            ? { host: c.host, port: c.port, protocol: c.protocol ?? "tcp" }
+            : kind === "splunk"
+              ? { url: c.url, secret: c.secret, index: c.index }
+              : kind === "jira"
+                ? { url: c.url, username: c.username, password: c.password, project: c.project, issue_type: c.issue_type }
+                : kind === "servicenow"
+                  ? { url: c.url, username: c.username, password: c.password, table: c.table }
+                  : { url: c.url, secret: kind === "webhook" ? c.secret : undefined };
       const events = input.events.filter((event) => event !== "digest");
       const body: ChannelInput = {
         ...input,
@@ -346,14 +364,19 @@ function ChannelDialog({ channel, onClose }: { channel: Channel | null; onClose:
     <Dialog open onClose={onClose} title={channel ? `Edit ${channel.name}` : "Add a channel"} wide>
       <form onSubmit={submit} className="space-y-5">
         {!channel && (
-          <div role="radiogroup" aria-label="Type" className="grid gap-2 sm:grid-cols-4">
+          <div role="radiogroup" aria-label="Type" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {kinds.map((item) => (
               <button
                 key={item.kind}
                 type="button"
                 role="radio"
                 aria-checked={kind === item.kind}
-                onClick={() => setKind(item.kind)}
+                onClick={() => {
+                  setKind(item.kind);
+                  // Each type's usual port.
+                  if (item.kind === "syslog") setInput((current) => ({ ...current, config: { ...current.config, port: 514, protocol: current.config.protocol ?? "tcp" } }));
+                  if (item.kind === "email") setInput((current) => ({ ...current, config: { ...current.config, port: 587 } }));
+                }}
                 className={cx(
                   "rounded-lg px-3 py-2 text-left ring-1 ring-inset transition-colors",
                   kind === item.kind
@@ -371,7 +394,85 @@ function ChannelDialog({ channel, onClose }: { channel: Channel | null; onClose:
         )}
         <Field label="Name" required maxLength={80} value={input.name} onChange={(event) => set("name", event.target.value)} placeholder="Security team" />
 
-        {kind === "email" ? (
+        {kind === "syslog" ? (
+          <div className="grid gap-3 sm:grid-cols-[1fr_6rem_8rem]">
+            <Field label="Syslog server" required value={input.config.host ?? ""} onChange={(event) => setConfig("host", event.target.value)} placeholder="siem.example.com" />
+            <Field label="Port" type="number" required min={1} max={65535} value={input.config.port ?? 514} onChange={(event) => setConfig("port", Number(event.target.value))} />
+            <label className="block">
+              <span className="text-sm font-medium">Protocol</span>
+              <select value={input.config.protocol ?? "tcp"} onChange={(event) => setConfig("protocol", event.target.value as ChannelConfig["protocol"])} className={selectClass}>
+                <option value="tcp">TCP</option>
+                <option value="tls">TLS</option>
+                <option value="udp">UDP</option>
+              </select>
+            </label>
+            <p className="text-xs text-slate-500 dark:text-slate-400 sm:col-span-3">
+              RFC 5424 messages from facility local0, with the event as JSON; TCP and TLS frame each with its length. The server's certificate must be trusted for TLS.
+            </p>
+          </div>
+        ) : kind === "splunk" ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Field
+                label="HTTP Event Collector address"
+                required={!saved?.url}
+                value={input.config.url ?? ""}
+                onChange={(event) => setConfig("url", event.target.value)}
+                placeholder={saved?.url ? `Saved (${saved.url}); leave empty to keep it` : "https://splunk.example.com:8088/services/collector/event"}
+              />
+            </div>
+            <Field
+              label="HEC token"
+              type="password"
+              autoComplete="new-password"
+              required={!saved?.secret}
+              value={input.config.secret ?? ""}
+              onChange={(event) => setConfig("secret", event.target.value)}
+              placeholder={saved?.secret ? "Saved; leave empty to keep it" : ""}
+            />
+            <Field label="Index (optional)" value={input.config.index ?? ""} onChange={(event) => setConfig("index", event.target.value)} placeholder="security" />
+          </div>
+        ) : kind === "jira" || kind === "servicenow" ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Field
+                label={kind === "jira" ? "Jira address" : "ServiceNow instance"}
+                required={!saved?.url}
+                value={input.config.url ?? ""}
+                onChange={(event) => setConfig("url", event.target.value)}
+                placeholder={saved?.url ? `Saved (${saved.url}); leave empty to keep it` : kind === "jira" ? "https://acme.atlassian.net" : "https://acme.service-now.com"}
+              />
+            </div>
+            <Field
+              label={kind === "jira" ? "Email (Jira Cloud)" : "Username"}
+              required={kind === "servicenow"}
+              autoComplete="off"
+              value={input.config.username ?? ""}
+              onChange={(event) => setConfig("username", event.target.value)}
+              hint={kind === "jira" ? "Leave empty on Jira Data Center, with a personal access token below." : undefined}
+            />
+            <Field
+              label={kind === "jira" ? "API token" : "Password"}
+              type="password"
+              autoComplete="new-password"
+              required={!saved?.password}
+              value={input.config.password ?? ""}
+              onChange={(event) => setConfig("password", event.target.value)}
+              placeholder={saved?.password ? "Saved; leave empty to keep it" : ""}
+            />
+            {kind === "jira" ? (
+              <>
+                <Field label="Project key" required value={input.config.project ?? ""} onChange={(event) => setConfig("project", event.target.value.toUpperCase())} placeholder="SEC" />
+                <Field label="Issue type" value={input.config.issue_type ?? ""} onChange={(event) => setConfig("issue_type", event.target.value)} placeholder="Task" />
+              </>
+            ) : (
+              <Field label="Table" value={input.config.table ?? ""} onChange={(event) => setConfig("table", event.target.value)} placeholder="incident" hint="Records go here; the account needs to create them." />
+            )}
+            <p className="text-xs text-slate-500 dark:text-slate-400 sm:col-span-2">
+              Each event opens one {kind === "jira" ? "issue, labelled deaconguard," : "record"} with the message and a link. Choose events that need someone to act, such as known exploited vulnerabilities and malware.
+            </p>
+          </div>
+        ) : kind === "email" ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Mail server" required value={input.config.host ?? ""} onChange={(event) => setConfig("host", event.target.value)} placeholder="smtp.example.com" />
             <div className="grid grid-cols-[6rem_1fr] gap-3">

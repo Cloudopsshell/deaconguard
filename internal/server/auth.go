@@ -46,6 +46,10 @@ func (s *Server) signedIn(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if bearer, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); found {
+			s.tokenSignedIn(next, w, r, strings.TrimSpace(bearer))
+			return
+		}
 		user, session, err := sessionUser(r)
 		if errors.Is(err, store.ErrNoSession) {
 			writeError(w, http.StatusUnauthorized, errors.New("sign in to DeaconGuard"))
@@ -72,6 +76,53 @@ func (s *Server) signedIn(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// tokenRefused reports the paths API tokens never reach: accounts, tokens
+// and sign-in security, so a leaked token can't make itself a lasting way in.
+func tokenRefused(path string) bool {
+	for _, prefix := range []string{"/api/account", "/api/users", "/api/tokens", "/api/settings/security", "/api/login", "/api/logout", "/api/session"} {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// tokenSignedIn serves an API request made with an API token, as its
+// account, with the token's role.
+func (s *Server) tokenSignedIn(next http.Handler, w http.ResponseWriter, r *http.Request, bearer string) {
+	remote := remoteIP(r)
+	if s.limiter.blocked("token", remote) {
+		writeError(w, http.StatusTooManyRequests, errors.New("too many requests with a wrong API token; wait 15 minutes"))
+		return
+	}
+	user, token, err := store.AuthenticateAPIToken(bearer, remote)
+	if errors.Is(err, store.ErrBadAPIToken) {
+		s.limiter.fail("token", remote)
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if tokenRefused(r.URL.Path) {
+		writeError(w, http.StatusForbidden, errors.New("API tokens can't manage accounts, tokens or sign-in; use the dashboard"))
+		return
+	}
+	if needs, err := s.accountNeeds(user); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	} else if needs != "" {
+		writeError(w, http.StatusForbidden, errors.New("the token's account can't be used yet: "+needs))
+		return
+	}
+	ctx := context.WithValue(r.Context(), userContextKey{}, user)
+	ctx = context.WithValue(ctx, apiTokenContextKey{}, token)
+	next.ServeHTTP(w, r.WithContext(ctx))
+}
+
+type apiTokenContextKey struct{}
 
 // accountNeeds says what an account must do before it can use DeaconGuard,
 // or "" when nothing.
@@ -107,6 +158,9 @@ func currentUser(r *http.Request) (store.User, store.Session, bool) {
 // actor names who made a request, for the audit log.
 func (s *Server) actor(r *http.Request) string {
 	if user, ok := r.Context().Value(userContextKey{}).(store.User); ok {
+		if token, ok := r.Context().Value(apiTokenContextKey{}).(store.APIToken); ok {
+			return user.Username + " (API token " + token.Name + ")"
+		}
 		return user.Username
 	}
 	if !s.network {

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageUp, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { Button, Card, CardHeader, ErrorMessage, Field, Loading, PageHeader } from "../components/ui";
+import { FixDeadlines } from "../components/FixDeadlines";
 
 /** Admin settings: how reports are branded. */
 export function Settings() {
@@ -39,6 +40,7 @@ export function Settings() {
   return (
     <>
       <PageHeader title="Settings" description="Settings for everyone using this server." />
+      <FixDeadlines />
       <Card className="mb-6">
         <CardHeader
           title="Notifications"

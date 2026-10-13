@@ -211,6 +211,16 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 18 {
+		if err := execInTx(db, schemaV18); err != nil {
+			return err
+		}
+	}
+	if version < 19 {
+		if err := execInTx(db, schemaV19); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -618,6 +628,51 @@ CREATE TABLE notification_deliveries (
 CREATE INDEX notification_deliveries_due ON notification_deliveries (status, next_attempt_at);
 CREATE INDEX notification_deliveries_channel ON notification_deliveries (channel_id, id DESC);
 PRAGMA user_version = 17;`
+
+// schemaV18 adds API tokens: an account's tokens for scripts and other
+// tools, with a role up to the account's own.
+const schemaV18 = `
+CREATE TABLE api_tokens (
+	id             TEXT PRIMARY KEY,
+	user_id        TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	name           TEXT NOT NULL,
+	token_hash     TEXT NOT NULL UNIQUE,
+	role           TEXT NOT NULL,
+	created_at     TEXT NOT NULL,
+	expires_at     TEXT NOT NULL DEFAULT '',
+	last_used_at   TEXT NOT NULL DEFAULT '',
+	last_used_from TEXT NOT NULL DEFAULT '',
+	revoked_at     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX api_tokens_user ON api_tokens (user_id);
+PRAGMA user_version = 18;`
+
+// schemaV19 adds when each host first had each vulnerability, for fix
+// deadlines, filled from the scans kept so far, and maintenance windows.
+const schemaV19 = `
+CREATE TABLE host_cve_seen (
+	host_id    TEXT NOT NULL REFERENCES hosts (id) ON DELETE CASCADE,
+	cve        TEXT NOT NULL,
+	first_seen TEXT NOT NULL,
+	last_seen  TEXT NOT NULL,
+	PRIMARY KEY (host_id, cve)
+);
+INSERT OR IGNORE INTO host_cve_seen (host_id, cve, first_seen, last_seen)
+	SELECT s.host_id, f.cve, MIN(COALESCE(s.finished_at, s.started_at)), MAX(COALESCE(s.finished_at, s.started_at))
+	FROM findings f JOIN scans s ON s.id = f.scan_id JOIN hosts h ON h.id = s.host_id
+	WHERE s.status = 'succeeded'
+	GROUP BY s.host_id, f.cve;
+CREATE TABLE maintenance_windows (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL,
+	tags       TEXT NOT NULL DEFAULT '',
+	starts_at  TEXT NOT NULL,
+	ends_at    TEXT NOT NULL,
+	skip_scans INTEGER NOT NULL DEFAULT 0,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+PRAGMA user_version = 19;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

@@ -33,7 +33,15 @@ const (
 	Slack   = "slack"
 	Teams   = "teams"
 	Webhook = "webhook"
+	// SIEM and ticketing.
+	Syslog     = "syslog"
+	Splunk     = "splunk"
+	Jira       = "jira"
+	ServiceNow = "servicenow"
 )
+
+// Kinds lists the channel types.
+var Kinds = []string{Email, Slack, Teams, Webhook, Syslog, Splunk, Jira, ServiceNow}
 
 // Events a channel can subscribe to.
 const (
@@ -101,8 +109,19 @@ type Config struct {
 	To       []string `json:"to,omitempty"`
 	// Slack, Teams and webhooks.
 	URL string `json:"url,omitempty"`
-	// Secret signs webhook bodies.
+	// Secret signs webhook bodies, or is Splunk's HEC token.
 	Secret string `json:"secret,omitempty"`
+	// Syslog: Host and Port, over Protocol: tcp, tls or udp.
+	Protocol string `json:"protocol,omitempty"`
+	// Splunk: the index; empty uses the token's default.
+	Index string `json:"index,omitempty"`
+	// Jira: the project key and issue type. Username and Password are an
+	// Atlassian account's email and API token (Cloud), or Password alone a
+	// personal access token (Data Center).
+	Project   string `json:"project,omitempty"`
+	IssueType string `json:"issue_type,omitempty"`
+	// ServiceNow: the table records go in, incident by default.
+	Table string `json:"table,omitempty"`
 }
 
 // TLS modes for email.
@@ -144,6 +163,41 @@ func (c Config) Validate(kind string) error {
 		}
 		if strings.ContainsAny(c.From+c.Username, "\r\n") {
 			return errors.New("addresses can't contain line breaks")
+		}
+	case Syslog:
+		if c.Host == "" || strings.ContainsAny(c.Host, " /@") {
+			return errors.New("give the syslog server's host name or address")
+		}
+		if c.Port < 1 || c.Port > 65535 {
+			return errors.New("the syslog server's port is 1 to 65535, usually 514, or 6514 for TLS")
+		}
+		if c.Protocol != "tcp" && c.Protocol != "tls" && c.Protocol != "udp" {
+			return errors.New("choose TCP, TLS or UDP")
+		}
+	case Splunk, Jira, ServiceNow:
+		parsed, err := url.Parse(c.URL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+			return errors.New("give the address, starting with https://")
+		}
+		switch kind {
+		case Splunk:
+			if c.Secret == "" {
+				return errors.New("give the HEC token")
+			}
+		case Jira:
+			if c.Password == "" {
+				return errors.New("give an API token (Jira Cloud, with your email as the username) or a personal access token (Data Center)")
+			}
+			if !projectKey.MatchString(c.Project) {
+				return errors.New("give the project's key, such as SEC")
+			}
+		case ServiceNow:
+			if c.Username == "" || c.Password == "" {
+				return errors.New("give the ServiceNow account's username and password")
+			}
+			if c.Table != "" && !tableName.MatchString(c.Table) {
+				return errors.New("the table is a name such as incident or sn_si_incident")
+			}
 		}
 	case Slack, Teams, Webhook:
 		parsed, err := url.Parse(c.URL)
@@ -217,6 +271,14 @@ func Send(ctx context.Context, kind string, config Config, message Message) erro
 			return err
 		}
 		return post(ctx, config.URL, body, signer(config.Secret, message.Event))
+	case Syslog:
+		return sendSyslog(ctx, config, message)
+	case Splunk:
+		return sendSplunk(ctx, config, message)
+	case Jira:
+		return sendJira(ctx, config, message)
+	case ServiceNow:
+		return sendServiceNow(ctx, config, message)
 	default:
 		return fmt.Errorf("unknown channel type %q", kind)
 	}
