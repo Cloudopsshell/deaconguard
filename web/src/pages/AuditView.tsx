@@ -9,6 +9,7 @@ import { ControlStatusBadge, GradeBadge, formatBytes, formatUptime } from "../li
 import { checkStatusStyle } from "../lib/checks";
 import { dateTime, isActive, normalizeSeverity } from "../lib/format";
 import { useCan } from "../lib/role";
+import { ReleaseBadge } from "../components/ReleaseSupport";
 
 type Filter = "fail" | "accepted" | "pass" | "other" | "all";
 
@@ -34,6 +35,7 @@ export function AuditView() {
             {[data.scan.os, `started ${dateTime(data.scan.started_at)}`, data.scan.finished_at && `finished ${dateTime(data.scan.finished_at)}`]
               .filter(Boolean)
               .join(" · ")}
+            <ReleaseBadge lifecycle={data.scan.lifecycle} onlyProblems className="ml-2" />
           </p>
         </div>
         <div className="flex gap-3 text-sm">

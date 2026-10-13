@@ -17,6 +17,7 @@ import (
 	"deaconguard/internal/audit"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/compliance"
+	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/store"
 )
 
@@ -43,15 +44,18 @@ type Report struct {
 	Client      string    `json:"client"`
 	Notes       string    `json:"notes"`
 
-	Host       string     `json:"host"`
-	HostID     string     `json:"host_id"`
-	OS         string     `json:"os"`
-	ScanID     string     `json:"scan_id"`
-	StartedAt  string     `json:"started_at"`
-	FinishedAt string     `json:"finished_at"`
-	Checks     []string   `json:"checks"`
-	Generator  string     `json:"generator"`
-	Audit      *AuditPart `json:"audit,omitempty"`
+	Host   string `json:"host"`
+	HostID string `json:"host_id"`
+	OS     string `json:"os"`
+	// Lifecycle says whether the release still got security fixes when
+	// scanned; nil for scans before 0.19.0.
+	Lifecycle  *lifecycle.Lifecycle `json:"lifecycle,omitempty"`
+	ScanID     string               `json:"scan_id"`
+	StartedAt  string               `json:"started_at"`
+	FinishedAt string               `json:"finished_at"`
+	Checks     []string             `json:"checks"`
+	Generator  string               `json:"generator"`
+	Audit      *AuditPart           `json:"audit,omitempty"`
 
 	Comparison *Comparison          `json:"comparison,omitempty"`
 	Policies   []audit.PolicyResult `json:"policies,omitempty"`
@@ -103,6 +107,20 @@ type Vulnerability struct {
 	EPSS       *float64 `json:"epss,omitempty"`
 	CVSSScore  float64  `json:"cvss_score,omitempty"`
 	CVSSVector string   `json:"cvss_vector,omitempty"`
+}
+
+// Support describes the release's lifecycle for a report, such as
+// "Supported: Security fixes until 31 May 2032", or "".
+func (r Report) Support() string {
+	if r.Lifecycle == nil || r.Lifecycle.Note == "" {
+		return ""
+	}
+	labels := map[string]string{lifecycle.Supported: "Supported", lifecycle.Extended: "Extended support", lifecycle.Ended: "End of life", lifecycle.Unknown: "Unknown"}
+	label, known := labels[r.Lifecycle.State]
+	if !known {
+		return ""
+	}
+	return label + ": " + r.Lifecycle.Note
 }
 
 // Exploitation describes in a few words what is known about a
@@ -190,7 +208,7 @@ func Build(source Source) (Report, error) {
 	report := Report{
 		ID: source.ID, Kind: "scan", GeneratedAt: source.Now.UTC().Truncate(time.Second), GeneratedBy: source.By,
 		Branding: source.Branding, Client: strings.TrimSpace(source.Client), Notes: strings.TrimSpace(source.Notes),
-		Host: source.Host.Address, HostID: source.Host.ID, OS: source.Scan.OS, ScanID: source.Scan.ID,
+		Host: source.Host.Address, HostID: source.Host.ID, OS: source.Scan.OS, Lifecycle: source.Scan.Lifecycle, ScanID: source.Scan.ID,
 		StartedAt: source.Scan.StartedAt, Checks: source.Scan.Checks, Generator: "DeaconGuard " + source.Version,
 		Packages: source.Scan.Fixes, Severity: source.Scan.Severity, Vulnerabilities: []Vulnerability{}, CheckResults: []CheckPart{},
 	}

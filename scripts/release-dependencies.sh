@@ -52,14 +52,14 @@ DeaconGuard is one statically linked binary: it needs no libraries on the machin
 
 The install script (\`curl -fsSL https://get.deaconguard.io | sudo sh -\`) installs these on every server and agent, from the distribution's own signed repositories at the version the distribution currently ships:
 
-| For | Debian, Ubuntu | RHEL 8/9, Amazon Linux 2023 |
-| --- | --- | --- |
-| Malware check (\`ps\`, \`find\`) | \`procps\`, \`findutils\` | \`procps-ng\`, \`findutils\` |
-| Security configuration check (\`ss\`) | \`iproute2\` | \`iproute\` |
-| Pending-reboot check | (not needed) | \`needs-restarting\` (\`dnf-utils\` / \`yum-utils\`) |
-| Antivirus check (basic scan) | \`clamav\`, \`clamav-freshclam\` (signature updates switched on) | \`clamav\`, \`clamav-freshclam\` / \`clamav-update\`; on RHEL from EPEL, which the script enables |
-| Advanced antivirus scan | YARA-X $yara_x (\`yr\`), downloaded from VirusTotal's GitHub release and checked against a pinned checksum | the same |
-| Release signature check | cosign $cosign, downloaded from Sigstore's GitHub release and checked against a pinned checksum | the same |
+| For | Debian, Ubuntu | RHEL, Rocky, AlmaLinux, Oracle Linux, Fedora, Amazon Linux 2023 | openSUSE Leap, SUSE Linux Enterprise |
+| --- | --- | --- | --- |
+| Malware check (\`ps\`, \`find\`) | \`procps\`, \`findutils\` | \`procps-ng\`, \`findutils\` | \`procps\`, \`findutils\` |
+| Security configuration check (\`ss\`) | \`iproute2\` | \`iproute\` | \`iproute2\` |
+| Pending-reboot check | (not needed) | \`needs-restarting\` (\`dnf-utils\` / \`yum-utils\`) | (not needed) |
+| Antivirus check (basic scan) | \`clamav\`, \`clamav-freshclam\` (signature updates switched on) | \`clamav\`, \`clamav-freshclam\` / \`clamav-update\`; on RHEL and its rebuilds from EPEL, which the script enables | \`clamav\` (\`freshclam.timer\` switched on) |
+| Advanced antivirus scan | YARA-X $yara_x (\`yr\`), downloaded from VirusTotal's GitHub release and checked against a pinned checksum | the same | the same |
+| Release signature check | cosign $cosign, downloaded from Sigstore's GitHub release and checked against a pinned checksum | the same | the same |
 
 The advanced antivirus scan runs the [YARA Forge](https://github.com/YARAHQ/yara-forge) **core** rules. They are not installed on machines: the server downloads the latest weekly package from GitHub, keeps it for 12 hours, and sends it to agents with each advanced scan.
 

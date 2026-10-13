@@ -543,7 +543,7 @@ var baseline = []control{
 	// Services and firewall.
 	{id: "SVC-01", category: categoryServices, severity: "medium", title: "A host firewall is active",
 		rationale:   "A host firewall is a second layer behind the network's own, and still protects the machine if that is misconfigured.",
-		remediation: "Enable ufw (Ubuntu, Debian) or firewalld (RHEL, Amazon Linux) and allow only the ports the machine serves.",
+		remediation: "Enable ufw (Ubuntu, Debian) or firewalld (RHEL, Fedora, SUSE, Amazon Linux) and allow only the ports the machine serves.",
 		check: func(m *machine) (string, string) {
 			text, ok := m.rootLines("firewall")
 			if !ok {
@@ -868,7 +868,7 @@ var baseline = []control{
 	// Updates.
 	{id: "UPD-01", category: categoryUpdates, severity: "medium", title: "Security updates install automatically",
 		rationale:   "Fixes that wait for someone to apply them leave the machine exposed for longer.",
-		remediation: "Enable unattended-upgrades (Debian, Ubuntu) or dnf-automatic (RHEL, Amazon Linux).",
+		remediation: "Enable unattended-upgrades (Debian, Ubuntu), dnf-automatic (RHEL and its rebuilds, Fedora, Amazon Linux) or os-update (SUSE).",
 		check: func(m *machine) (string, string) {
 			text := m.facts["auto-updates"]
 			for _, line := range lines([]byte(text)) {
@@ -876,7 +876,7 @@ var baseline = []control{
 					return pass("automatic updates are enabled")
 				}
 			}
-			return fail("neither unattended-upgrades nor dnf-automatic is enabled")
+			return fail("none of unattended-upgrades, dnf-automatic and os-update is enabled")
 		}},
 	{id: "UPD-02", category: categoryUpdates, severity: "medium", title: "No reboot is pending to finish updates",
 		rationale:   "Updated kernels and libraries only take effect after a reboot; until then the old code runs.",
@@ -890,7 +890,7 @@ var baseline = []control{
 		}},
 	{id: "UPD-03", category: categoryUpdates, severity: "medium", title: "Packages are only installed from signed sources",
 		rationale:   "Unsigned packages could be replaced in transit or on a mirror without anyone noticing.",
-		remediation: "Set gpgcheck=1 for every repository (RHEL, Amazon Linux); remove trusted=yes and AllowUnauthenticated from APT's configuration.",
+		remediation: "Set gpgcheck=1 for every repository (RHEL, Fedora, SUSE, Amazon Linux); remove trusted=yes and AllowUnauthenticated from APT's configuration.",
 		check: func(m *machine) (string, string) {
 			var unsigned []string
 			for _, line := range lines([]byte(m.facts["package-signing"])) {
@@ -933,7 +933,7 @@ var baseline = []control{
 	// Mandatory access control.
 	{id: "MAC-01", category: categoryProtection, severity: "medium", title: "AppArmor or SELinux is enforcing",
 		rationale:   "Mandatory access control confines services, so a compromised one can do far less.",
-		remediation: "Keep AppArmor enabled (Debian, Ubuntu) or set SELINUX=enforcing (RHEL, Amazon Linux).",
+		remediation: "Keep AppArmor enabled (Debian, Ubuntu, SUSE) or set SELINUX=enforcing (RHEL and its rebuilds, Fedora, Amazon Linux).",
 		check: func(m *machine) (string, string) {
 			if strings.TrimSpace(m.facts["selinux"]) == "1" {
 				return pass("SELinux is enforcing")

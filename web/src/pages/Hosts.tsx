@@ -27,6 +27,7 @@ import { PackageCountsInline } from "../lib/fixes";
 import { ScanDialog } from "../components/ScanDialog";
 import { ThisServerBadge, agentOnline, shortConnectionLabel } from "../lib/hosts";
 import { RemoveHostDialog } from "./HostDetail";
+import { ReleaseBadge } from "../components/ReleaseSupport";
 
 export function Hosts() {
   const canEnroll = useCan("admin");
@@ -166,7 +167,10 @@ function HostRow({ host }: { host: HostSummary }) {
         </p>
         <TagChips tags={host.tags} className="mt-1" />
       </Td>
-      <Td className="text-slate-600 dark:text-slate-300">{host.last_report?.os || host.agent?.os || "—"}</Td>
+      <Td className="text-slate-600 dark:text-slate-300">
+        {host.last_report?.os || host.agent?.os || "—"}
+        <ReleaseBadge lifecycle={host.last_report?.lifecycle} onlyProblems className="ml-2" />
+      </Td>
       <Td>
         {host.last_scan ? (
           <div className="space-y-1">
