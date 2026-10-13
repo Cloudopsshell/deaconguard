@@ -34,6 +34,7 @@ import { TagEditor } from "../components/Tags";
 import { TrendChart } from "../components/TrendChart";
 import { AgentStatus } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
+import { ReleaseBadge } from "../components/ReleaseSupport";
 
 export function HostDetail() {
   const canOperate = useCan("operator");
@@ -73,6 +74,12 @@ export function HostDetail() {
         description={
           <>
             {connectionLabel(data)}
+            {data.last_report?.lifecycle && data.last_report.lifecycle.state !== "unknown" && (
+              <span className="mt-1 flex flex-wrap items-center gap-1.5 text-sm">
+                <ReleaseBadge lifecycle={data.last_report.lifecycle} />
+                {data.last_report.os}: {data.last_report.lifecycle.note}
+              </span>
+            )}
             <span className="mt-1.5 block">
               <TagEditor key={data.tags.join(",")} hostId={data.id} tags={data.tags} canEdit={canOperate} />
             </span>
