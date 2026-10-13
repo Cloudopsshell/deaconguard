@@ -1,6 +1,7 @@
 package compliance
 
 import (
+	"strings"
 	"testing"
 
 	"deaconguard/internal/audit"
@@ -59,5 +60,24 @@ func TestRequirementsTakeTheWorstOfTheirControls(t *testing.T) {
 	}
 	if !naturalLess("8.3.4", "8.3.10") || !naturalLess("AC-7", "AC-12") || naturalLess("10.2.1", "2.2.6") {
 		t.Error("natural order is wrong")
+	}
+}
+
+// TestRequirementTitlesAreShortReferences keeps the mapping to requirement
+// numbers and short titles in our own words. PCI DSS and ISO/IEC 27001 are
+// copyrighted: their requirement text must never be copied in, and a long
+// title is the first sign of that.
+func TestRequirementTitlesAreShortReferences(t *testing.T) {
+	for _, framework := range frameworks {
+		for id, title := range framework.Requirements {
+			if words := len(strings.Fields(title)); words > 10 {
+				t.Errorf("%s %s: %d words; use a short title in our own words, not the standard's text: %q", framework.Short, id, words, title)
+			}
+		}
+	}
+	for id, title := range checkTitles {
+		if words := len(strings.Fields(title)); words > 14 {
+			t.Errorf("%s: %d words: %q", id, words, title)
+		}
 	}
 }
