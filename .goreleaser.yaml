@@ -38,6 +38,46 @@ archives:
       - CHANGELOG.md
       - LICENSE
 
+# The container image, for Docker, Compose and Kubernetes: the Linux builds
+# on a minimal base image (Chainguard's static, with CA certificates and no
+# shell), for amd64 and arm64. ko pushes it without a Docker daemon. It runs
+# as a non-root user; the agent's DaemonSet runs it as root, which it needs
+# to read the host. The release workflow logs in to GHCR first.
+kos:
+  - id: image
+    build: deaconguard
+    main: ./cmd/deaconguard
+    repositories:
+      - ghcr.io/cloudopsshell/deaconguard
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - "{{ .Version }}"
+      - '{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if not .Prerelease }}latest{{ end }}'
+    bare: true
+    sbom: spdx
+    creation_time: "{{ .CommitTimestamp }}"
+    labels:
+      org.opencontainers.image.title: DeaconGuard
+      org.opencontainers.image.description: Linux security scanner, server and agent
+      org.opencontainers.image.source: https://github.com/Cloudopsshell/deaconguard
+      org.opencontainers.image.url: https://deaconguard.io
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MIT
+
+# The image is signed keylessly too, by digest, like checksums.txt.
+docker_signs:
+  - id: image
+    cmd: cosign
+    artifacts: manifests
+    args:
+      - sign
+      - --yes
+      - ${artifact}@${digest}
+
 # GoReleaser packages only the Linux builds as .deb and .rpm.
 nfpms:
   - id: linux-packages
@@ -51,7 +91,7 @@ nfpms:
       Linux security scanner: package vulnerabilities from official
       distribution advisories, file integrity, malware indicators, security
       configuration, and ClamAV. One binary is the server, with an HTTPS
-      dashboard, and the agent that enrolls with it using a one-time token.
+      dashboard, and the agent that enrolls with it using an enrollment token.
     license: MIT
     formats:
       - deb

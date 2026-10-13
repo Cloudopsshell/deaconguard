@@ -268,7 +268,7 @@ export function Layout() {
         <AppearanceControls />
         <p className="hidden px-5 pt-6 text-xs leading-relaxed text-slate-400 lg:block">
           {network
-            ? "Server · checks what its agents, this machine's included, read as root against official distribution advisories."
+            ? "Server · checks what its agents read as root against official distribution advisories."
             : "Local only · scans this machine against official distribution advisories."}
         </p>
         <VersionLabel />

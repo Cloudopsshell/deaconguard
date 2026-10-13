@@ -68,7 +68,8 @@ func NewNetwork(ui fs.FS, scan scanFunc, pin string) (*Server, error) {
 		return nil, err
 	}
 	if len(users) == 0 {
-		return nil, errors.New("create a dashboard account before serving on the network: deaconguard user add USERNAME")
+		return nil, errors.New("create a dashboard account before serving on the network: deaconguard user add USERNAME; " +
+			"in a container, set DEACONGUARD_ADMIN_USER and DEACONGUARD_ADMIN_PASSWORD_FILE to create the first one")
 	}
 	return newServer(ui, scan, true, pin)
 }

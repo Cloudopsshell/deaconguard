@@ -1,0 +1,21 @@
+# The DeaconGuard agent on every node: https://docs.deaconguard.io/installation/kubernetes
+#
+# Create a reusable token on the server's Agents page, then:
+#
+#   kubectl create namespace deaconguard-agent
+#   kubectl -n deaconguard-agent create secret generic deaconguard-enrollment --from-literal=token='TOKEN'
+#   kubectl apply -k https://github.com/Cloudopsshell/deaconguard/deploy/kustomize/agent?ref=v0.15.0
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: deaconguard-agent
+labels:
+  - pairs:
+      app.kubernetes.io/name: deaconguard-agent
+      app.kubernetes.io/part-of: deaconguard
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - daemonset.yaml
+images:
+  - name: ghcr.io/cloudopsshell/deaconguard
+    newTag: 0.15.0

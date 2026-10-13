@@ -196,6 +196,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 15 {
+		if err := execInTx(db, schemaV15); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -513,6 +518,15 @@ CREATE TABLE policies (
 	updated_at TEXT NOT NULL
 );
 PRAGMA user_version = 14;`
+
+// schemaV15 adds reusable enrollment tokens, which enroll many machines,
+// such as every node of a Kubernetes DaemonSet, until they expire.
+const schemaV15 = `
+ALTER TABLE enrollment_tokens ADD COLUMN reusable INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE enrollment_tokens ADD COLUMN uses INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE enrollment_tokens ADD COLUMN name TEXT NOT NULL DEFAULT '';
+UPDATE enrollment_tokens SET uses = 1 WHERE used_at IS NOT NULL;
+PRAGMA user_version = 15;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

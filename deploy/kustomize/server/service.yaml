@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: deaconguard
+spec:
+  selector:
+    app.kubernetes.io/name: deaconguard
+    app.kubernetes.io/component: server
+  ports:
+    # The dashboard. Reach it through an ingress or kubectl port-forward, and
+    # allow it only from your administrators' networks.
+    - name: dashboard
+      port: 8443
+      targetPort: dashboard
+    # Agents only: in the cluster, https://deaconguard.deaconguard.svc:8444
+    - name: agents
+      port: 8444
+      targetPort: agents

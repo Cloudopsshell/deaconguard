@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/store"
@@ -253,6 +254,57 @@ func TestRevokedTokenCannotEnroll(t *testing.T) {
 	response := do(t, s, call{method: http.MethodPost, path: "/agent/v1/enroll", body: agentapi.EnrollRequest{Secret: token.Secret, Hostname: "web-02"}})
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked token enrolled: %d", response.Code)
+	}
+}
+
+func TestReusableTokenEnrollsManyUntilRevoked(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	for _, bad := range []map[string]any{
+		{"server_url": testOrigin, "reusable": true, "days": 400},
+		{"server_url": testOrigin, "days": 7},
+		{"server_url": testOrigin, "reusable": true, "name": "line\nbreak"},
+	} {
+		if response := do(t, s, call{method: http.MethodPost, path: "/api/enrollment-tokens", body: bad, cookie: cookie}); response.Code != http.StatusBadRequest {
+			t.Fatalf("%v: %d %s", bad, response.Code, response.Body.String())
+		}
+	}
+	created := do(t, s, call{method: http.MethodPost, path: "/api/enrollment-tokens", cookie: cookie,
+		body: map[string]any{"server_url": testOrigin, "reusable": true, "days": 90, "name": "prod cluster"}})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	tokenResponse := decode[enrollmentTokenResponse](t, created)
+	if !tokenResponse.Reusable || tokenResponse.Name != "prod cluster" || tokenResponse.ExpiresAt[:10] != time.Now().UTC().AddDate(0, 0, 90).Format("2006-01-02") {
+		t.Fatalf("token: %+v", tokenResponse.EnrollmentToken)
+	}
+	token, _ := agentapi.ParseToken(tokenResponse.Token)
+	hosts := map[string]bool{}
+	for _, name := range []string{"node-1", "node-2", "node-3"} {
+		response := do(t, s, call{method: http.MethodPost, path: "/agent/v1/enroll", body: agentapi.EnrollRequest{Secret: token.Secret, Hostname: name, Username: "root"}})
+		if response.Code != http.StatusCreated {
+			t.Fatalf("enroll %s: %d %s", name, response.Code, response.Body.String())
+		}
+		hosts[decode[agentapi.EnrollResponse](t, response).HostID] = true
+	}
+	if len(hosts) != 3 {
+		t.Fatalf("hosts: %v", hosts)
+	}
+	tokens := decode[[]store.EnrollmentToken](t, do(t, s, call{method: http.MethodGet, path: "/api/enrollment-tokens", cookie: cookie}))
+	if len(tokens) != 1 || tokens[0].Status != "active" || tokens[0].Uses != 3 || tokens[0].UsedAt == nil || tokens[0].HostID != nil {
+		t.Fatalf("tokens: %+v", tokens)
+	}
+
+	// Revoking stops new machines; the ones enrolled stay.
+	if response := do(t, s, call{method: http.MethodDelete, path: "/api/enrollment-tokens/" + tokenResponse.ID, cookie: cookie}); response.Code != http.StatusOK ||
+		decode[store.EnrollmentToken](t, response).Status != "revoked" {
+		t.Fatalf("revoke: %d %s", response.Code, response.Body.String())
+	}
+	if response := do(t, s, call{method: http.MethodPost, path: "/agent/v1/enroll", body: agentapi.EnrollRequest{Secret: token.Secret, Hostname: "node-4"}}); response.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked reusable token enrolled: %d", response.Code)
+	}
+	if list := decode[[]store.HostSummary](t, do(t, s, call{method: http.MethodGet, path: "/api/hosts", cookie: cookie})); len(list) != 3 {
+		t.Fatalf("hosts after revoking: %d", len(list))
 	}
 }
 

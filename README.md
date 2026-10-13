@@ -27,7 +27,7 @@ One binary does two jobs, and they are kept apart on purpose:
 | `deaconguard-server` | `deaconguard` user, no root | `0.0.0.0:8443` (HTTPS) | the distributions' advisory feeds |
 | `deaconguard-agent` | root | nothing | only its server |
 
-Agents enroll once with a one-time token from the server, valid for 24 hours. Machines to scan need no open ports and no internet access, because the server evaluates their packages against the advisories. More on how they trust each other: [Architecture](https://docs.deaconguard.io/architecture).
+Agents enroll once with a token from the server: a one-time token, valid for 24 hours, or a [reusable one](#reusable-tokens) for many machines, such as a Kubernetes cluster's nodes. Machines to scan need no open ports and no internet access, because the server evaluates their packages against the advisories. More on how they trust each other: [Architecture](https://docs.deaconguard.io/architecture).
 
 For a single machine, `deaconguard serve` gives a local dashboard without accounts.
 
@@ -38,14 +38,14 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 
 ## Requirements
 
-- **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself.
+- **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself. The server also runs [in a container](#docker-compose-and-kubernetes), with Docker, Compose or Kubernetes, and the agent runs on every Kubernetes node as a DaemonSet.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
 - **Server memory:** give the server at least **1 GB of memory** (RAM plus swap). It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB. With too little, Linux stops the server mid-scan, and the dashboard says so after it restarts.
 - **Network:** the server needs HTTPS access to the distributions' advisory feeds. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
 
 ## Install
 
-Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, `install.sh`, and a `checksums.txt` file with a [Sigstore signature](#verify-a-release) from the release workflow. Downloads need no GitHub account.
+Releases are published on the [Releases page](https://github.com/Cloudopsshell/deaconguard/releases). Each release has Linux and macOS archives, `.deb` and `.rpm` packages, `install.sh`, and a `checksums.txt` file with a [Sigstore signature](#verify-a-release) from the release workflow. The container image `ghcr.io/cloudopsshell/deaconguard` and the Helm chart `oci://ghcr.io/cloudopsshell/charts/deaconguard` are signed the same way. Downloads need no GitHub account.
 
 ### Install script
 
@@ -145,6 +145,45 @@ make build          # builds the web UI and the deaconguard binary
 ./deaconguard version
 ```
 
+### Docker, Compose, and Kubernetes
+
+The image `ghcr.io/cloudopsshell/deaconguard:X.Y.Z`, for amd64 and arm64, is the same binary on a minimal base image with no shell, running as a non-root user. In a container the server takes its first account from the environment: `DEACONGUARD_ADMIN_USER` and a file holding the password, `DEACONGUARD_ADMIN_PASSWORD_FILE`, such as a secret. Both are ignored once any account exists.
+
+**Docker Compose:** [deploy/compose/compose.yaml](deploy/compose/compose.yaml) runs the server, with its data in a volume:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/Cloudopsshell/deaconguard/vX.Y.Z/deploy/compose/compose.yaml
+printf '%s' 'a-long-password' > admin-password && chmod 600 admin-password && sudo chown 65532 admin-password
+docker compose up -d
+```
+
+Sign in at `https://THIS-MACHINE:8443` as `admin`. To scan the machine Compose runs on too, create a token on the **Agents** page, save it as `enrollment-token` next to `compose.yaml`, and run `docker compose --profile agent up -d`.
+
+**Kubernetes with Helm:** the server, then an agent on every node, in two namespaces: the server runs under the restricted Pod Security Standard, and the agent needs privileged, since it reads its node.
+
+```sh
+kubectl create namespace deaconguard --save-config
+kubectl -n deaconguard create secret generic deaconguard-admin --from-literal=password='a-long-password'
+helm install deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard --version X.Y.Z \
+  -n deaconguard --set server.admin.existingSecret=deaconguard-admin
+```
+
+Open the dashboard with `kubectl -n deaconguard port-forward svc/deaconguard 8443:8443`, or an ingress (`server.ingress.*`; set `server.trustedProxies` to the ingress controller's network so sign-in limits and the audit log see each client's address). On the **Agents** page, choose **Enroll a machine**, then **Many machines**, with the server address `https://deaconguard.deaconguard.svc:8444`, and:
+
+```sh
+kubectl create namespace deaconguard-agent --save-config
+kubectl -n deaconguard-agent create secret generic deaconguard-enrollment --from-literal=token='deaconguard1.…'
+helm install deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard --version X.Y.Z \
+  -n deaconguard-agent --set server.enabled=false --set agent.enabled=true \
+  --set agent.enrollment.existingSecret=deaconguard-enrollment
+```
+
+Each node enrolls once, by its node name, and keeps its identity in `/var/lib/deaconguard-agent` on the node. The agent reads the node's root filesystem, read-only at `/host`, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent installed on the node.
+
+**Kubernetes with Kustomize:** [deploy/kustomize](deploy/kustomize) has the same server and agent, plus an [ingress example](deploy/kustomize/examples/ingress-nginx.yaml): `kubectl apply -k "https://github.com/Cloudopsshell/deaconguard/deploy/kustomize/server?ref=vX.Y.Z"`, and `…/deploy/kustomize/agent?ref=vX.Y.Z`.
+
+See [Install with Docker](https://docs.deaconguard.io/installation/docker) and [Install in Kubernetes](https://docs.deaconguard.io/installation/kubernetes) for every option.
+
 ## Getting started
 
 **Which mode do I need?** The same install runs in either mode:
@@ -214,11 +253,11 @@ Setup saves these settings in `/etc/systemd/system/deaconguard-server.service.d/
 - **Accounts:** admins create accounts on the **Accounts** page with a role and a temporary password, which the person changes at their first sign-in. **Manage** changes an account's role, sets a new temporary password, resets two-step sign-in, or disables or removes it; the last admin that can sign in stays. Everyone manages their own password, two-step sign-in, recovery codes, appearance and sessions on **My account**. There is no password reset by email: an admin resets access, or, on the server, `deaconguard user passwd NAME` and `deaconguard user mfa-reset NAME`, run as the `deaconguard` user like `deaconguard user add NAME [--role operator|viewer]`, `deaconguard user role NAME ROLE`, `deaconguard user remove NAME` and `deaconguard user list`. See [Accounts and sign-in](https://docs.deaconguard.io/usage/accounts).
 - **Built-in protections:** failed sign-ins, two-step codes and enrollments are limited per address, a code works once, sessions last 12 hours, and the **Audit log** page records sign-ins, account changes, tokens, enrollments, scans and removals.
 
-To run the server in the foreground without systemd, use `deaconguard serve --listen 0.0.0.0:8443` (add `--agent-listen 0.0.0.0:8444` for an agent port). Any address other than loopback turns on HTTPS and sign-in.
+To run the server in the foreground without systemd, use `deaconguard serve --listen 0.0.0.0:8443` (add `--agent-listen 0.0.0.0:8444` for an agent port). Any address other than loopback turns on HTTPS and sign-in. Behind a reverse proxy, add `--trusted-proxy` with the proxy's address or network, such as `10.42.0.0/16`, once for each, so the server takes each client's address from `X-Forwarded-For`; without it, it ignores that header, since anyone can send it.
 
 ## Scan other machines with the agent
 
-1. On the server's **Agents** page, click **Enroll a machine**. Check the address agents will use to reach the server, then click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same.
+1. On the server's **Agents** page, click **Enroll a machine**. Check the address agents will use to reach the server, then click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same. For many machines, such as a Kubernetes cluster's nodes or a fleet built from one image, choose **Many machines** instead, or add `--reusable`: see [Reusable tokens](#reusable-tokens).
 2. On the machine to scan, run the command the dialog shows, as a user with sudo rights (as root, leave out `sudo -E`). It installs the same version as the server, enrolls the machine with the token, and starts the agent:
 
    ```sh
@@ -229,7 +268,15 @@ To run the server in the foreground without systemd, use `deaconguard serve --li
 
 3. The machine appears on the **Agents** and **Hosts** pages. Scan it from the dashboard like any other host, or with `deaconguard scan HOST_ID` on the server.
 
-Each token enrolls one machine within 24 hours and can be revoked while unused. The agent stores its own credential in `/etc/deaconguard/agent.json`, readable by root only. Removing the host on the server revokes that credential at once, and the agent service then stops. Use `deaconguard agent status` on the machine to see where it is enrolled, and `journalctl -u deaconguard-agent` to see what it did.
+Each token enrolls one machine within 24 hours and can be revoked while unused.
+
+### Reusable tokens
+
+A reusable token enrolls any number of machines until it expires, after 1 to 365 days (30 by default), or is revoked. Give it a name to tell tokens apart; the **Agents** page shows how many machines each has enrolled and when it was last used. Revoking it stops new machines from enrolling; the ones it enrolled stay. Anyone with it can enroll a machine, so keep it in a secret store. `deaconguard token create --server-url URL --reusable [--days N] [--name NAME] [--quiet]` makes one on the command line; `--quiet` prints only the token.
+
+An agent given a token in its environment, `DEACONGUARD_ENROLL_TOKEN_FILE` or `DEACONGUARD_ENROLL_TOKEN`, as the DaemonSet and Compose agents are, enrolls by itself when it isn't enrolled yet. It enrolls again when the token is for a server with another certificate, such as a reinstalled one, or when the server no longer knows it. So removing a node's host on the server while its DaemonSet runs enrolls it again; revoke the token first to stop that.
+
+The agent stores its own credential in `/etc/deaconguard/agent.json`, readable by root only. Removing the host on the server revokes that credential at once, and the agent service then stops. Use `deaconguard agent status` on the machine to see where it is enrolled, and `journalctl -u deaconguard-agent` to see what it did.
 
 The agent runs the checks and sends back the package list. The server evaluates the list against the advisories, so a compromised or modified agent can report false check results, but it cannot supply its own vulnerability verdicts.
 
@@ -243,6 +290,9 @@ Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.
 | `.deb` | Run the [Debian and Ubuntu](#debian-and-ubuntu) steps with the new `VERSION` |
 | `.rpm` | Run the [RHEL, Fedora, and Amazon Linux](#rhel-fedora-and-amazon-linux) steps with the new `VERSION` |
 | Archive | Run the [archive](#other-linux-systems-and-macos) steps with the new `VERSION`; they replace `/usr/local/bin/deaconguard` |
+| Compose | Change the image tag in `compose.yaml` and run `docker compose up -d` |
+| Helm | `helm upgrade` each release with `--version X.Y.Z` and `--reuse-values` |
+| Kustomize | Apply the new `?ref=vX.Y.Z`, or change `newTag` in your overlay |
 
 Updating the package restarts running `deaconguard-server` and `deaconguard-agent` services. Stop a foreground `deaconguard serve` before replacing the binary and start it again afterwards. Update the server before its agents. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.
 
@@ -258,11 +308,24 @@ cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
 
 Then check the files you downloaded with `sha256sum --check --ignore-missing checksums.txt`.
 
+The container image and the Helm chart are signed by the same workflow:
+
+```sh
+cosign verify ghcr.io/cloudopsshell/deaconguard:X.Y.Z \
+  --certificate-identity "https://github.com/Cloudopsshell/deaconguard/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+cosign verify ghcr.io/cloudopsshell/charts/deaconguard:X.Y.Z \
+  --certificate-identity "https://github.com/Cloudopsshell/deaconguard/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The image carries its own SBOM, attached in the registry.
+
 Each release's notes list the Go version and main libraries it was built with, and what the install script installs on each machine. The release also carries an SBOM, `deaconguard_X.Y.Z_sbom.spdx.json` (SPDX JSON), listing every Go module and web UI package with versions and licenses; `checksums.txt` covers it, so the signature does too.
 
 ## Back up and restore
 
-All data lives in one directory: `/var/lib/deaconguard/` for the server service, `~/.local/share/deaconguard/` otherwise, or the path in `DEACONGUARD_HOME`. It holds:
+All data lives in one directory: `/var/lib/deaconguard/` for the server service, `~/.local/share/deaconguard/` otherwise, or the path in `DEACONGUARD_HOME`. In a container it is `/home/nonroot`, on the `data` volume with Compose or the server's PersistentVolumeClaim in Kubernetes; stop the server (`docker compose stop server`, or scale the StatefulSet to 0) before copying it. It holds:
 - `deaconguard.db`: hosts, scan results, activity logs, accounts, tokens and the audit log. Passwords are stored as PBKDF2 hashes; recovery codes, tokens and credentials as SHA-256 hashes. Authenticator keys for two-step sign-in are stored as is, because checking a code needs them, so keep backups as safe as the server.
 - `tls/`: the server's certificate and key. Keep them: agents trust this key.
 - `feeds/`: a cache that is downloaded again if missing.

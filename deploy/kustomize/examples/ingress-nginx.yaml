@@ -1,0 +1,31 @@
+# An example ingress for the dashboard with ingress-nginx and cert-manager,
+# so browsers get a trusted certificate. Change the host, issuer, and the
+# allowed networks. Agents keep using the deaconguard service's port 8444.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: deaconguard
+  namespace: deaconguard
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    # The server speaks HTTPS itself, with its own certificate.
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    # Only your administrators' networks.
+    nginx.ingress.kubernetes.io/whitelist-source-range: 10.0.0.0/8
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [deaconguard.example.com]
+      secretName: deaconguard-tls
+  rules:
+    - host: deaconguard.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: deaconguard
+                port:
+                  name: dashboard

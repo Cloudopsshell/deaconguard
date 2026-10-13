@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: deaconguard-agent
+  labels:
+    # The agent reads each node: it needs the node's filesystem, processes
+    # and network, which only the privileged Pod Security Standard allows.
+    # It is kept apart from the server, which runs restricted.
+    pod-security.kubernetes.io/enforce: privileged

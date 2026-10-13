@@ -49,7 +49,7 @@ export function Agents() {
     <>
       <PageHeader
         title="Agents"
-        description="Machines running the DeaconGuard agent. Each enrolls once with a one-time token, then waits for scans from this server."
+        description="Machines running the DeaconGuard agent. Each enrolls once with a token, then waits for scans from this server."
         action={
           canEnroll && (
             <Button onClick={() => setEnrolling(true)}>
@@ -143,8 +143,8 @@ function AgentList({ onEnroll }: { onEnroll?: () => void }) {
           title="No agents yet"
           description={
             onEnroll
-              ? "Create a one-time token, then run the enroll command it shows on the machine you want to scan."
-              : "An admin enrolls machines with a one-time token."
+              ? "Create a token, then run the enroll command it shows on the machine you want to scan, or give it to the agent DaemonSet in Kubernetes."
+              : "An admin enrolls machines with an enrollment token."
           }
           action={
             onEnroll && (
@@ -229,7 +229,7 @@ function TokenList() {
     <Card>
       <CardHeader
         title="Enrollment tokens"
-        description="Each token enrolls one machine, within 24 hours. The token itself is shown only when it is created."
+        description="A one-time token enrolls one machine within 24 hours; a reusable one enrolls any number, such as every node of a Kubernetes cluster, until it expires. The token itself is shown only when it is created."
       />
       {isPending ? (
         <Loading />
@@ -260,6 +260,12 @@ function TokenList() {
                   <tr key={token.id}>
                     <Td>
                       <span className="font-mono text-xs">{token.id.slice(0, 8)}</span>
+                      {token.reusable && (
+                        <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-600/20 ring-inset dark:bg-indigo-500/10 dark:text-indigo-300">
+                          Reusable
+                        </span>
+                      )}
+                      {token.name && <p className="text-sm">{token.name}</p>}
                       <p className="text-xs text-slate-500 dark:text-slate-400">{token.server_url}</p>
                     </Td>
                     <Td>
@@ -294,6 +300,13 @@ function TokenList() {
                         <>revoked {timeAgo(token.revoked_at)}</>
                       ) : (
                         <>expired {dateTime(token.expires_at)}</>
+                      )}
+                      {token.reusable && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {token.uses === 0
+                            ? "no machines enrolled yet"
+                            : `enrolled ${token.uses} ${token.uses === 1 ? "machine" : "machines"}${token.used_at ? `, last ${timeAgo(token.used_at)}` : ""}`}
+                        </p>
                       )}
                     </Td>
                     <Td className="text-right">
@@ -331,9 +344,13 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
   const [edited, setEdited] = useState<string | null>(null);
   const serverUrl = edited ?? (agentPort ? `${window.location.protocol}//${window.location.hostname}:${agentPort}` : window.location.origin);
   const setServerUrl = setEdited;
+  const [reusable, setReusable] = useState(false);
+  const [days, setDays] = useState(30);
+  const [name, setName] = useState("");
   const [created, setCreated] = useState<NewEnrollmentToken | null>(null);
   const create = useMutation({
-    mutationFn: () => api.createEnrollmentToken(serverUrl),
+    mutationFn: () =>
+      api.createEnrollmentToken(reusable ? { server_url: serverUrl, reusable, days, name: name.trim() } : { server_url: serverUrl }),
     onSuccess: (token) => {
       setCreated(token);
       queryClient.invalidateQueries({ queryKey: ["enrollment-tokens"] });
@@ -342,6 +359,8 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
   function close() {
     setCreated(null);
+    setReusable(false);
+    setName("");
     create.reset();
     onClose();
   }
@@ -352,8 +371,10 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
   }
 
   return (
-    <Dialog open={open} onClose={close} title="Enroll a machine">
-      {created ? (
+    <Dialog open={open} onClose={close} title={reusable ? "Enroll machines" : "Enroll a machine"}>
+      {created?.reusable ? (
+        <ReusableTokenCreated token={created} onDone={close} />
+      ) : created ? (
         <div className="space-y-4 text-sm">
           <p className="text-slate-600 dark:text-slate-300">
             On the Linux machine to scan, run this as a user with sudo rights (as root, leave out{" "}
@@ -389,9 +410,54 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4">
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            Creates a one-time token, valid for 24 hours. The machine uses it to enroll with this server.
-          </p>
+          <div role="radiogroup" aria-label="Token" className="grid gap-2 sm:grid-cols-2">
+            {[
+              { value: false, label: "One machine", detail: "A one-time token, valid for 24 hours." },
+              { value: true, label: "Many machines", detail: "A reusable token, for a Kubernetes cluster or a fleet." },
+            ].map((kind) => (
+              <button
+                key={kind.label}
+                type="button"
+                role="radio"
+                aria-checked={reusable === kind.value}
+                onClick={() => setReusable(kind.value)}
+                className={cx(
+                  "rounded-lg px-3 py-2 text-left ring-1 ring-inset transition-colors",
+                  reusable === kind.value
+                    ? "bg-indigo-50/60 ring-2 ring-indigo-600 dark:bg-indigo-500/10 dark:ring-indigo-400"
+                    : "ring-slate-200 hover:bg-slate-50 dark:ring-slate-700 dark:hover:bg-slate-800/60",
+                )}
+              >
+                <span className="block text-sm font-semibold">{kind.label}</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">{kind.detail}</span>
+              </button>
+            ))}
+          </div>
+          {reusable && (
+            <div className="grid gap-3 sm:grid-cols-[1fr_9rem]">
+              <Field
+                label="Name (optional)"
+                placeholder="Production cluster"
+                maxLength={80}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <label className="block">
+                <span className="text-sm font-medium">Lasts</span>
+                <select
+                  value={days}
+                  onChange={(event) => setDays(Number(event.target.value))}
+                  className="mt-1 block w-full rounded-lg border-0 bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600 dark:bg-slate-950 dark:ring-slate-700"
+                >
+                  {[7, 30, 90, 180, 365].map((choice) => (
+                    <option key={choice} value={choice}>
+                      {choice} days
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           <Field
             label="Server address the machine will connect to"
             hint={
@@ -416,6 +482,52 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
         </form>
       )}
     </Dialog>
+  );
+}
+
+// ReusableTokenCreated shows a reusable token once, with how to use it in
+// Kubernetes, with Docker Compose, and on single machines.
+function ReusableTokenCreated({ token, onDone }: { token: NewEnrollmentToken; onDone: () => void }) {
+  return (
+    <div className="space-y-4 text-sm">
+      <p className="text-slate-600 dark:text-slate-300">
+        This token enrolls every machine that uses it until {dateTime(token.expires_at)}. In Kubernetes, put it in a secret
+        for the agent DaemonSet, which runs one agent on each node:
+      </p>
+      <CopyBlock
+        text={`kubectl create namespace deaconguard-agent --save-config\nkubectl -n deaconguard-agent create secret generic deaconguard-enrollment --from-literal=token='${token.token}'`}
+        label="Copy the kubectl commands"
+      />
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Then install the agent with the Helm chart or Kustomize, as{" "}
+        <a
+          href="https://docs.deaconguard.io/installation/kubernetes"
+          target="_blank"
+          rel="noreferrer"
+          className="text-indigo-600 hover:underline dark:text-indigo-400"
+        >
+          Install in Kubernetes
+        </a>{" "}
+        shows. With Docker Compose, put it in the agent's <code className="font-mono">enrollment-token</code> file.
+      </p>
+      <details className="text-xs text-slate-500 dark:text-slate-400">
+        <summary className="cursor-pointer">The token alone, or the install command for a machine</summary>
+        <div className="mt-2 space-y-2">
+          <CopyBlock text={token.token} label="Copy the token" />
+          <CopyBlock text={token.command} label="Copy the command" />
+        </div>
+      </details>
+      <p className="flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200">
+        <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <span>
+          This token is shown only once. Anyone with it can enroll machines with this server until it expires, so keep it in a
+          secret store and revoke it below when you no longer need it. Machines it enrolled stay enrolled.
+        </span>
+      </p>
+      <div className="flex justify-end pt-2">
+        <Button onClick={onDone}>Done</Button>
+      </div>
+    </div>
   );
 }
 
