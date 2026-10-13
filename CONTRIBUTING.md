@@ -23,12 +23,19 @@ make ui-dev       # web UI with hot reload; run ./deaconguard serve alongside it
 6. **Update the README** when behavior, commands, or setup change, and the documentation at [docs.deaconguard.io](https://docs.deaconguard.io) (the `deaconguard-website` repository) in the same release.
 7. **`packaging/install.sh` goes live on merge.** `get.deaconguard.io` serves it from `main`, and it installs the *latest release*. A change to it must work with that release's packages; anything that needs a newer binary must check for it first, as the script does for `deaconguard setup`.
 
+## Sign the Contributor License Agreement
+
+Before your first pull request can be merged, you need to sign the [DeaconGuard Contributor License Agreement](CLA.md). You keep the copyright in your work; the agreement grants the project a license to use and distribute your contribution. When you open your first pull request, the CLA Assistant bot comments with a link: sign in with GitHub and accept. This takes a minute, is needed only once, and covers all of your later contributions.
+
+If your employer has rights to code you write, make sure you have their permission before you sign.
+
 ## Open a pull request
 
 Push the branch and open a pull request against `main`. Fill in the template: what changed, why, and how you tested it.
 
 A pull request can be merged when:
 
+- the author has signed the **[CLA](CLA.md)**;
 - the **CI** checks pass (Go formatting, vet, tests with the race detector, the vulnerability scan, the web UI build, ShellCheck of the install script, and the release configuration check);
 - it has an **approving review** from a maintainer, given after the last push;
 - every review conversation is resolved.
