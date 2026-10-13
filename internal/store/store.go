@@ -201,6 +201,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 16 {
+		if err := execInTx(db, schemaV16); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -527,6 +532,50 @@ ALTER TABLE enrollment_tokens ADD COLUMN uses INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE enrollment_tokens ADD COLUMN name TEXT NOT NULL DEFAULT '';
 UPDATE enrollment_tokens SET uses = 1 WHERE used_at IS NOT NULL;
 PRAGMA user_version = 15;`
+
+// schemaV16 adds what is known about each vulnerability being exploited
+// (CISA KEV and EPSS) and its CVSS score, host tags, and a daily summary of
+// each host's vulnerabilities for trends, filled from the scans kept so far.
+const schemaV16 = `
+ALTER TABLE findings ADD COLUMN cvss_score REAL NOT NULL DEFAULT 0;
+ALTER TABLE findings ADD COLUMN cvss_vector TEXT NOT NULL DEFAULT '';
+ALTER TABLE findings ADD COLUMN kev INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE findings ADD COLUMN kev_added TEXT NOT NULL DEFAULT '';
+ALTER TABLE findings ADD COLUMN kev_due TEXT NOT NULL DEFAULT '';
+ALTER TABLE findings ADD COLUMN ransomware INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE findings ADD COLUMN epss REAL;
+ALTER TABLE findings ADD COLUMN epss_percentile REAL;
+ALTER TABLE findings ADD COLUMN priority TEXT NOT NULL DEFAULT '';
+ALTER TABLE scans ADD COLUMN exploited INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE scans ADD COLUMN exploited_fixable INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE scans ADD COLUMN likely INTEGER NOT NULL DEFAULT 0;
+-- exploit_data: 1 when the scan had KEV or EPSS data, so 0 exploited
+-- means none rather than unknown.
+ALTER TABLE scans ADD COLUMN exploit_data INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE host_tags (
+	host_id TEXT NOT NULL REFERENCES hosts (id) ON DELETE CASCADE,
+	tag     TEXT NOT NULL,
+	PRIMARY KEY (host_id, tag)
+);
+CREATE INDEX host_tags_by_tag ON host_tags (tag);
+CREATE TABLE host_trends (
+	host_id   TEXT NOT NULL REFERENCES hosts (id) ON DELETE CASCADE,
+	day       TEXT NOT NULL,
+	critical  INTEGER NOT NULL DEFAULT 0,
+	high      INTEGER NOT NULL DEFAULT 0,
+	medium    INTEGER NOT NULL DEFAULT 0,
+	low       INTEGER NOT NULL DEFAULT 0,
+	unknown   INTEGER NOT NULL DEFAULT 0,
+	exploited INTEGER NOT NULL DEFAULT 0,
+	likely    INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (host_id, day)
+);
+INSERT OR REPLACE INTO host_trends (host_id, day, critical, high, medium, low, unknown)
+	SELECT s.host_id, substr(s.finished_at, 1, 10), s.critical, s.high, s.medium, s.low, s.unknown
+	FROM scans s JOIN hosts h ON h.id = s.host_id
+	WHERE s.status = 'succeeded' AND s.finished_at IS NOT NULL AND s.checks LIKE '%,packages,%'
+	ORDER BY s.finished_at, s.rowid;
+PRAGMA user_version = 16;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

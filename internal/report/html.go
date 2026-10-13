@@ -24,6 +24,8 @@ type Waiting struct {
 	Package   string
 	Installed string
 	Count     int
+	// Exploited counts the CVEs known to be exploited (CISA KEV).
+	Exploited int
 	Severity  string
 	Fix       string
 }
@@ -92,6 +94,9 @@ func newView(report Report, fingerprint string) view {
 			order = append(order, key)
 		}
 		group.Count++
+		if vulnerability.KEV {
+			group.Exploited++
+		}
 		if rank(vulnerability.Severity) < rank(group.Severity) {
 			group.Severity = vulnerability.Severity
 		}

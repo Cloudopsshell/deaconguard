@@ -44,7 +44,7 @@ var ovalAttributes = map[string]string{}
 
 func init() {
 	for _, name := range []string{
-		"id", "class", "source", "ref_id", "ref_url", "priority", "cvss_severity",
+		"id", "class", "source", "ref_id", "ref_url", "priority", "cvss_severity", "cvss_score", "cvss_vector",
 		"operator", "negate", "test_ref", "definition_ref", "check", "check_existence",
 		"object_ref", "state_ref", "var_ref", "operation", "datatype", "pattern", "item_field",
 	} {
@@ -226,9 +226,11 @@ func evaluateUbuntuOVALReader(contents io.Reader, packages []inventory.Package, 
 					cveURL = "https://ubuntu.com/security/" + reference.attr("ref_id")
 				}
 				severity, cvss := ubuntuSeverity(metadata)
+				score, vector := ubuntuCVSS(metadata, reference.attr("ref_id"))
 				result.Findings = append(result.Findings, Finding{
 					ID: reference.attr("ref_id"), Package: packageName, InstalledVersion: installedVersion,
 					FixedVersion: evaluation.items[key], Severity: severity, CVSSSeverity: cvss,
+					CVSSScore: score, CVSSVector: vector,
 					URL: cveURL, Title: metadata.child("title").value(),
 				})
 			}
@@ -695,6 +697,16 @@ func ubuntuSeverity(metadata *ovalNode) (severity, cvss string) {
 		severity = cvss
 	}
 	return severity, cvss
+}
+
+// ubuntuCVSS is the CVSS v3 score and vector Ubuntu gives the CVE id.
+func ubuntuCVSS(metadata *ovalNode, id string) (float64, string) {
+	for _, cve := range metadata.child("advisory").children("cve") {
+		if strings.TrimSpace(cve.value()) == id {
+			return parseCVSS(cve.attr("cvss_score"), cve.attr("cvss_vector"))
+		}
+	}
+	return 0, ""
 }
 
 // ubuntuPriority maps Ubuntu's priorities; negligible means Ubuntu sees
