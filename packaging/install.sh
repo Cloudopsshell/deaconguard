@@ -19,8 +19,9 @@
 # and shows the command to use; it never asks for a password itself.
 #
 # It installs what DeaconGuard's checks use, from the distribution's own
-# repositories: procps, iproute2, findutils, needs-restarting (RHEL family) and
-# ClamAV with its signature updater (on RHEL, from EPEL, which it enables).
+# repositories: procps, iproute2, findutils, needs-restarting (RHEL family and
+# Fedora) and ClamAV with its signature updater (on RHEL and its rebuilds, from
+# EPEL, which it enables).
 # It installs YARA-X (yr), for the advanced antivirus scan, and cosign, to
 # verify releases, each pinned to a version and checksum.
 # Then it downloads this machine's .deb or .rpm package from a GitHub release,
@@ -101,22 +102,32 @@ install_dependencies() {
 				DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends $packages
 		} >"$work/dependencies.log" 2>&1 ||
 			{ cat "$work/dependencies.log" >&2; fail "apt-get could not install the dependencies ($packages)"; }
+	elif [ "$rpm_installer" = "zypper" ]; then
+		# SUSE has ClamAV in its own repositories, and marks a pending reboot
+		# itself, so needs no needs-restarting.
+		packages="procps iproute2 findutils tar gzip clamav"
+		# shellcheck disable=SC2086 # the package list splits into words on purpose
+		zypper --non-interactive --quiet install --no-recommends $packages >"$work/dependencies.log" 2>&1 ||
+			{ cat "$work/dependencies.log" >&2; fail "zypper could not install the dependencies ($packages)"; }
 	else
 		# ClamAV is in EPEL on RHEL and its rebuilds; Amazon Linux and Fedora have
 		# it. Decide by ID: rebuilds list "fedora" in ID_LIKE too.
 		# shellcheck disable=SC1091
-		case "$(. /etc/os-release && printf '%s' "$ID")" in
+		os_id="$(. /etc/os-release && printf '%s' "$ID")"
+		# shellcheck disable=SC1091
+		os_major="$(. /etc/os-release && printf '%s' "${VERSION_ID%%.*}")"
+		case "$os_id" in
 		amzn | fedora) ;;
 		*)
-			if ! rpm -q epel-release >/dev/null 2>&1; then
-				# Rebuilds such as Rocky carry epel-release; plain RHEL installs it
-				# from the Fedora project, signed with the EPEL key.
+			if ! rpm -q epel-release oracle-epel-release-el"$os_major" 2>/dev/null | grep -qv 'not installed'; then
+				# Rocky and AlmaLinux carry epel-release, Oracle Linux its own
+				# oracle-epel-release; plain RHEL installs it from the Fedora
+				# project, signed with the EPEL key.
 				epel="epel-release"
-				# shellcheck disable=SC1091
-				if [ "$(. /etc/os-release && printf '%s' "$ID")" = "rhel" ]; then
-					# shellcheck disable=SC1091
-					epel="https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(. /etc/os-release && printf '%s' "${VERSION_ID%%.*}").noarch.rpm"
-				fi
+				case "$os_id" in
+				rhel) epel="https://dl.fedoraproject.org/pub/epel/epel-release-latest-$os_major.noarch.rpm" ;;
+				ol) epel="oracle-epel-release-el$os_major" ;;
+				esac
 				"$rpm_installer" install -y -q "$epel" >"$work/epel.log" 2>&1 ||
 					{ cat "$work/epel.log" >&2; fail "could not enable EPEL, which provides ClamAV on $os_name"; }
 				ok "Enabled EPEL (it provides ClamAV on $os_name)"
@@ -129,17 +140,20 @@ install_dependencies() {
 		"$rpm_installer" install -y -q $packages >"$work/dependencies.log" 2>&1 ||
 			{ cat "$work/dependencies.log" >&2; fail "$rpm_installer could not install the dependencies ($packages)"; }
 	fi
-	ok "Dependencies installed: procps, iproute2, findutils, ClamAV$([ "$format" = "rpm" ] && printf ', needs-restarting')"
+	ok "Dependencies installed: procps, iproute2, findutils, ClamAV$([ "$format" = "rpm" ] && [ "$rpm_installer" != "zypper" ] && printf ', needs-restarting')"
 }
 
 # start_signature_updates switches on ClamAV's signature updater, which the
 # packages install but leave off. It downloads the signatures in the
 # background, then checks for new ones several times a day.
 start_signature_updates() {
-	if systemctl enable --now clamav-freshclam.service >"$work/freshclam.log" 2>&1; then
-		ok "ClamAV signature updates on (clamav-freshclam; the first download runs in the background)"
+	# SUSE runs freshclam from a timer instead of a service.
+	unit="clamav-freshclam.service"
+	[ "${rpm_installer:-}" = "zypper" ] && unit="freshclam.timer"
+	if systemctl enable --now "$unit" >"$work/freshclam.log" 2>&1; then
+		ok "ClamAV signature updates on (${unit%.*}; the first download runs in the background)"
 	else
-		printf '  ! ClamAV signature updates could not be switched on; see: systemctl status clamav-freshclam\n'
+		printf '  ! ClamAV signature updates could not be switched on; see: systemctl status %s\n' "$unit"
 	fi
 }
 
@@ -276,6 +290,11 @@ main() {
 		format="deb"
 		command -v apt-get >/dev/null 2>&1 || fail "apt-get is missing on $os_name"
 		;;
+	*" suse "*)
+		format="rpm"
+		rpm_installer="zypper"
+		command -v zypper >/dev/null 2>&1 || fail "zypper is missing on $os_name"
+		;;
 	*" rhel "* | *" fedora "* | *" centos "* | *" amzn "*)
 		format="rpm"
 		if command -v dnf >/dev/null 2>&1; then
@@ -287,7 +306,7 @@ main() {
 		fi
 		;;
 	*)
-		fail "$os_name is not supported. DeaconGuard supports Ubuntu, Debian, RHEL, and Amazon Linux 2023"
+		fail "$os_name is not supported. DeaconGuard supports Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, Oracle Linux, Fedora, openSUSE Leap, SUSE Linux Enterprise, and Amazon Linux 2023"
 		;;
 	esac
 	if [ "$mode" = "agent" ]; then
@@ -297,7 +316,9 @@ main() {
 		os_id="$(. /etc/os-release && printf '%s %s' "${ID:-}" "${VERSION_ID:-}")"
 		case "$os_id" in
 		"ubuntu "* | "debian "* | "rhel "* | "amzn 2023"*) ;;
-		*) fail "DeaconGuard cannot scan $os_name. Agents support Ubuntu LTS, Debian 12 and 13, RHEL 8 and 9, and Amazon Linux 2023" ;;
+		"rocky "[89]* | "rocky 10"* | "almalinux "[89]* | "almalinux 10"* | "ol "[89]* | "ol 10"*) ;;
+		"fedora "[4-9][0-9]* | "opensuse-leap 15.6" | "opensuse-leap 16."* | "sles 15."[6-9] | "sles 16"* | "sled 15."[6-9] | "sled 16"*) ;;
+		*) fail "DeaconGuard cannot scan $os_name. Agents support Ubuntu LTS, Debian 12 and 13, RHEL 8 and 9, Rocky Linux, AlmaLinux and Oracle Linux 8 to 10, Fedora 40 and later, openSUSE Leap 15.6 and 16, SUSE Linux Enterprise 15 SP6 and later, and Amazon Linux 2023" ;;
 		esac
 	fi
 	ok "$os_name, $arch"
@@ -351,6 +372,10 @@ main() {
 	if [ "$format" = "deb" ]; then
 		DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
 			{ cat "$work/install.log" >&2; fail "apt-get could not install $package"; }
+	elif [ "$rpm_installer" = "zypper" ]; then
+		# The package is unsigned: cosign verified the checksums it matches.
+		zypper --non-interactive --quiet install --allow-unsigned-rpm "$work/$package" >"$work/install.log" 2>&1 ||
+			{ cat "$work/install.log" >&2; fail "zypper could not install $package"; }
 	else
 		"$rpm_installer" install -y -q "$work/$package" >"$work/install.log" 2>&1 ||
 			{ cat "$work/install.log" >&2; fail "$rpm_installer could not install $package"; }

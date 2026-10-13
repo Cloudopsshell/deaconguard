@@ -55,7 +55,9 @@ func rpmKernelPackage(name string) bool {
 		return true
 	}
 	return strings.HasPrefix(name, "kernel-debug") || strings.HasPrefix(name, "kernel-rt") ||
-		strings.HasPrefix(name, "kernel-uek") || strings.HasPrefix(name, "kernel-64k")
+		strings.HasPrefix(name, "kernel-uek") || strings.HasPrefix(name, "kernel-64k") ||
+		// SUSE's kernel flavours.
+		strings.HasPrefix(name, "kernel-default") || strings.HasPrefix(name, "kernel-azure") || strings.HasPrefix(name, "kernel-64kb")
 }
 
 // Classify sets each finding's Fix: whether updating, restarting, removing
@@ -96,7 +98,7 @@ func classify(finding Finding, family platform.Family, packages []inventory.Pack
 			return FixUbuntuPro
 		}
 		return FixAvailable
-	case platform.RHEL, platform.AmazonLinux:
+	case platform.RHEL, platform.AmazonLinux, platform.Rocky, platform.Alma, platform.Oracle, platform.Fedora, platform.OpenSUSELeap, platform.SLES:
 		if finding.FixedVersion == "" {
 			return FixNone
 		}
@@ -179,6 +181,13 @@ func runningRPM(candidates []inventory.Package, installedVersion, kernel string)
 		}
 		if kernel == release || kernel == release+"."+item.Arch || strings.HasPrefix(kernel, release+".") {
 			return true
+		}
+		// SUSE: uname -r is 6.4.0-150600.23.25-default for the package
+		// version 6.4.0-150600.23.25.1.
+		if flavour := strings.LastIndexByte(kernel, '-'); flavour > 0 && strings.Count(kernel, "-") >= 2 {
+			if base := kernel[:flavour]; release == base || strings.HasPrefix(release, base+".") {
+				return true
+			}
 		}
 	}
 	return false

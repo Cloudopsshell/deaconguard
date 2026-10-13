@@ -110,7 +110,7 @@ func checkSignatureAge(result *Result, version string, now time.Time) {
 		result.add(Finding{
 			Rule: "antivirus.stale-signatures", Severity: "MEDIUM",
 			Title:    fmt.Sprintf("ClamAV signatures are %d days old", int(age.Hours()/24)),
-			Detail:   "Outdated signatures miss recent malware. Run freshclam or enable the clamav-freshclam service.",
+			Detail:   "Outdated signatures miss recent malware. Run freshclam, or enable the clamav-freshclam service (freshclam.timer on SUSE).",
 			Evidence: version,
 		})
 	}

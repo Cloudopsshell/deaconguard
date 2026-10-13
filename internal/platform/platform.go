@@ -15,6 +15,12 @@ const (
 	AmazonLinux  Family = "amazon-linux"
 	RHEL         Family = "rhel"
 	CentOSStream Family = "centos-stream"
+	Rocky        Family = "rocky"
+	Alma         Family = "almalinux"
+	Oracle       Family = "oracle"
+	Fedora       Family = "fedora"
+	OpenSUSELeap Family = "opensuse-leap"
+	SLES         Family = "sles"
 )
 
 type Platform struct {
@@ -23,6 +29,9 @@ type Platform struct {
 	VersionID string
 	Codename  string
 	Major     int
+	// Minor is the minor version where it picks the feed, such as SLES
+	// 15 SP6's 6.
+	Minor int
 }
 
 func ParseOSRelease(contents string) (map[string]string, error) {
@@ -98,6 +107,31 @@ func Detect(contents string) (Platform, error) {
 			return Platform{}, fmt.Errorf("unsupported RHEL release %q", version)
 		}
 		platform.Family = RHEL
+	case "rocky", "almalinux", "ol":
+		if major < 8 || major > 10 {
+			return Platform{}, fmt.Errorf("unsupported %s release %q", values["NAME"], version)
+		}
+		platform.Family = map[string]Family{"rocky": Rocky, "almalinux": Alma, "ol": Oracle}[id]
+	case "fedora":
+		// Fedora releases are supported for about 13 months; Fedora's own
+		// release data says which still get updates.
+		if major < 40 {
+			return Platform{}, fmt.Errorf("unsupported Fedora release %q", version)
+		}
+		platform.Family = Fedora
+	case "opensuse-leap":
+		if version != "15.6" && version != "16.0" {
+			return Platform{}, fmt.Errorf("unsupported openSUSE Leap release %q: 15.6 and 16.0 are supported", version)
+		}
+		platform.Family = OpenSUSELeap
+		platform.Minor = minorVersion(version)
+	case "sles", "sled":
+		minor := minorVersion(version)
+		if !(major == 15 && minor >= 6) && major != 16 {
+			return Platform{}, fmt.Errorf("unsupported SUSE Linux Enterprise release %q: 15 SP6 and later are supported", version)
+		}
+		platform.Family = SLES
+		platform.Minor = minor
 	case "centos":
 		if strings.Contains(strings.ToLower(values["NAME"]), "centos stream") && (major == 9 || major == 10) {
 			return Platform{}, fmt.Errorf("CentOS Stream %d is recognized but unsupported: no authoritative advisory feed is available", major)
@@ -108,6 +142,12 @@ func Detect(contents string) (Platform, error) {
 	}
 
 	return platform, nil
+}
+
+func minorVersion(version string) int {
+	_, minorText, _ := strings.Cut(version, ".")
+	minor, _ := strconv.Atoi(minorText)
+	return minor
 }
 
 func versionMajor(version string) (int, error) {
