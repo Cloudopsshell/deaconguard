@@ -8,6 +8,7 @@
 
 ## Checklist
 
+- [ ] I have signed the [Contributor License Agreement](https://github.com/Cloudopsshell/deaconguard/blob/main/CLA.md) (the CLA Assistant bot asks on your first pull request)
 - [ ] Tests added or updated, and `make test vet` passes
 - [ ] `CHANGELOG.md` updated under `[Unreleased]` (if users would notice the change)
 - [ ] README updated (if behavior, commands, or setup changed)
