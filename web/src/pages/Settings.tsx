@@ -41,6 +41,17 @@ export function Settings() {
       <PageHeader title="Settings" description="Settings for everyone using this server." />
       <Card className="mb-6">
         <CardHeader
+          title="Notifications"
+          description="Email, Slack, Teams or webhooks for newly exploited vulnerabilities, malware, failed scans, offline agents, and daily or weekly digests."
+          action={
+            <Link to="/notifications" className="text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+              Manage notifications
+            </Link>
+          }
+        />
+      </Card>
+      <Card className="mb-6">
+        <CardHeader
           title="Policies"
           description="Your organisation's own controls, tested in every audit next to the baseline."
           action={

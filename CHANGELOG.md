@@ -8,6 +8,23 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-13
+
+### Added
+
+- **Notifications.** Admins add channels under **Settings → Notifications**: email through your mail server (STARTTLS, TLS, or none for a local relay), Slack (incoming webhooks), Microsoft Teams (Workflows webhooks, as Adaptive Cards) and generic webhooks (JSON, signed with HMAC-SHA256 when given a secret). Each channel picks its events, optionally only for hosts with certain tags:
+  - new vulnerabilities known to be exploited (CISA KEV), and new critical vulnerabilities with a fix, compared with the host's previous scan, so nothing is reported twice;
+  - malware or signs of compromise, and changed system files;
+  - failed scans, finished audits with their grade, and agents that stop checking in;
+  - a **daily or weekly digest** at a time in a time zone, with every host's numbers and the known exploited vulnerabilities to fix first; email attaches every open vulnerability as CSV.
+- **Test** sends a message at once and shows the result. Failed messages are retried after 1, 5 and 30 minutes; the page lists what was sent in the last 30 days.
+- The dashboard's address, set on the same page, makes messages link to the host, scan or audit.
+- Adding, changing, testing and removing channels are in the audit log. Passwords, webhook addresses and secrets are never sent back to the dashboard.
+
+### Changed
+
+- **Upgrading:** the database gains notification channels and their delivery log (schema 17).
+
 ## [0.16.0] - 2026-10-13
 
 ### Added
@@ -382,7 +399,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.13.0...v0.14.0

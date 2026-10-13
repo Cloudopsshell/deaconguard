@@ -212,6 +212,65 @@ export interface TrendPoint {
   likely: number;
 }
 
+export type ChannelKind = "email" | "slack" | "teams" | "webhook";
+export type NotificationEvent = "exploited" | "critical" | "malware" | "integrity" | "scan_failed" | "audit" | "agent_offline" | "digest";
+
+/** A channel's settings. Saved secrets come back as "set" (password, secret) or the address's host (url); send them empty to keep them. */
+export interface ChannelConfig {
+  host?: string;
+  port?: number;
+  tls?: "starttls" | "tls" | "none";
+  username?: string;
+  password?: string;
+  from?: string;
+  to?: string[];
+  url?: string;
+  secret?: string;
+}
+
+export interface Delivery {
+  id: number;
+  channel_id: string;
+  event: NotificationEvent | "test";
+  title: string;
+  status: "pending" | "sent" | "failed";
+  attempts: number;
+  next_attempt_at: string;
+  error: string;
+  created_at: string;
+  sent_at: string;
+}
+
+export interface Channel {
+  id: string;
+  name: string;
+  kind: ChannelKind;
+  config: ChannelConfig;
+  enabled: boolean;
+  events: NotificationEvent[];
+  tags: string[];
+  digest: "" | "daily" | "weekly";
+  digest_days: number[];
+  digest_time: string;
+  timezone: string;
+  next_digest_at: string;
+  created_by: string;
+  last?: Delivery;
+}
+
+export interface ChannelInput {
+  name: string;
+  kind?: ChannelKind;
+  config: ChannelConfig;
+  enabled?: boolean;
+  events: NotificationEvent[];
+  tags: string[];
+  digest: "" | "daily" | "weekly";
+  digest_days: number[];
+  digest_time: string;
+  timezone: string;
+}
+
 export interface TagCount {
   tag: string;
   hosts: number;
@@ -808,6 +867,13 @@ export const api = {
   deleteScan: (id: string) => request<{ ok: boolean }>("DELETE", `/api/scans/${id}`),
   vulnerabilities: () => request<Vulnerability[]>("GET", "/api/vulnerabilities"),
   tags: () => request<TagCount[]>("GET", "/api/tags"),
+  notifications: () =>
+    request<{ channels: Channel[]; deliveries: Delivery[]; dashboard_url: string; events: NotificationEvent[] }>("GET", "/api/notifications"),
+  createChannel: (input: ChannelInput) => request<Channel>("POST", "/api/notifications/channels", input),
+  updateChannel: (id: string, input: Partial<ChannelInput>) => request<Channel>("PATCH", `/api/notifications/channels/${id}`, input),
+  deleteChannel: (id: string) => request<Channel>("DELETE", `/api/notifications/channels/${id}`),
+  testChannel: (id: string) => request<Delivery>("POST", `/api/notifications/channels/${id}/test`),
+  setDashboardURL: (url: string) => request<{ dashboard_url: string }>("PUT", "/api/notifications/settings", { dashboard_url: url }),
   setHostTags: (id: string, tags: string[]) => request<{ tags: string[] }>("PUT", `/api/hosts/${id}/tags`, { tags }),
   trends: (days: number, filter: { host?: string; tag?: string } = {}) => {
     const parameters = new URLSearchParams({ days: String(days) });

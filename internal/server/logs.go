@@ -54,6 +54,8 @@ const agentOffline = 2 * time.Minute
 type presence struct {
 	mu   sync.Mutex
 	seen map[string]presenceEntry
+	// onQuiet, when set, hears about each agent that stopped checking in.
+	onQuiet func(hostID, address string, lastSeen time.Time)
 }
 
 type presenceEntry struct {
@@ -89,6 +91,9 @@ func (p *presence) sweep(now time.Time) {
 	for i, entry := range quiet {
 		serverLog(ids[i], store.LogWarning, "The agent on %s stopped checking in; it was last seen at %s",
 			entry.address, entry.at.UTC().Format("15:04:05 UTC"))
+		if p.onQuiet != nil {
+			p.onQuiet(ids[i], entry.address, entry.at)
+		}
 	}
 }
 
