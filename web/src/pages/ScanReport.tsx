@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, ExternalLink, Search, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Flame, Search, ShieldCheck } from "lucide-react";
 import { ReportsPanel } from "../components/ReportsPanel";
 import { api, type CheckId, type Finding, type FixState, type Report, type Severity } from "../api";
 import { actionable, fixCommand, fixMeta, fixOf, fixOrder } from "../lib/fixes";
@@ -23,6 +23,7 @@ import {
   cx,
 } from "../components/ui";
 import { dateTime, normalizeSeverity, severityOrder, severityStyle } from "../lib/format";
+import { CVSSScore, ExploitBadge, priorityRank } from "../lib/exploit";
 
 export function ScanReport() {
   const { scanId = "" } = useParams();
@@ -124,6 +125,10 @@ function PackageReport({ report }: { report: Report }) {
     return { counts: result, toFix: fixable };
   }, [findings]);
   const feed = report.advisory_database;
+  const exploitData = report.exploit_data;
+  // One CVE can affect several packages; count CVEs.
+  const known = [...new Set(findings.filter((finding) => finding.exploit?.kev).map((finding) => finding.id))];
+  const knownFixable = known.filter((id) => findings.some((finding) => finding.id === id && actionable(fixOf(finding)))).length;
 
   return (
     <div className="space-y-6">
@@ -152,9 +157,52 @@ function PackageReport({ report }: { report: Report }) {
             <Meta label="Source">
               <span className="break-all">{feed.source}</span>
             </Meta>
+            <Meta label="Exploit data">
+              {!exploitData ? (
+                <span className="text-slate-500 dark:text-slate-400">Not in scans from before 0.16.0</span>
+              ) : (
+                <>
+                  <span className="block">
+                    CISA KEV:{" "}
+                    {exploitData.kev.available ? (
+                      `catalog ${exploitData.kev.version ?? ""}`
+                    ) : (
+                      <span className="text-amber-700 dark:text-amber-400">unavailable</span>
+                    )}
+                  </span>
+                  <span className="block">
+                    EPSS:{" "}
+                    {exploitData.epss.available ? (
+                      `scores of ${exploitData.epss.version ?? ""}`
+                    ) : (
+                      <span className="text-amber-700 dark:text-amber-400">unavailable</span>
+                    )}
+                  </span>
+                  {(exploitData.kev.error || exploitData.epss.error) && (
+                    <span className="block text-xs text-amber-700 dark:text-amber-400">
+                      {[exploitData.kev.error, exploitData.epss.error].filter(Boolean).join("; ")}
+                    </span>
+                  )}
+                </>
+              )}
+            </Meta>
           </dl>
         </Card>
       </div>
+
+      {known.length > 0 && (
+        <div className="flex gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-900 ring-1 ring-inset ring-red-600/20 dark:bg-red-500/10 dark:text-red-200">
+          <Flame className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            {known.length === 1 ? "1 vulnerability here is" : `${known.length.toLocaleString()} vulnerabilities here are`} known to be
+            exploited by attackers (CISA KEV).{" "}
+            {knownFixable > 0
+              ? `${knownFixable === known.length ? (knownFixable === 1 ? "It has" : "They all have") : `${knownFixable.toLocaleString()} of them have`} a fix: update first.`
+              : "None has a fix yet; consider mitigating or isolating the package."}{" "}
+            They come first in the findings below.
+          </p>
+        </div>
+      )}
 
       {unsupported.length > 0 && (
         <div className="flex gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200">
@@ -275,6 +323,8 @@ type FixFilter = "all" | "now" | FixState;
 function FindingsTable({ findings }: { findings: Finding[] }) {
   const [query, setQuery] = useState("");
   const [severities, setSeverities] = useState<Set<Severity>>(new Set());
+  const [exploitedOnly, setExploitedOnly] = useState(false);
+  const exploitedCount = findings.filter((finding) => finding.priority === "exploited" || finding.priority === "likely").length;
   const fixCounts = useMemo(() => {
     const result: Partial<Record<FixState, number>> = {};
     for (const finding of findings) result[fixOf(finding)] = (result[fixOf(finding)] ?? 0) + 1;
@@ -289,6 +339,7 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
     return findings
       .filter((finding) => fix === "all" || (fix === "now" ? actionable(fixOf(finding)) : fixOf(finding) === fix))
       .filter((finding) => severities.size === 0 || severities.has(normalizeSeverity(finding.severity)))
+      .filter((finding) => !exploitedOnly || finding.priority === "exploited" || finding.priority === "likely")
       .filter(
         (finding) =>
           !needle ||
@@ -298,11 +349,12 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
       )
       .sort(
         (a, b) =>
+          priorityRank(b.priority) - priorityRank(a.priority) ||
           severityOrder.indexOf(normalizeSeverity(a.severity)) - severityOrder.indexOf(normalizeSeverity(b.severity)) ||
           a.package.localeCompare(b.package) ||
           b.id.localeCompare(a.id),
       );
-  }, [findings, query, severities, fix]);
+  }, [findings, query, severities, fix, exploitedOnly]);
 
   function toggle(severity: Severity) {
     setSeverities((current) => {
@@ -360,6 +412,24 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
           ))}
       </div>
       <div className="flex flex-wrap gap-2 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+        {exploitedCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setExploitedOnly((current) => !current)}
+            aria-pressed={exploitedOnly}
+            title="Known exploited (CISA KEV) or likely exploited (EPSS 10% or more)"
+            className={cx(
+              "inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset transition-colors",
+              exploitedOnly
+                ? "bg-red-50 text-red-700 ring-red-600/30 dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/40"
+                : "text-slate-600 ring-slate-300 hover:bg-slate-100 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-800",
+            )}
+          >
+            <Flame className="size-3.5" aria-hidden />
+            Exploited
+            <span className="font-normal tabular-nums opacity-75">{exploitedCount.toLocaleString()}</span>
+          </button>
+        )}
         {severityOrder.map((severity) => {
           const active = severities.has(severity);
           return (
@@ -386,7 +456,7 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
           title="No findings in this report"
           description="No installed package matched a published fix. Rules that were not evaluated, if any, are listed separately."
         />
-      ) : filtered.length === 0 && fix === "now" && severities.size === 0 && !query ? (
+      ) : filtered.length === 0 && fix === "now" && severities.size === 0 && !query && !exploitedOnly ? (
         <EmptyState
           icon={<ShieldCheck className="size-6" />}
           title="Nothing to fix now"
@@ -400,6 +470,8 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
             <tr>
               <Th>Severity</Th>
               <Th>CVE</Th>
+              <Th className="text-right">CVSS</Th>
+              <Th>Exploitation</Th>
               <Th>Package</Th>
               <Th>Installed</Th>
               <Th>Fix</Th>
@@ -433,6 +505,18 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
                   {finding.title && (
                     <p className="mt-0.5 line-clamp-2 max-w-md text-xs text-slate-500 dark:text-slate-400">{finding.title}</p>
                   )}
+                </Td>
+                <Td className="text-right">
+                  <CVSSScore score={finding.cvss_score} vector={finding.cvss_vector} />
+                </Td>
+                <Td>
+                  <ExploitBadge
+                    kev={finding.exploit?.kev}
+                    ransomware={finding.exploit?.ransomware}
+                    due={finding.exploit?.kev_due}
+                    epss={finding.exploit?.epss}
+                    compact
+                  />
                 </Td>
                 <Td className="font-medium">{finding.package}</Td>
                 <Td className="font-mono text-xs break-all">{finding.installed_version}</Td>

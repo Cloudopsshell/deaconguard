@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Bug, Plus, Server, ShieldAlert, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Bug, Flame, Plus, Server, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useCan } from "../lib/role";
 import { api, type HostSummary, type SeverityCounts, type Summary } from "../api";
 import { checkMeta, checkOrder } from "../lib/checks";
@@ -22,14 +22,31 @@ import {
 } from "../components/ui";
 import { countFor, isActive, severityOrder, severityStyle, timeAgo } from "../lib/format";
 import { PackageCountsInline, packageCounts } from "../lib/fixes";
+import { ExploitBadge } from "../lib/exploit";
+import { TrendChart } from "../components/TrendChart";
 
-function riskScore(counts: SeverityCounts) {
-  return counts.critical * 1000 + counts.high * 100 + counts.medium * 10 + counts.low;
+// Known exploited vulnerabilities rank a host above any number of others.
+function riskScore(counts: SeverityCounts, exploited = 0) {
+  return exploited * 1_000_000 + counts.critical * 1000 + counts.high * 100 + counts.medium * 10 + counts.low;
 }
 
-function StatTile({ label, value, detail, icon, tone }: { label: string; value: number; detail: string; icon: ReactNode; tone: string }) {
-  return (
-    <Card className="p-5">
+function StatTile({
+  label,
+  value,
+  detail,
+  icon,
+  tone,
+  to,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  icon: ReactNode;
+  tone: string;
+  to?: string;
+}) {
+  const tile = (
+    <Card className={to ? "h-full p-5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50" : "p-5"}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
@@ -39,6 +56,13 @@ function StatTile({ label, value, detail, icon, tone }: { label: string; value: 
       </div>
       <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{detail}</p>
     </Card>
+  );
+  return to ? (
+    <Link to={to} className="block rounded-xl focus-visible:outline-2 focus-visible:outline-indigo-600">
+      {tile}
+    </Link>
+  ) : (
+    tile
   );
 }
 
@@ -97,7 +121,11 @@ export function Dashboard() {
   const neverScanned = data.host_summaries.filter((host) => !host.last_report && !attention.includes(host));
   const ranked: HostSummary[] = data.host_summaries
     .filter((host) => host.last_report)
-    .sort((a, b) => riskScore(packageCounts(b.last_report!).severity) - riskScore(packageCounts(a.last_report!).severity))
+    .sort(
+      (a, b) =>
+        riskScore(packageCounts(b.last_report!).severity, b.last_report!.exploit?.known) -
+        riskScore(packageCounts(a.last_report!).severity, a.last_report!.exploit?.known),
+    )
     .slice(0, 6);
 
   return (
@@ -184,16 +212,23 @@ export function Dashboard() {
         <StatTile
           label="Critical & high to fix"
           value={critHigh}
-          detail="By the distribution's own rating; start here"
+          detail={`By the distribution's own rating; ${data.unique_cves.toLocaleString()} distinct CVEs in all`}
           icon={<ShieldAlert className="size-5" />}
-          tone="bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300"
+          tone="bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300"
         />
         <StatTile
-          label="Unique CVEs"
-          value={data.unique_cves}
-          detail="Distinct vulnerabilities found"
-          icon={<AlertTriangle className="size-5" />}
-          tone="bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300"
+          label="Known exploited"
+          value={data.exploit.known}
+          to="/vulnerabilities?show=exploited"
+          detail={
+            data.scanned_hosts > 0 && data.exploit.hosts_without_data === data.scanned_hosts
+              ? "No exploit data yet: scan your hosts again to check them against CISA KEV and EPSS"
+              : `${data.exploit.known_fixable.toLocaleString()} with a fix; ${data.exploit.likely.toLocaleString()} more likely to be (EPSS)${
+                  data.exploit.hosts_without_data > 0 ? `; ${data.exploit.hosts_without_data} host${data.exploit.hosts_without_data === 1 ? "" : "s"} not checked yet` : ""
+                }`
+          }
+          icon={<Flame className="size-5" />}
+          tone="bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300"
         />
       </div>
 
@@ -273,12 +308,14 @@ export function Dashboard() {
         </Card>
       </div>
 
+      <TrendChart />
+
       <SecurityChecks summary={data} />
 
       <Card className="mt-6">
         <CardHeader
           title="Top vulnerabilities"
-          description="Those an update fixes first, then by severity and the number of affected hosts"
+          description="Those an update fixes first; among them, known and likely exploited first, then by severity and the number of affected hosts"
           action={
             <Link to="/vulnerabilities" className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
               View all
@@ -297,6 +334,7 @@ export function Dashboard() {
               <tr>
                 <Th>CVE</Th>
                 <Th>Severity</Th>
+                <Th>Exploitation</Th>
                 <Th>Packages</Th>
                 <Th>Fix</Th>
                 <Th className="text-right">Hosts</Th>
@@ -315,6 +353,9 @@ export function Dashboard() {
                   </Td>
                   <Td>
                     <SeverityBadge severity={item.severity} />
+                  </Td>
+                  <Td>
+                    <ExploitBadge kev={item.kev} ransomware={item.ransomware} due={item.kev_due} epss={item.epss} compact />
                   </Td>
                   <Td className="max-w-xs truncate text-slate-600 dark:text-slate-300">{item.packages.join(", ")}</Td>
                   <Td className="text-xs whitespace-nowrap text-slate-600 dark:text-slate-300">

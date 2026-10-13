@@ -43,6 +43,7 @@ func TestBlockersCapTheGrade(t *testing.T) {
 	}{
 		{"high fix available", store.Scan{Fixes: &store.FixSummary{Actionable: store.SeverityCounts{High: 2}}}, nil, "B"},
 		{"critical fix available", store.Scan{Fixes: &store.FixSummary{Actionable: store.SeverityCounts{Critical: 1, High: 3}}}, nil, "C"},
+		{"known exploited fix available", store.Scan{Fixes: &store.FixSummary{Actionable: store.SeverityCounts{High: 1}}, Exploit: store.ExploitCounts{Known: 2, KnownFixable: 1, Data: true}}, nil, "D"},
 		{"changed system files", store.Scan{Fixes: &store.FixSummary{}}, map[string]checks.Result{checks.Integrity: {Findings: []checks.Finding{{Severity: "HIGH"}}}}, "D"},
 		{"malware", store.Scan{Fixes: &store.FixSummary{}}, map[string]checks.Result{checks.Antivirus: {Findings: []checks.Finding{{Severity: "CRITICAL"}}}}, "F"},
 	}

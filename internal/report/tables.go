@@ -13,7 +13,7 @@ import (
 // rows lists every item of a report, one per row: controls, vulnerabilities
 // and other findings, for CSV and the Excel workbook's Items sheet.
 func rows(report Report) [][]string {
-	table := [][]string{{"Type", "ID", "Title", "Severity", "Status", "Details", "How to fix"}}
+	table := [][]string{{"Type", "ID", "Title", "Severity", "Status", "Details", "How to fix", "CVSS", "EPSS", "Known exploited"}}
 	if report.Audit != nil {
 		for _, control := range report.Audit.Controls {
 			details := control.Evidence
@@ -41,12 +41,28 @@ func rows(report Report) [][]string {
 		}
 	}
 	for _, vulnerability := range report.Vulnerabilities {
+		epss, known := "", ""
+		if vulnerability.EPSS != nil {
+			epss = fmt.Sprintf("%.4f", *vulnerability.EPSS)
+		}
+		if vulnerability.KEV {
+			known = "yes, due " + vulnerability.KEVDue
+			if vulnerability.Ransomware {
+				known += ", used in ransomware"
+			}
+		}
 		table = append(table, []string{"Vulnerability", vulnerability.ID, vulnerability.Package + " " + vulnerability.Installed,
-			vulnerability.Severity, FixLabel(vulnerability.Fix), vulnerability.Title, fixedIn(vulnerability)})
+			vulnerability.Severity, FixLabel(vulnerability.Fix), vulnerability.Title, fixedIn(vulnerability), vulnerability.CVSS(), epss, known})
 	}
 	for _, check := range report.CheckResults {
 		for _, finding := range check.Findings {
 			table = append(table, []string{check.Name, finding.Rule, finding.Title, finding.Severity, "Found", finding.Evidence, finding.Detail})
+		}
+	}
+	// Every row has the header's columns, for spreadsheet tools.
+	for index := range table {
+		for len(table[index]) < len(table[0]) {
+			table[index] = append(table[index], "")
 		}
 	}
 	return table
@@ -144,6 +160,11 @@ func XLSX(report Report, fingerprint string) ([]byte, error) {
 		summary = append(summary, []string{"Critical vulnerabilities with a fix", fmt.Sprint(report.Packages.Actionable.Critical)},
 			[]string{"High vulnerabilities with a fix", fmt.Sprint(report.Packages.Actionable.High)},
 			[]string{"Vulnerabilities in all", fmt.Sprint(len(report.Vulnerabilities))})
+		if e := report.Exploit; e != nil {
+			summary = append(summary, []string{"Known exploited (CISA KEV)", fmt.Sprint(e.Known)},
+				[]string{"Known exploited with a fix available", fmt.Sprint(e.KnownFixable)},
+				[]string{"Likely exploited (EPSS 10% or more)", fmt.Sprint(e.Likely)})
+		}
 	}
 	for _, check := range report.CheckResults {
 		summary = append(summary, []string{check.Name, check.Summary + " (" + check.Status + ")"})
