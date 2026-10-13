@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/go-pdf/fpdf v0.9.0
+	github.com/klauspost/compress v1.20.0
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/net v0.60.0
 	golang.org/x/term v0.46.0

@@ -82,7 +82,8 @@ func CollectInventory(t Target) (Inventory, error) {
 		}
 		inventory.DPKGStatus = string(packages)
 	} else {
-		query := "rpm -qa --qf '%{NAME}\\t%{EPOCHNUM}\\t%{VERSION}\\t%{RELEASE}\\t%{SOURCERPM}\\t%{ARCH}\\n'"
+		// The last column is who signed each package, for feeds that check it.
+		query := "rpm -qa --qf '%{NAME}\\t%{EPOCHNUM}\\t%{VERSION}\\t%{RELEASE}\\t%{SOURCERPM}\\t%{ARCH}\\t%|RSAHEADER?{%{RSAHEADER:pgpsig}}:{%|DSAHEADER?{%{DSAHEADER:pgpsig}}:{(none)}|}|\\n'"
 		packages, err := t.Run(query, nil, MaxPackageBytes, CommandTimeout)
 		if err != nil {
 			return Inventory{}, fmt.Errorf("collect installed RPM inventory: %w", err)

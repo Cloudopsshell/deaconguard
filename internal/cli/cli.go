@@ -294,7 +294,7 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 			}
 		}
 	}
-	fmt.Fprintf(output, "Coverage: %v\nMaintenance: %v\n", report["coverage"], report["maintenance"])
+	fmt.Fprintf(output, "Coverage: %v\nRelease support: %v\n", report["coverage"], report["maintenance"])
 	if database, ok := report["advisory_database"].(map[string]any); ok {
 		freshness := "current"
 		if stale, _ := database["feed_stale"].(bool); stale {

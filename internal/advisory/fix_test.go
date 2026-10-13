@@ -82,6 +82,20 @@ func TestClassifyRPM(t *testing.T) {
 	}
 }
 
+func TestClassifySUSEKernel(t *testing.T) {
+	packages := []inventory.Package{
+		{Name: "kernel-default", Version: "6.4.0-150600.23.25.1", Arch: "x86_64"},
+		{Name: "kernel-default", Version: "6.4.0-150600.23.30.1", Arch: "x86_64"},
+	}
+	finding := Finding{Package: "kernel-default", InstalledVersion: "6.4.0-150600.23.25.1", FixedVersion: "6.4.0-150600.23.28.1"}
+	if got := fixOf(t, platform.SLES, packages, "6.4.0-150600.23.25-default", finding); got != FixReboot {
+		t.Errorf("running the vulnerable kernel: %s", got)
+	}
+	if got := fixOf(t, platform.OpenSUSELeap, packages, "6.4.0-150600.23.30-default", finding); got != FixOldKernel {
+		t.Errorf("running the newer kernel: %s", got)
+	}
+}
+
 func TestUbuntuSeverityIsUbuntusPriority(t *testing.T) {
 	metadata := func(priority, cvss string) *ovalNode {
 		cve := &ovalNode{Name: "cve", Attrs: []ovalAttr{{"priority", priority}, {"cvss_severity", cvss}}}

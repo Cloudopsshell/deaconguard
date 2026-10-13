@@ -102,8 +102,9 @@ nfpms:
         dependencies:
           - passwd
       rpm:
+        # A file, not shadow-utils: SUSE packages useradd as shadow.
         dependencies:
-          - shadow-utils
+          - /usr/sbin/useradd
     bindir: /usr/bin
     contents:
       - src: README.md

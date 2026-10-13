@@ -139,6 +139,7 @@ func XLSX(report Report, fingerprint string) ([]byte, error) {
 		{report.Title()},
 		{"Host", report.Host},
 		{"Operating system", report.OS},
+		{"Release support", report.Support()},
 		{"Prepared for", report.Client},
 		{"Prepared by", strings.Trim(report.GeneratedBy+", "+report.Branding.Company, ", ")},
 		{"Scanned", formatDate(report.StartedAt)},

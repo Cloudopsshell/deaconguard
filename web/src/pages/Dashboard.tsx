@@ -135,7 +135,7 @@ export function Dashboard() {
         description={`Latest results from ${data.scanned_hosts} of ${data.hosts} registered host${data.hosts === 1 ? "" : "s"}.`}
       />
 
-      {(attention.length > 0 || data.stale_feeds > 0 || data.unsupported > 0 || (data.stale_hosts?.length ?? 0) > 0) && (
+      {(attention.length > 0 || data.stale_feeds > 0 || data.unsupported > 0 || (data.stale_hosts?.length ?? 0) > 0 || (data.release_hosts?.length ?? 0) > 0) && (
         <div className="mb-6 space-y-2">
           {attention.length > 0 && (
             <Notice>
@@ -174,6 +174,21 @@ export function Dashboard() {
               ) : (
                 "Their schedules have not produced a result; check the Logs page."
               )}
+            </Notice>
+          )}
+          {data.release_hosts && data.release_hosts.length > 0 && (
+            <Notice>
+              {data.release_hosts.length} host{data.release_hosts.length === 1 ? " runs a release" : "s run releases"} past regular support:{" "}
+              {data.release_hosts.map((host, index) => (
+                <span key={host.id}>
+                  {index > 0 && ", "}
+                  <Link to={`/hosts/${host.id}`} className="font-semibold underline" title={host.note}>
+                    {host.address}
+                  </Link>{" "}
+                  ({host.os}, {host.state === "ended" ? "end of life" : "extended support only"})
+                </span>
+              ))}
+              . Without vendor fixes, new vulnerabilities stay open; upgrade to a supported release.
             </Notice>
           )}
           {data.stale_feeds > 0 && (

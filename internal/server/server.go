@@ -24,6 +24,7 @@ import (
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
+	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/local"
 	"deaconguard/internal/store"
 )
@@ -360,7 +361,10 @@ type summary struct {
 	HostsToUpdate int `json:"hosts_to_update"`
 	// StaleHosts lists hosts whose latest package results are older than
 	// staleAfter, so their findings may be out of date.
-	StaleHosts       []staleHost             `json:"stale_hosts"`
+	StaleHosts []staleHost `json:"stale_hosts"`
+	// ReleaseHosts lists hosts whose release is past its vendor's regular
+	// support, as their latest scan found.
+	ReleaseHosts     []releaseHost           `json:"release_hosts"`
 	HostSummaries    []store.HostSummary     `json:"host_summaries"`
 	Checks           map[string]*checkTotals `json:"checks"`
 	TopVulnerability []store.Vulnerability   `json:"top_vulnerabilities"`
@@ -399,6 +403,15 @@ type staleHost struct {
 	Scheduled bool `json:"scheduled"`
 }
 
+type releaseHost struct {
+	ID      string `json:"id"`
+	Address string `json:"address"`
+	OS      string `json:"os"`
+	// State is lifecycle.Ended or lifecycle.Extended.
+	State string `json:"state"`
+	Note  string `json:"note"`
+}
+
 // checkTotals aggregates each host's latest result for one check.
 type checkTotals struct {
 	Hosts             int                  `json:"hosts"`
@@ -430,7 +443,7 @@ func buildSummary() (summary, error) {
 		return summary{}, err
 	}
 	result := summary{Hosts: len(hosts), UniqueCVEs: len(vulnerabilities), HostSummaries: hosts, Checks: make(map[string]*checkTotals),
-		Fixes: store.FixSummary{Counts: make(map[string]int)}, StaleHosts: make([]staleHost, 0)}
+		Fixes: store.FixSummary{Counts: make(map[string]int)}, StaleHosts: make([]staleHost, 0), ReleaseHosts: make([]releaseHost, 0)}
 	for _, host := range hosts {
 		for id, check := range host.Checks {
 			totals := result.Checks[id]
@@ -468,6 +481,9 @@ func buildSummary() (summary, error) {
 			result.StaleHosts = append(result.StaleHosts, staleHost{ID: host.ID, Address: host.Address, ScannedAt: report.StartedAt, Scheduled: host.NextScan != nil})
 		}
 		result.ScannedHosts++
+		if life := report.Lifecycle; life != nil && (life.State == lifecycle.Ended || life.State == lifecycle.Extended) {
+			result.ReleaseHosts = append(result.ReleaseHosts, releaseHost{ID: host.ID, Address: host.Address, OS: report.OS, State: life.State, Note: life.Note})
+		}
 		if report.Exploit.Data {
 			result.Exploit.Known += report.Exploit.Known
 			result.Exploit.KnownFixable += report.Exploit.KnownFixable

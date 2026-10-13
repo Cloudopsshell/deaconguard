@@ -18,9 +18,9 @@ const (
 	sshdConfigCommand = `for f in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do [ -r "$f" ] && printf '==> %s <==\n' "$f" && cat "$f"; done 2>/dev/null; true`
 	listeningCommand  = "ss -H -tuln 2>/dev/null || netstat -tuln 2>/dev/null"
 	rebootDebian      = "if [ -f /var/run/reboot-required ]; then echo REBOOT_REQUIRED; cat /var/run/reboot-required.pkgs 2>/dev/null; fi; true"
-	rebootRPM         = "if command -v needs-restarting >/dev/null 2>&1; then needs-restarting -r >/dev/null 2>&1; echo \"EXIT $?\"; fi; true"
+	rebootRPM         = "if [ -f /run/reboot-needed ]; then echo 'EXIT 1'; elif command -v needs-restarting >/dev/null 2>&1; then needs-restarting -r >/dev/null 2>&1; echo \"EXIT $?\"; elif command -v dnf5 >/dev/null 2>&1; then dnf5 -q needs-restarting -r >/dev/null 2>&1; echo \"EXIT $?\"; fi; true"
 	autoUpdateDebian  = "cat /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/50unattended-upgrades 2>/dev/null | grep -i 'Unattended-Upgrade\"' ; true"
-	autoUpdateRPM     = "systemctl is-enabled dnf-automatic.timer dnf-automatic-install.timer 2>/dev/null; true"
+	autoUpdateRPM     = "systemctl is-enabled dnf-automatic.timer dnf-automatic-install.timer dnf5-automatic.timer os-update.timer 2>/dev/null; true"
 	firewallCommand   = "(ufw status 2>/dev/null; firewall-cmd --state 2>/dev/null; nft list ruleset 2>/dev/null | head -n 2000; iptables -S 2>/dev/null | head -n 2000) ; true"
 )
 
@@ -242,8 +242,8 @@ func checkRebootRPM(result *Result, output []byte) {
 	if strings.TrimSpace(string(output)) == "EXIT 1" {
 		result.add(Finding{
 			Rule: "config.reboot-required", Severity: "MEDIUM", Title: "Reboot required to finish applying updates",
-			Detail:   "needs-restarting reports that core packages were updated since boot. The old, vulnerable code keeps running until a reboot.",
-			Evidence: "needs-restarting -r exited with status 1",
+			Detail:   "Core packages were updated since boot. The old, vulnerable code keeps running until a reboot.",
+			Evidence: "needs-restarting -r exited with status 1, or zypper left /run/reboot-needed",
 		})
 	}
 }
@@ -269,8 +269,8 @@ func checkAutoUpdatesRPM(result *Result, output []byte) {
 	}
 	result.add(Finding{
 		Rule: "config.auto-updates-off", Severity: "LOW", Title: "Automatic security updates are not enabled",
-		Detail:   "dnf-automatic installs updates on a schedule. Without it, fixes wait for someone to apply them.",
-		Evidence: "dnf-automatic.timer and dnf-automatic-install.timer are not enabled",
+		Detail:   "dnf-automatic (os-update on SUSE) installs updates on a schedule. Without it, fixes wait for someone to apply them.",
+		Evidence: "none of dnf-automatic.timer, dnf-automatic-install.timer, dnf5-automatic.timer and os-update.timer is enabled",
 	})
 }
 

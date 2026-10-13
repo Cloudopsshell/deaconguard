@@ -67,6 +67,7 @@
   {{if .R.Client}}<div><dt>Prepared for</dt><dd>{{.R.Client}}</dd></div>{{end}}
   <div><dt>Prepared by</dt><dd>{{.R.GeneratedBy}}{{if .R.Branding.Company}}, {{.R.Branding.Company}}{{end}}</dd></div>
   <div><dt>Scanned</dt><dd>{{.Scanned}}</dd></div>
+  {{with .R.Support}}<div><dt>Release support</dt><dd>{{.}}</dd></div>{{end}}
   <div><dt>Checks</dt><dd>{{.CheckNames}}</dd></div>
 </dl>
 {{if .R.Notes}}<p>{{.R.Notes}}</p>{{end}}

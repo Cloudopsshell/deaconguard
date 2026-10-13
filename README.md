@@ -41,7 +41,7 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 - **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself. The server also runs [in a container](#docker-compose-and-kubernetes), with Docker, Compose or Kubernetes, and the agent runs on every Kubernetes node as a DaemonSet.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
 - **Server memory:** give the server at least **1 GB of memory** (RAM plus swap). It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB. With too little, Linux stops the server mid-scan, and the dashboard says so after it restarts.
-- **Network:** the server needs HTTPS access to the distributions' advisory feeds, and to `www.cisa.gov` and `epss.empiricalsecurity.com` for exploit data. With [notifications](#notifications), it also reaches your mail server and webhooks. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
+- **Network:** the server needs HTTPS access to the distributions' advisory feeds (the hosts are listed under [Supported distributions](#supported-distributions)), and to `www.cisa.gov` and `epss.empiricalsecurity.com` for exploit data. With [notifications](#notifications), it also reaches your mail server and webhooks. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
 
 ## Install
 
@@ -71,14 +71,14 @@ The script detects the distribution and architecture, then:
 
 1. **Installs what DeaconGuard's checks use**, from the distribution's own signed repositories, on servers and agents alike:
 
-   | For | Debian, Ubuntu | RHEL 8/9, Amazon Linux 2023 |
-   | --- | --- | --- |
-   | Malware check (`ps`, `find`) | `procps`, `findutils` | `procps-ng`, `findutils` |
-   | Security configuration check (`ss`) | `iproute2` | `iproute` |
-   | Pending-reboot check | (not needed) | `needs-restarting` |
-   | Antivirus scan, Basic | `clamav`, `clamav-freshclam` | `clamav` and its updater; on RHEL from **EPEL**, which the script enables |
+   | For | Debian, Ubuntu | RHEL, Rocky, AlmaLinux, Oracle Linux, Fedora, Amazon Linux 2023 | openSUSE Leap, SUSE Linux Enterprise |
+   | --- | --- | --- | --- |
+   | Malware check (`ps`, `find`) | `procps`, `findutils` | `procps-ng`, `findutils` | `procps`, `findutils` |
+   | Security configuration check (`ss`) | `iproute2` | `iproute` | `iproute2` |
+   | Pending-reboot check | (not needed) | `needs-restarting` | (not needed) |
+   | Antivirus scan, Basic | `clamav`, `clamav-freshclam` | `clamav` and its updater; on RHEL and its rebuilds from **EPEL**, which the script enables (`oracle-epel-release` on Oracle Linux) | `clamav` |
 
-   It switches on ClamAV's signature updates (`clamav-freshclam`), which download about 110 MB of signatures in the background and keep them current. Already installed packages are left as they are.
+   It switches on ClamAV's signature updates (`clamav-freshclam`, or `freshclam.timer` on SUSE), which download about 110 MB of signatures in the background and keep them current. Already installed packages are left as they are.
 2. **Installs [YARA-X](https://virustotal.github.io/yara-x/)** (`yr`, for the Advanced antivirus scan) and **[cosign](https://docs.sigstore.dev)** (to verify releases) to `/usr/local/bin`: each a pinned version, checked against a pinned checksum. A `yr` installed elsewhere, such as by a package, and an existing cosign are left as they are.
 3. Downloads the `.deb` or `.rpm` package from GitHub over HTTPS, **verifies with cosign that `checksums.txt` was signed by this repository's release workflow**, and checks the package against it. DeaconGuard is not installed when a check fails. It then runs `deaconguard setup server`, which creates the first dashboard account and starts the server, or `deaconguard setup agent`, which enrolls the machine and starts the agent. Running it again upgrades DeaconGuard and keeps the existing setup.
 
@@ -103,7 +103,7 @@ sudo apt install "./deaconguard_${VERSION}_linux_${ARCH}.deb"
 deaconguard version
 ```
 
-#### RHEL, Fedora, and Amazon Linux
+#### RHEL, Rocky Linux, AlmaLinux, Oracle Linux, Fedora, and Amazon Linux
 
 ```sh
 VERSION=0.1.1
@@ -114,6 +114,14 @@ curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${V
 sha256sum --check --ignore-missing checksums.txt
 sudo dnf install "./deaconguard_${VERSION}_linux_${ARCH}.rpm"
 deaconguard version
+```
+
+#### openSUSE and SUSE Linux Enterprise
+
+Download and check the `.rpm` as above, then install it with zypper. The package itself is not signed; the checksum you just verified is what vouches for it.
+
+```sh
+sudo zypper install --allow-unsigned-rpm "./deaconguard_${VERSION}_linux_${ARCH}.rpm"
 ```
 
 #### Other Linux systems and macOS
@@ -288,7 +296,7 @@ Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.
 | --- | --- |
 | Install script | Run `curl -fsSL https://get.deaconguard.io \| sudo sh -` again, on the server and on each agent (an enrolled agent stays an agent); `DEACONGUARD_VERSION` with `sudo -E` picks a specific release |
 | `.deb` | Run the [Debian and Ubuntu](#debian-and-ubuntu) steps with the new `VERSION` |
-| `.rpm` | Run the [RHEL, Fedora, and Amazon Linux](#rhel-fedora-and-amazon-linux) steps with the new `VERSION` |
+| `.rpm` | Run the [RHEL, Rocky Linux, AlmaLinux, Oracle Linux, Fedora, and Amazon Linux](#rhel-rocky-linux-almalinux-oracle-linux-fedora-and-amazon-linux) steps with the new `VERSION`, or [the SUSE steps](#opensuse-and-suse-linux-enterprise) |
 | Archive | Run the [archive](#other-linux-systems-and-macos) steps with the new `VERSION`; they replace `/usr/local/bin/deaconguard` |
 | Compose | Change the image tag in `compose.yaml` and run `docker compose up -d` |
 | Helm | `helm upgrade` each release with `--version X.Y.Z` and `--reuse-values` |
@@ -342,7 +350,8 @@ To restore, stop DeaconGuard and copy the backup back into place.
 
 ```sh
 sudo apt remove deaconguard                 # Debian and Ubuntu
-sudo dnf remove deaconguard                 # RHEL, Fedora, Amazon Linux
+sudo dnf remove deaconguard                 # RHEL and its rebuilds, Fedora, Amazon Linux
+sudo zypper remove deaconguard              # openSUSE, SUSE Linux Enterprise
 sudo rm /usr/local/bin/deaconguard          # archive install
 ```
 
@@ -354,7 +363,7 @@ Each scan runs the checks you choose, in the web UI's scan dialog or with `deaco
 
 | Check | What it does | Commands |
 | --- | --- | --- |
-| Package vulnerabilities | Compares installed packages and the running kernel with official advisories (see [Supported distributions](#supported-distributions)). | `/etc/os-release`, the DPKG status file or `rpm -qa`, `uname -r` |
+| Package vulnerabilities | Compares installed packages and the running kernel with official advisories (see [Supported distributions](#supported-distributions)), and says whether the release still gets security fixes. | `/etc/os-release`, the DPKG status file or `rpm -qa` (with each package's signing key), `uname -r` |
 | System file integrity | Verifies packaged files against the package manager's checksums. Changed binaries and libraries, a classic rootkit sign, are reported; edited configuration files are counted but not reported. | `dpkg --verify` or `rpm -Va` |
 | Malware & compromise indicators | Looks for crypto-miner processes, programs running from `/tmp`, `/dev/shm`, memory, or deleted files, programs disguised as kernel threads, `/etc/ld.so.preload`, hidden executables in temporary directories, and download-and-execute or reverse-shell patterns in cron and systemd. This is not a complete antivirus scan. | `/proc`, `ps`, `find` on temporary directories, cron and systemd files |
 | Security configuration | Reports SSH root or password login, empty passwords, X11 forwarding, risky services such as Redis, databases, Telnet, or the Docker API listening on all interfaces, pending reboots, disabled automatic updates, and, with sudo, a missing host firewall. | sshd configuration, `ss`/`netstat`, reboot and update settings, firewall rules |
@@ -370,7 +379,7 @@ The server marks every package vulnerability with what is known about attackers 
 
 - **Known exploited:** the CVE is in CISA's [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) catalog, with the date US federal agencies must fix it by, and whether it is used in ransomware.
 - **Likely exploited:** [EPSS](https://www.first.org/epss/), from FIRST, gives the CVE a 10% or higher chance of being exploited in the next 30 days. Every CVE shows its EPSS score.
-- The **CVSS** v3 base score and vector, where the distribution publishes them (Ubuntu and Red Hat; Debian and Amazon Linux don't).
+- The **CVSS** v3 base score and vector, where the distribution publishes them (Ubuntu, Red Hat and SUSE; the others don't).
 
 Lists put known exploited first, then likely exploited, then by severity: the dashboard, **Vulnerabilities** (with an **Exploited** filter), each scan, reports, and `deaconguard report`. A known exploited vulnerability with a fix lowers an audit's grade to D at most. When KEV or EPSS can't be downloaded and isn't cached, the scan says so, and its vulnerabilities are not marked either way: missing data is never shown as "not exploited". Scans from before 0.16.0 have no exploit data until the host is scanned again.
 
@@ -381,7 +390,7 @@ By default checks run as the user running DeaconGuard, which cannot see other us
 A server audit checks one machine from top to bottom and grades it A to F: for handing a newly built server over to a client or team, or checking where an existing one stands. It runs every check above, including the 72-control hardening baseline, plus an antivirus scan (optionally the advanced one) and an inventory of the machine (OS, hardware, disks, addresses, listening services, administrators). Like every scan, it only reads.
 
 - **Run one** with **Run audit** on a host's page, `deaconguard audit HOST_ID [--advanced]` on the server (as the `deaconguard` user), or `deaconguard audit --local` on any machine. An admin can turn on **Audit new machines when they enroll** on the **Server audits** page, so a new server has an audit ready by its handover.
-- **The grade:** the score is the share of applicable baseline controls that pass, weighted by severity (critical 10, high 6, medium 3, low 1): A from 90, B from 80, C from 70, D from 60. Malware caps it at F; system files that differ from their packages, or a [known exploited](#which-vulnerabilities-to-fix-first) vulnerability with a fix, at D; fixable critical vulnerabilities or a failed critical control at C; fixable high vulnerabilities at B. The audit page says what holds the grade back and what couldn't be checked.
+- **The grade:** the score is the share of applicable baseline controls that pass, weighted by severity (critical 10, high 6, medium 3, low 1): A from 90, B from 80, C from 70, D from 60. Malware caps it at F; system files that differ from their packages, or a [known exploited](#which-vulnerabilities-to-fix-first) vulnerability with a fix, or a release past its [end of life](#release-lifecycle), at D; fixable critical vulnerabilities or a failed critical control at C; fixable high vulnerabilities, or a release that gets fixes only through paid or community extended support, at B. The audit page says what holds the grade back and what couldn't be checked.
 - **The audit page** lists every control with its evidence, why it matters and how to fix it, and the inventory. Audits are kept until someone deletes them.
 - **Accepted risks:** an admin can accept a failed control's risk with a reason, for one host or every host, until an expiry date (90 days by default) or indefinitely. It then shows as accepted and leaves the score; the audit log records it.
 
@@ -447,12 +456,33 @@ When sudo needs a password, the scan pauses and the browser asks for it. The ans
 
 ## Supported distributions
 
-- Ubuntu 18.04, 20.04, 22.04, 24.04, and 26.04 LTS: Canonical CVE OVAL package and running-kernel checks. Unsupported OVAL checks are listed, not treated as clean.
-- Debian 12 (Bookworm) and 13 (Trixie): Debian Security Tracker package-source statuses and fixed versions.
-- Amazon Linux 2023: ALAS RSS/bulletins and replacement RPM versions. Repository snapshots are immutable; AWS notes that bulletin pages and repository metadata can be temporarily inconsistent.
-- Red Hat Enterprise Linux 8 and 9: Red Hat's official OVAL feeds. Unsupported OVAL checks are listed.
+| Distribution | Releases | Advisory data | Feed host |
+| --- | --- | --- | --- |
+| Ubuntu | 18.04, 20.04, 22.04, 24.04, 26.04 LTS | Canonical's CVE OVAL, with running-kernel checks | `security-metadata.canonical.com` |
+| Debian | 12 (Bookworm), 13 (Trixie) | Debian Security Tracker: source package statuses and fixed versions | `security-tracker.debian.org` |
+| Red Hat Enterprise Linux | 8, 9 | Red Hat's OVAL | `security.access.redhat.com` |
+| Rocky Linux | 8, 9, 10 | Rocky's errata (`updateinfo`) from the BaseOS and AppStream repositories | `dl.rockylinux.org` |
+| AlmaLinux | 8, 9, 10 | AlmaLinux's OVAL errata | `security.almalinux.org` |
+| Oracle Linux | 8, 9, 10 | Oracle's ELSA OVAL | `linux.oracle.com` |
+| Fedora | 40 and later | Fedora's security updates (`updateinfo`) from the updates repository; release dates from Bodhi | `dl.fedoraproject.org`, `archives.fedoraproject.org`, `bodhi.fedoraproject.org` |
+| openSUSE Leap | 15.6, 16.0 | SUSE's CVE OVAL | `ftp.suse.com` |
+| SUSE Linux Enterprise Server and Desktop | 15 SP6 and later, 16 | SUSE's CVE OVAL | `ftp.suse.com` |
+| Amazon Linux | 2023 | ALAS RSS and bulletins, with replacement RPM versions. AWS notes that bulletin pages and repository metadata can briefly disagree. | `alas.aws.amazon.com` |
 
-CentOS Stream 9/10 is recognized but deliberately rejected: the official repositories checked here publish no `updateinfo` metadata, and RHEL OVAL is not assumed to be compatible. RHEL 10 is not enabled because no official RHEL 10 feed was present in the verified Red Hat feed index. Amazon Linux 2, other RPM distributions, and end-of-life releases are not supported.
+Advisory checks DeaconGuard can't evaluate are listed, never treated as clean. On the RHEL rebuilds, Oracle Linux and SUSE, a finding needs the package to be signed by the distribution: the RPM query reports each package's signing key, so a package from a third-party repository with the same name isn't matched against the distribution's advisories. Agents before 0.19.0 don't report keys; their packages are assumed to be the distribution's, and the scan's coverage says so.
+
+CentOS Stream 9/10 is recognized but deliberately rejected: the official repositories checked here publish no `updateinfo` metadata, and RHEL OVAL is not assumed to be compatible. RHEL 10 is not enabled because no official RHEL 10 feed was present in the verified Red Hat feed index. openSUSE Tumbleweed, Amazon Linux 2, Alpine (planned with container scanning), and other distributions are not supported.
+
+### Release lifecycle
+
+Every scan says whether the release still gets security fixes from its vendor, from the vendor's published dates (Fedora's come from Bodhi at scan time):
+
+- **Supported:** fixes for everyone, until the date shown.
+- **Extended support:** regular support ended; fixes continue only through Ubuntu Pro (ESM), Debian LTS or SUSE LTSS. An audit is graded B at most.
+- **End of life:** no more security fixes. New vulnerabilities aren't fixed or even published for it, so a scan finding little proves little. An audit is graded D at most.
+- **Unknown:** DeaconGuard has no date for the release yet (such as Debian 13 and SUSE Linux Enterprise 16); check the vendor's lifecycle page.
+
+The dashboard lists hosts past regular support, the hosts list and each host's page show a badge, and the scan page and reports show the release's support with a link to the vendor's lifecycle page. Scans before 0.19.0 don't have it until the host is scanned again.
 
 ### What clears each finding
 
@@ -460,13 +490,13 @@ Every package finding says what clears it, on every supported distribution:
 
 | Fix | Meaning | What to do |
 | --- | --- | --- |
-| Update available | The distribution published a fixed package. | `sudo apt update && sudo apt upgrade`, or `sudo dnf upgrade` (Amazon Linux 2023: `sudo dnf upgrade --releasever=latest`, because each machine stays on the release it was installed from) |
+| Update available | The distribution published a fixed package. | `sudo apt update && sudo apt upgrade`, `sudo dnf upgrade`, or `sudo zypper patch` on SUSE (Amazon Linux 2023: `sudo dnf upgrade --releasever=latest`, because each machine stays on the release it was installed from) |
 | Restart needed | The running kernel is vulnerable, and a fixed kernel is already installed. | `sudo reboot` |
-| Old kernel | An older kernel that is installed but not running, kept as a fallback. | `sudo apt autoremove --purge` or `sudo dnf remove --oldinstallonly` |
+| Old kernel | An older kernel that is installed but not running, kept as a fallback. | `sudo apt autoremove --purge`, `sudo dnf remove --oldinstallonly`, or `sudo zypper purge-kernels` |
 | Ubuntu Pro | Ubuntu publishes the fix only in Ubuntu Pro (ESM). | `sudo pro attach` |
 | No fix yet | The distribution knows about it but has not published a fix (Ubuntu's "needs fixing", Debian's open, no-dsa, and postponed). Updating cannot help until it does. | Nothing yet; it clears once a fix ships and you update. |
 
-The dashboard leads with **To fix now** (updates and restarts) and lists the rest by what clears them, never as clean. Severity is the distribution's own rating: Ubuntu's priority, Debian's urgency, Red Hat's and Amazon's advisory severity. For Ubuntu, the generic CVSS rating is shown beside it when it differs, since Ubuntu's priority accounts for how the package is built and used on Ubuntu. Red Hat's and Amazon Linux's feeds only list issues that have a fix, so their findings are never "No fix yet".
+The dashboard leads with **To fix now** (updates and restarts) and lists the rest by what clears them, never as clean. Severity is the distribution's own rating: Ubuntu's priority, Debian's urgency, and the advisory severity of Red Hat, the rebuilds, Oracle, Fedora, SUSE and Amazon. For Ubuntu, the generic CVSS rating is shown beside it when it differs, since Ubuntu's priority accounts for how the package is built and used on Ubuntu. The RPM distributions' feeds only list issues that have a fix, so their findings are never "No fix yet".
 
 Package reports cover the installed DPKG/RPM packages and the running kernel where the platform's feed supports it; they do not cover applications outside the system package manager or containers. The optional checks look for common signs of tampering and misconfiguration, not every possible compromise. No report is a claim that a machine is secure. Missing, invalid, stale-without-cache, or unsupported advisory data must not be interpreted as zero vulnerabilities.
 

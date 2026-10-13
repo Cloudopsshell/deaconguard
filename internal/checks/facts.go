@@ -36,7 +36,7 @@ var userFacts = []fact{
 	{"faillock", "cat /etc/security/faillock.conf"},
 	{"core-limits", "cat /etc/security/limits.conf /etc/security/limits.d/*.conf; cat /etc/systemd/coredump.conf /etc/systemd/coredump.conf.d/*.conf"},
 	{"usb-storage", "modprobe -n -v usb-storage 2>&1"},
-	{"package-signing", "grep -rhiE '^[[:space:]]*(gpgcheck|repo_gpgcheck)[[:space:]]*=' /etc/yum.repos.d /etc/dnf/dnf.conf /etc/yum.conf; grep -rhiE 'AllowUnauthenticated|allow-insecure|trusted=yes' /etc/apt/apt.conf.d /etc/apt/sources.list /etc/apt/sources.list.d"},
+	{"package-signing", "grep -rhiE '^[[:space:]]*(gpgcheck|repo_gpgcheck)[[:space:]]*=' /etc/yum.repos.d /etc/zypp/repos.d /etc/dnf/dnf.conf /etc/yum.conf; grep -rhiE 'AllowUnauthenticated|allow-insecure|trusted=yes' /etc/apt/apt.conf.d /etc/apt/sources.list /etc/apt/sources.list.d"},
 	{"homes", "stat -c '%a %U %n' /home/*"},
 	{"mounts", "cat /proc/mounts"},
 	{"modes", "stat -c '%a %U %G %n' /etc/passwd /etc/group /etc/shadow /etc/gshadow /etc/ssh/sshd_config " +
@@ -49,8 +49,10 @@ var userFacts = []fact{
 	{"listening", "if command -v ss >/dev/null; then ss -H -tuln; elif command -v netstat >/dev/null; then netstat -tuln; else echo " + noSocketTool + "; fi"},
 	{"sshd-files", sshdConfigCommand},
 	{"journald", "cat /etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf; test -d /var/log/journal && echo PERSISTENT_DIRECTORY"},
-	{"reboot", "if [ -f /var/run/reboot-required ]; then echo REBOOT_REQUIRED; fi; if command -v needs-restarting >/dev/null 2>&1; then needs-restarting -r >/dev/null 2>&1; echo \"NEEDS_RESTARTING $?\"; fi"},
-	{"auto-updates", "cat /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/50unattended-upgrades 2>/dev/null | grep -i 'Unattended-Upgrade\"'; systemctl is-enabled dnf-automatic.timer dnf-automatic-install.timer"},
+	// needs-restarting on RHEL; dnf5's plugin on Fedora; zypper marks a
+	// pending reboot with /run/reboot-needed on SUSE.
+	{"reboot", "if [ -f /var/run/reboot-required ] || [ -f /run/reboot-needed ]; then echo REBOOT_REQUIRED; fi; if command -v needs-restarting >/dev/null 2>&1; then needs-restarting -r >/dev/null 2>&1; echo \"NEEDS_RESTARTING $?\"; elif command -v dnf5 >/dev/null 2>&1; then dnf5 -q needs-restarting -r >/dev/null 2>&1; echo \"NEEDS_RESTARTING $?\"; fi"},
+	{"auto-updates", "cat /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/50unattended-upgrades 2>/dev/null | grep -i 'Unattended-Upgrade\"'; systemctl is-enabled dnf-automatic.timer dnf-automatic-install.timer dnf5-automatic.timer os-update.timer"},
 }
 
 // Facts that need root to be complete. Only the account names and whether a

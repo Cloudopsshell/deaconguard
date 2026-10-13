@@ -221,6 +221,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 20 {
+		if err := execInTx(db, schemaV20); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -673,6 +678,13 @@ CREATE TABLE maintenance_windows (
 	created_at TEXT NOT NULL
 );
 PRAGMA user_version = 19;`
+
+// schemaV20 keeps whether each scan's release still gets security fixes, as
+// the scan reported it: lifecycle.Lifecycle in JSON, or ” from scans
+// before 0.19.0.
+const schemaV20 = `
+ALTER TABLE scans ADD COLUMN lifecycle TEXT NOT NULL DEFAULT '';
+PRAGMA user_version = 20;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

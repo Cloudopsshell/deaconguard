@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -10,6 +11,10 @@ type Package struct {
 	Version string
 	Source  string
 	Arch    string
+	// SigningKey is the ID of the key an RPM package was signed with, in
+	// lower-case hex; empty for DPKG, unsigned packages, and agents before
+	// 0.19.0.
+	SigningKey string
 }
 
 func ParseDPKGStatus(contents string) ([]Package, error) {
@@ -52,7 +57,7 @@ func ParseRPMQuery(contents string) ([]Package, error) {
 	packages := make([]Package, 0)
 	for _, line := range strings.Split(strings.TrimSpace(contents), "\n") {
 		fields := strings.Split(line, "\t")
-		if len(fields) != 6 || fields[0] == "" || fields[2] == "" || fields[3] == "" || fields[5] == "" {
+		if (len(fields) != 6 && len(fields) != 7) || fields[0] == "" || fields[2] == "" || fields[3] == "" || fields[5] == "" {
 			return nil, fmt.Errorf("invalid RPM inventory row %q", line)
 		}
 		evr := fields[2] + "-" + fields[3]
@@ -63,12 +68,27 @@ func ParseRPMQuery(contents string) ([]Package, error) {
 		if source == "" {
 			source = fields[0]
 		}
-		packages = append(packages, Package{Name: fields[0], Version: evr, Source: source, Arch: fields[5]})
+		item := Package{Name: fields[0], Version: evr, Source: source, Arch: fields[5]}
+		if len(fields) == 7 {
+			item.SigningKey = signingKey(fields[6])
+		}
+		packages = append(packages, item)
 	}
 	if len(packages) == 0 {
 		return nil, fmt.Errorf("package inventory contains no installed RPM packages")
 	}
 	return packages, nil
+}
+
+var keyID = regexp.MustCompile(`(?i)Key ID ([0-9a-f]{8,16})`)
+
+// signingKey takes the key ID from rpm's pgpsig text, such as "RSA/SHA256,
+// Tue 01 Oct 2024, Key ID 199e2f91fd431d51".
+func signingKey(signature string) string {
+	if match := keyID.FindStringSubmatch(signature); match != nil {
+		return strings.ToLower(match[1])
+	}
+	return ""
 }
 
 func sourcePackageName(sourceRPM string) string {

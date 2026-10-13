@@ -11,6 +11,7 @@ import (
 
 	"deaconguard/internal/audit"
 	"deaconguard/internal/checks"
+	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/store"
 )
 
@@ -28,7 +29,8 @@ func sample(t *testing.T) Report {
 	}
 	scan := store.Scan{ID: "scan1", HostID: "host1", Address: "ip-10-92-0-52", OS: "Ubuntu 24.04 LTS", StartedAt: "2026-10-12T09:00:00Z",
 		Checks: audit.Checks, Fixes: &store.FixSummary{Counts: map[string]int{"available": 2, "none": 1}, Actionable: store.SeverityCounts{High: 1, Medium: 1}},
-		Exploit: store.ExploitCounts{Known: 2, KnownFixable: 1, Data: true}}
+		Exploit:   store.ExploitCounts{Known: 2, KnownFixable: 1, Data: true},
+		Lifecycle: &lifecycle.Lifecycle{State: lifecycle.Supported, Until: "2029-04", Note: "Security fixes until April 2029"}}
 	epss := 0.42
 	raw := map[string]any{
 		"findings": []any{
@@ -94,7 +96,8 @@ func TestReportBuildsInEveryFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 	if bytes.Contains(page, []byte("<script>alert")) || !bytes.Contains(page, []byte("Acme Corp")) || !bytes.Contains(page, []byte(FormatFingerprint(fingerprint))) ||
-		!bytes.Contains(page, []byte("Known exploited, ransomware")) || !bytes.Contains(page, []byte("2 known to be exploited (CISA KEV)")) {
+		!bytes.Contains(page, []byte("Known exploited, ransomware")) || !bytes.Contains(page, []byte("2 known to be exploited (CISA KEV)")) ||
+		!bytes.Contains(page, []byte("Supported: Security fixes until April 2029")) {
 		t.Fatal("the HTML report is not escaped, or misses its client or fingerprint")
 	}
 
