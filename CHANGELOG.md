@@ -8,6 +8,23 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-13
+
+### Added
+
+- **Container image.** `ghcr.io/cloudopsshell/deaconguard`, for amd64 and arm64: the same binary on a minimal base image with no shell, running as a non-root user, signed keyless like the release files, with its SBOM attached.
+- **Docker Compose.** `deploy/compose/compose.yaml` runs the server with its data in a volume, and, with `--profile agent`, an agent that scans the machine Compose runs on.
+- **Kubernetes.** A Helm chart, `oci://ghcr.io/cloudopsshell/charts/deaconguard`, also signed, and Kustomize manifests in `deploy/kustomize`: the server as a StatefulSet with a volume, under the restricted Pod Security Standard, and an agent DaemonSet that scans every node, with an ingress example.
+- **The agent scans the host from a container.** With the host's root filesystem mounted read-only and `DEACONGUARD_HOST_ROOT` set to it, the agent runs its checks there with the host's own tools, so the results match an agent installed on the host. `DEACONGUARD_HOSTNAME` sets the name it reports, such as the node's.
+- **Reusable enrollment tokens.** **Enroll a machine** offers **Many machines**: a token that enrolls any number of machines for 1 to 365 days, with a name, until revoked. The **Agents** page counts the machines each has enrolled. On the command line: `deaconguard token create --reusable [--days N] [--name NAME] [--quiet]`.
+- **Agents enroll themselves** from a token in their environment, `DEACONGUARD_ENROLL_TOKEN_FILE` or `DEACONGUARD_ENROLL_TOKEN`, when not enrolled yet, when the token is for a server with another certificate, or when the server no longer knows them.
+- **The first account from the environment:** `deaconguard serve` creates it from `DEACONGUARD_ADMIN_USER` and `DEACONGUARD_ADMIN_PASSWORD_FILE` (or `DEACONGUARD_ADMIN_PASSWORD`) when there is none.
+- **Trusted proxies:** `deaconguard serve --trusted-proxy CIDR`, or `DEACONGUARD_TRUSTED_PROXIES`, takes each client's address from `X-Forwarded-For` when the request comes through those proxies, so sign-in limits and the audit log work behind an ingress.
+
+### Changed
+
+- **Upgrading:** the database gains reusable tokens (schema 15). Nothing else changes for package installs.
+
 ## [0.14.0] - 2026-10-12
 
 ### Added
@@ -346,7 +363,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.11.0...v0.12.0
