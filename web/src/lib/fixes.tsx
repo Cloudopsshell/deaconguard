@@ -60,15 +60,18 @@ export const fixMeta: Record<
 /** The command that applies a fix state on a machine with this package manager and OS. */
 export function fixCommand(state: FixState, packageManager: string, os: string): string | undefined {
   const dpkg = packageManager === "dpkg";
+  const suse = os.startsWith("openSUSE") || os.startsWith("SUSE");
   switch (state) {
     case "available":
       if (dpkg) return "sudo apt update && sudo apt upgrade";
+      if (suse) return "sudo zypper patch";
       // Amazon Linux 2023 locks each machine to the release it was installed
       // from; fixes published since need the latest release.
       return os.startsWith("Amazon Linux") ? "sudo dnf upgrade --releasever=latest" : "sudo dnf upgrade";
     case "reboot":
       return "sudo reboot";
     case "old_kernel":
+      if (suse) return "sudo zypper purge-kernels";
       return dpkg ? "sudo apt autoremove --purge" : "sudo dnf remove --oldinstallonly";
     case "ubuntu_pro":
       return os.startsWith("Ubuntu") ? "sudo pro attach" : undefined;

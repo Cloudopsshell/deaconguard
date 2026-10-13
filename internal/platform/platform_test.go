@@ -13,6 +13,13 @@ func TestDetectSupportedPlatforms(t *testing.T) {
 		{"Debian 13", "ID=debian\nVERSION_ID=13\n", Debian, 13},
 		{"Amazon Linux 2023", "ID=amzn\nVERSION_ID=2023\n", AmazonLinux, 2023},
 		{"RHEL 9.4", "ID=rhel\nVERSION_ID=\"9.4\"\n", RHEL, 9},
+		{"Rocky Linux 9.6", "ID=\"rocky\"\nVERSION_ID=\"9.6\"\n", Rocky, 9},
+		{"AlmaLinux 10", "ID=\"almalinux\"\nVERSION_ID=\"10.0\"\n", Alma, 10},
+		{"Oracle Linux 8", "ID=\"ol\"\nVERSION_ID=\"8.10\"\n", Oracle, 8},
+		{"Fedora 44", "ID=fedora\nVERSION_ID=44\n", Fedora, 44},
+		{"openSUSE Leap 16.0", "ID=\"opensuse-leap\"\nVERSION_ID=\"16.0\"\n", OpenSUSELeap, 16},
+		{"SLES 15 SP7", "ID=\"sles\"\nVERSION_ID=\"15.7\"\n", SLES, 15},
+		{"SLED 16", "ID=\"sled\"\nVERSION_ID=\"16.0\"\n", SLES, 16},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -37,7 +44,11 @@ func TestDetectRejectsUnsupportedDistributionsAndVersions(t *testing.T) {
 		{"RHEL 7", "ID=rhel\nVERSION_ID=7.9\n"},
 		{"RHEL 10 feed not published", "ID=rhel\nVERSION_ID=10.0\n"},
 		{"Amazon Linux 2", "ID=amzn\nVERSION_ID=2\n"},
-		{"Rocky Linux not yet supported", "ID=rocky\nVERSION_ID=9.4\n"},
+		{"Rocky Linux 7", "ID=rocky\nVERSION_ID=7.9\n"},
+		{"Fedora 39", "ID=fedora\nVERSION_ID=39\n"},
+		{"openSUSE Leap 15.5", "ID=opensuse-leap\nVERSION_ID=15.5\n"},
+		{"openSUSE Tumbleweed", "ID=opensuse-tumbleweed\nVERSION_ID=20261001\n"},
+		{"SLES 15 SP5", "ID=sles\nVERSION_ID=15.5\n"},
 		{"Ubuntu interim release", "ID=ubuntu\nVERSION_ID=23.10\n"},
 	}
 	for _, test := range tests {

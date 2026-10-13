@@ -24,6 +24,7 @@ import {
 } from "../components/ui";
 import { dateTime, normalizeSeverity, severityOrder, severityStyle } from "../lib/format";
 import { CVSSScore, ExploitBadge, priorityRank } from "../lib/exploit";
+import { ReleaseSupport } from "../components/ReleaseSupport";
 
 export function ScanReport() {
   const { scanId = "" } = useParams();
@@ -147,7 +148,9 @@ function PackageReport({ report }: { report: Report }) {
         <Card className="p-5 md:col-span-2">
           <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
             <Meta label="Coverage">{report.coverage}</Meta>
-            <Meta label="Maintenance">{report.maintenance}</Meta>
+            <Meta label="Release support">
+              {report.lifecycle ? <ReleaseSupport lifecycle={report.lifecycle} /> : report.maintenance}
+            </Meta>
             <Meta label="Advisory data">
               <span className={feed.feed_stale ? "font-semibold text-amber-700 dark:text-amber-400" : ""}>
                 {feed.feed_stale ? "Stale" : "Current"} · fetched {dateTime(feed.fetched_at)}
