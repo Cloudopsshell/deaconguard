@@ -668,6 +668,12 @@ type Vulnerability struct {
 	Ransomware bool     `json:"ransomware,omitempty"`
 	EPSS       *float64 `json:"epss,omitempty"`
 	CVSSScore  float64  `json:"cvss_score,omitempty"`
+	// FirstSeen is the earliest any host had it; DueAt the earliest fix
+	// deadline among its hosts; OverdueHosts how many are past it with a fix
+	// waiting.
+	FirstSeen    string `json:"first_seen,omitempty"`
+	DueAt        string `json:"due_at,omitempty"`
+	OverdueHosts int    `json:"overdue_host_count"`
 	// FixableHosts counts the hosts where installing updates or restarting
 	// fixes it.
 	FixableHosts int      `json:"fixable_host_count"`
@@ -695,16 +701,22 @@ type AffectedPackage struct {
 	Ransomware       bool     `json:"ransomware,omitempty"`
 	EPSS             *float64 `json:"epss,omitempty"`
 	CVSSScore        float64  `json:"cvss_score,omitempty"`
+	// FirstSeen is when the host first had the CVE; DueAt when its fix
+	// deadline passes (see SLA); Overdue that it has passed while a fix waits.
+	FirstSeen string `json:"first_seen,omitempty"`
+	DueAt     string `json:"due_at,omitempty"`
+	Overdue   bool   `json:"overdue,omitempty"`
 }
 
 // latestFindings selects findings from the newest successful scan of each
 // registered host.
 const latestFindings = `
 SELECT s.host_id, h.address, s.id, s.started_at, f.cve, f.package, f.installed_version, f.fixed_version,
-	f.fix, f.severity, f.url, f.title, f.priority, f.kev, f.kev_due, f.ransomware, f.epss, f.cvss_score
+	f.fix, f.severity, f.url, f.title, f.priority, f.kev, f.kev_due, f.ransomware, f.epss, f.cvss_score, COALESCE(seen.first_seen, '')
 FROM findings f
 JOIN scans s ON s.id = f.scan_id
 JOIN hosts h ON h.id = s.host_id
+LEFT JOIN host_cve_seen seen ON seen.host_id = s.host_id AND seen.cve = f.cve
 WHERE s.id = (
 	SELECT latest.id FROM scans latest
 	WHERE latest.host_id = s.host_id AND latest.status = 'succeeded' AND latest.checks LIKE '%,packages,%'
@@ -716,6 +728,11 @@ func queryLatestFindings(filter string, arguments ...any) ([]AffectedPackage, []
 	if err != nil {
 		return nil, nil, err
 	}
+	sla, err := GetSLA()
+	if err != nil {
+		return nil, nil, err
+	}
+	now := time.Now()
 	rows, err := db.Query(latestFindings+filter+" ORDER BY h.address, f.package", arguments...)
 	if err != nil {
 		return nil, nil, err
@@ -728,10 +745,11 @@ func queryLatestFindings(filter string, arguments ...any) ([]AffectedPackage, []
 		var cve string
 		if err := rows.Scan(&item.HostID, &item.Address, &item.ScanID, &item.ScannedAt, &cve, &item.Package,
 			&item.InstalledVersion, &item.FixedVersion, &item.Fix, &item.Severity, &item.URL, &item.Title,
-			&item.Priority, &item.KEV, &item.KEVDue, &item.Ransomware, &item.EPSS, &item.CVSSScore); err != nil {
+			&item.Priority, &item.KEV, &item.KEVDue, &item.Ransomware, &item.EPSS, &item.CVSSScore, &item.FirstSeen); err != nil {
 			return nil, nil, err
 		}
 		item.Fix = findingFix(item.Fix, item.FixedVersion)
+		sla.due(&item, now)
 		affected = append(affected, item)
 		cves = append(cves, cve)
 	}
@@ -747,6 +765,7 @@ func Vulnerabilities() ([]Vulnerability, error) {
 	byCVE := make(map[string]*Vulnerability)
 	hosts := make(map[string]map[string]bool)
 	fixable := make(map[string]map[string]bool)
+	overdue := make(map[string]map[string]bool)
 	packages := make(map[string]map[string]bool)
 	for index, item := range affected {
 		cve := cves[index]
@@ -756,6 +775,7 @@ func Vulnerabilities() ([]Vulnerability, error) {
 			byCVE[cve] = vulnerability
 			hosts[cve] = make(map[string]bool)
 			fixable[cve] = make(map[string]bool)
+			overdue[cve] = make(map[string]bool)
 			packages[cve] = make(map[string]bool)
 		}
 		if severityRank(item.Severity) > severityRank(vulnerability.Severity) {
@@ -772,6 +792,15 @@ func Vulnerabilities() ([]Vulnerability, error) {
 			vulnerability.EPSS = item.EPSS
 		}
 		vulnerability.CVSSScore = max(vulnerability.CVSSScore, item.CVSSScore)
+		if item.FirstSeen != "" && (vulnerability.FirstSeen == "" || item.FirstSeen < vulnerability.FirstSeen) {
+			vulnerability.FirstSeen = item.FirstSeen
+		}
+		if item.DueAt != "" && (vulnerability.DueAt == "" || item.DueAt < vulnerability.DueAt) {
+			vulnerability.DueAt = item.DueAt
+		}
+		if item.Overdue {
+			overdue[cve][item.HostID] = true
+		}
 		hosts[cve][item.HostID] = true
 		if actionableFix(item.Fix) {
 			fixable[cve][item.HostID] = true
@@ -782,6 +811,7 @@ func Vulnerabilities() ([]Vulnerability, error) {
 	for cve, vulnerability := range byCVE {
 		vulnerability.HostCount = len(hosts[cve])
 		vulnerability.FixableHosts = len(fixable[cve])
+		vulnerability.OverdueHosts = len(overdue[cve])
 		for name := range packages[cve] {
 			vulnerability.Packages = append(vulnerability.Packages, name)
 		}
@@ -1077,6 +1107,31 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 			finding.FixedVersion, finding.Fix, strings.ToUpper(finding.Severity), strings.ToUpper(finding.CVSSSeverity), finding.URL, finding.Title,
 			finding.CVSSScore, finding.CVSSVector, kev, kevAdded, kevDue, ransomware, epss, percentile, finding.Priority); err != nil {
 			return err
+		}
+	}
+	if slices.Contains(reportChecks(report), CheckPackages) {
+		// When the host first had each vulnerability, for fix deadlines. One
+		// its previous scan didn't have, fixed and back again, starts over.
+		var previous string
+		if err := tx.QueryRow(`SELECT p.id FROM scans p JOIN scans s ON s.host_id = p.host_id
+			WHERE s.id = ? AND p.id != ? AND p.status = ? AND p.checks LIKE ?
+			ORDER BY p.started_at DESC, p.rowid DESC LIMIT 1`, id, id, ScanSucceeded, "%,"+CheckPackages+",%").Scan(&previous); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		seen := map[string]bool{}
+		for _, finding := range findings {
+			if seen[finding.ID] {
+				continue
+			}
+			seen[finding.ID] = true
+			if _, err := tx.Exec(`INSERT INTO host_cve_seen (host_id, cve, first_seen, last_seen)
+				SELECT s.host_id, ?, ?, ? FROM scans s JOIN hosts h ON h.id = s.host_id WHERE s.id = ?
+				ON CONFLICT (host_id, cve) DO UPDATE SET last_seen = excluded.last_seen,
+					first_seen = CASE WHEN ? != '' AND NOT EXISTS (SELECT 1 FROM findings WHERE scan_id = ? AND cve = excluded.cve)
+						THEN excluded.first_seen ELSE host_cve_seen.first_seen END`,
+				finding.ID, finishedAt, finishedAt, id, previous, previous); err != nil {
+				return err
+			}
 		}
 	}
 	if slices.Contains(reportChecks(report), CheckPackages) && len(finishedAt) >= 10 {

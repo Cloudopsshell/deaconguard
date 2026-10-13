@@ -15,6 +15,7 @@ import { RecoveryCodes } from "../components/account/RecoveryCodes";
 import { AppearancePicker } from "../components/AppearancePicker";
 import { Button, Card, CardHeader, Dialog, ErrorMessage, Field, Loading, PageHeader } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
+import { APITokens } from "../components/account/APITokens";
 
 /** A short name for a browser, from its user agent. */
 function browserName(agent: string) {
@@ -60,7 +61,7 @@ export function Account() {
     <>
       <PageHeader
         title="My account"
-        description={`Signed in as ${data.username}, with the ${roleLabels[data.role]} role${roleNotes[data.role]}. Your password, two-step sign-in, appearance and sessions.`}
+        description={`Signed in as ${data.username}, with the ${roleLabels[data.role]} role${roleNotes[data.role]}. Your password, two-step sign-in, appearance, API tokens and sessions.`}
       />
       <div className="space-y-6">
         <Card>
@@ -121,6 +122,8 @@ export function Account() {
             <AppearancePicker />
           </div>
         </Card>
+
+        <APITokens role={data.role} />
 
         <Card>
           <CardHeader

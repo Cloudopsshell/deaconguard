@@ -8,6 +8,19 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-13
+
+### Added
+
+- **API tokens.** **My account → API tokens** creates a token for scripts and tools, with a name, a role up to your own, and a lifetime of up to 365 days or until revoked; send it as `Authorization: Bearer dgt_…`. A token never has more than its account's role, stops when the account is disabled, and can't manage accounts, tokens or sign-in. It shows when and from where it was last used, its actions are in the audit log, and admins revoke anyone's on the **Accounts** page.
+- **SIEM and ticketing channels** for notifications: **syslog** (RFC 5424, over TCP, TLS or UDP, with the event as JSON), **Splunk** (HTTP Event Collector, with an index), **Jira** (an issue per event, Cloud or Data Center) and **ServiceNow** (a record per event, in `incident` or another table).
+- **Fix deadlines.** How many days a vulnerability may stay unfixed, from the scan that first found it on a host: 14 for known exploited, 15 critical, 30 high, 90 medium, 180 low by default, set under **Settings**. The dashboard warns about overdue fixes; **Vulnerabilities** has an **Overdue** filter and a **Due** column; each CVE's page shows every host's deadline; the digest counts them. Upgrading fills in first-seen dates from the scans kept.
+- **Maintenance windows** on the **Schedules** page: for every host or those with given tags, up to 7 days, notifications about them are held back and their scheduled scans can be skipped.
+
+### Changed
+
+- **Upgrading:** the database gains API tokens (schema 18), and first-seen dates and maintenance windows (schema 19).
+
 ## [0.17.0] - 2026-10-13
 
 ### Added
@@ -399,7 +412,8 @@ The first release of DeaconGuard, a Linux security scanner with a server and age
 - **CLI**: `host`, `scan`, `report`, `serve`, `user`, `token`, `agent`, and `version`, sharing one SQLite database with the dashboard.
 - **Distribution**: Linux and macOS archives for amd64 and arm64, plus `.deb` and `.rpm` packages. The packages include the systemd units `deaconguard-server.service` and `deaconguard-agent.service`, which are not enabled on install, and a `deaconguard` system user for the server.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Cloudopsshell/deaconguard/compare/v0.14.0...v0.15.0

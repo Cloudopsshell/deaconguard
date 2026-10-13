@@ -190,6 +190,20 @@ export function Dashboard() {
         </div>
       )}
 
+      {data.sla.enabled && data.sla.overdue > 0 && (
+        <Link
+          to="/vulnerabilities?show=overdue"
+          className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-900 ring-1 ring-red-600/20 ring-inset hover:bg-red-100 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/15"
+        >
+          <AlertTriangle className="size-4 shrink-0" aria-hidden />
+          <span>
+            <strong>{data.sla.overdue.toLocaleString()}</strong> {data.sla.overdue === 1 ? "fix is" : "fixes are"} past {data.sla.overdue === 1 ? "its" : "their"} deadline on{" "}
+            {data.sla.hosts_overdue} host{data.sla.hosts_overdue === 1 ? "" : "s"}
+            {data.sla.due_soon > 0 && `; ${data.sla.due_soon.toLocaleString()} more ${data.sla.due_soon === 1 ? "is" : "are"} due in the next 7 days`}.
+          </span>
+        </Link>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           label="Hosts"

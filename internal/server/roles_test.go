@@ -79,6 +79,13 @@ func TestRolesLimitWhatAccountsCanDo(t *testing.T) {
 		{http.MethodGet, "/api/enrollment-tokens", store.RoleAdmin, nil},
 		{http.MethodPost, "/api/enrollment-tokens", store.RoleAdmin, map[string]any{}},
 		{http.MethodGet, "/api/users", store.RoleAdmin, nil},
+		{http.MethodGet, "/api/tokens", store.RoleAdmin, nil},
+		{http.MethodGet, "/api/settings/sla", store.RoleViewer, nil},
+		{http.MethodPut, "/api/settings/sla", store.RoleAdmin, map[string]any{}},
+		{http.MethodGet, "/api/maintenance", store.RoleViewer, nil},
+		{http.MethodPost, "/api/maintenance", store.RoleOperator, map[string]any{}},
+		{http.MethodDelete, "/api/maintenance/nope", store.RoleOperator, nil},
+		{http.MethodDelete, "/api/tokens/nope", store.RoleAdmin, nil},
 		{http.MethodGet, "/api/audit", store.RoleAdmin, nil},
 		{http.MethodPatch, "/api/settings/security", store.RoleAdmin, map[string]any{"require_mfa": false}},
 	}
