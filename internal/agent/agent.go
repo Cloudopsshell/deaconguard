@@ -1,5 +1,5 @@
 // Package agent is `deaconguard agent`: it enrolls this machine with a DeaconGuard
-// server using a one-time token, then waits for the server to ask for scans,
+// server using an enrollment token, then waits for the server to ask for scans,
 // runs them here, and sends back the results. It only makes outbound HTTPS
 // requests to the server; it opens no port.
 package agent
@@ -61,10 +61,13 @@ func ConfigPath() string {
 	return SystemConfigPath
 }
 
+// ErrNotEnrolled means the agent has no configuration yet.
+var ErrNotEnrolled = errors.New("this machine is not enrolled")
+
 func LoadConfig(path string) (Config, error) {
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Config{}, fmt.Errorf("this machine is not enrolled (%s does not exist); run: sudo deaconguard agent enroll TOKEN", path)
+		return Config{}, fmt.Errorf("%w (%s does not exist); run: sudo deaconguard agent enroll TOKEN", ErrNotEnrolled, path)
 	}
 	if err != nil {
 		return Config{}, err
@@ -444,7 +447,7 @@ func (c *client) yaraRules(ctx context.Context) checks.YARAInput {
 }
 
 func osName() string {
-	contents, err := os.ReadFile("/etc/os-release")
+	contents, err := os.ReadFile(local.HostPath("/etc/os-release"))
 	if err != nil {
 		return ""
 	}

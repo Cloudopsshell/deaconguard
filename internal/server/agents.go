@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"deaconguard/internal/agentapi"
@@ -410,12 +412,73 @@ func limitText(value string, limit int) string {
 	return strings.ToValidUTF8(value, "")
 }
 
+// remoteIP is the address a request came from. Behind a trusted reverse
+// proxy, such as a Kubernetes ingress controller, it is the address the
+// proxy got the request from, from X-Forwarded-For; otherwise the header is
+// ignored, since anyone can send it.
 func remoteIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
+	proxies := trustedProxies.Load()
+	if proxies == nil || !isTrustedProxy(*proxies, host) {
+		return host
+	}
+	// Each proxy appends the address it got the request from, so the
+	// client's is the last one a trusted proxy did not add.
+	forwarded := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for index := len(forwarded) - 1; index >= 0; index-- {
+		address, err := netip.ParseAddr(strings.TrimSpace(forwarded[index]))
+		if err != nil {
+			break
+		}
+		host = address.Unmap().String()
+		if !isTrustedProxy(*proxies, host) {
+			break
+		}
+	}
 	return host
+}
+
+// trustedProxies are the networks whose X-Forwarded-For remoteIP believes.
+var trustedProxies atomic.Pointer[[]netip.Prefix]
+
+// SetTrustedProxies sets the networks of the reverse proxies in front of the
+// dashboard, as CIDRs such as 10.42.0.0/16, or single addresses.
+func SetTrustedProxies(networks []string) error {
+	prefixes := make([]netip.Prefix, 0, len(networks))
+	for _, network := range networks {
+		network = strings.TrimSpace(network)
+		if network == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(network)
+		if err != nil {
+			address, addressError := netip.ParseAddr(network)
+			if addressError != nil {
+				return fmt.Errorf("trusted proxy %q is not an address or a network such as 10.42.0.0/16", network)
+			}
+			prefix = netip.PrefixFrom(address.Unmap(), address.Unmap().BitLen())
+		}
+		prefixes = append(prefixes, prefix.Masked())
+	}
+	trustedProxies.Store(&prefixes)
+	return nil
+}
+
+func isTrustedProxy(proxies []netip.Prefix, host string) bool {
+	address, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	address = address.Unmap()
+	for _, prefix := range proxies {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
 }
 
 // enrollmentTokenResponse is returned once, when a token is created: Token is
@@ -429,6 +492,10 @@ type enrollmentTokenResponse struct {
 
 type createTokenRequest struct {
 	ServerURL string `json:"server_url"`
+	// Reusable tokens enroll any number of machines for Days days.
+	Reusable bool   `json:"reusable"`
+	Days     int    `json:"days"`
+	Name     string `json:"name"`
 }
 
 func (s *Server) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {
@@ -445,13 +512,14 @@ func (s *Server) createEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	token, secret, err := store.CreateEnrollmentToken(request.ServerURL, s.actor(r))
+	options := store.TokenOptions{Reusable: request.Reusable, Lifetime: time.Duration(request.Days) * 24 * time.Hour, Name: request.Name}
+	token, secret, err := store.CreateEnrollmentToken(request.ServerURL, s.actor(r), options)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	encoded := agentapi.Token{ServerURL: request.ServerURL, Pin: s.pin, Secret: secret}.Encode()
-	s.audit(r, "token.create", token.ID[:8], "for "+request.ServerURL+", expires "+token.ExpiresAt)
+	s.audit(r, "token.create", token.ID[:8], token.Describe())
 	writeJSON(w, http.StatusCreated, enrollmentTokenResponse{EnrollmentToken: token, Token: encoded, Command: buildinfo.AgentInstallCommand(encoded)})
 }
 

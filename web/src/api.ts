@@ -105,14 +105,30 @@ export interface MyAccount extends Account {
 
 export interface EnrollmentToken {
   id: string;
+  /** What a reusable token is for, such as a cluster's name. */
+  name: string;
+  /** Reusable tokens enroll any number of machines until they expire or are revoked. */
+  reusable: boolean;
+  /** How many machines the token has enrolled. */
+  uses: number;
   server_url: string;
   created_by: string;
   created_at: string;
   expires_at: string;
+  /** When a one-time token was used, or a reusable one last was. */
   used_at: string | null;
+  /** The machine a one-time token enrolled. */
   host_id: string | null;
   revoked_at: string | null;
   status: "active" | "used" | "expired" | "revoked";
+}
+
+export interface NewTokenInput {
+  server_url: string;
+  reusable?: boolean;
+  /** How many days a reusable token lasts, from 1 to 365. */
+  days?: number;
+  name?: string;
 }
 
 /** Returned once, when a token is created: the only copy of the token. */
@@ -666,8 +682,7 @@ export const api = {
     request<{ ok: boolean }>("POST", `/api/users/${id}/temporary-password`, { password }),
   setRequireMFA: (required: boolean) => request<{ require_mfa: boolean }>("PATCH", "/api/settings/security", { require_mfa: required }),
   enrollmentTokens: () => request<EnrollmentToken[]>("GET", "/api/enrollment-tokens"),
-  createEnrollmentToken: (serverUrl: string) =>
-    request<NewEnrollmentToken>("POST", "/api/enrollment-tokens", { server_url: serverUrl }),
+  createEnrollmentToken: (input: NewTokenInput) => request<NewEnrollmentToken>("POST", "/api/enrollment-tokens", input),
   revokeEnrollmentToken: (id: string) => request<EnrollmentToken>("DELETE", `/api/enrollment-tokens/${id}`),
   audit: () => request<AuditEntry[]>("GET", "/api/audit?limit=500"),
   summary: () => request<Summary>("GET", "/api/summary"),

@@ -10,7 +10,7 @@
 #
 # Server:
 #   curl -fsSL https://get.deaconguard.io | sudo sh -
-# Agent, with the one-time token from the server's Agents page (-E passes the
+# Agent, with the enrollment token from the server's Agents page (-E passes the
 # token to sudo without putting it on a command line other users can see):
 #   curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.... sudo -E sh -
 #
@@ -65,7 +65,7 @@ Usage: install.sh [--server | --agent] [--version VERSION] [SETUP OPTIONS]
                       unless DEACONGUARD_TOKEN is set
   --version VERSION   install this release, such as 0.4.0; default: the latest
 
-Environment: DEACONGUARD_TOKEN (the agent's one-time enrollment token) and
+Environment: DEACONGUARD_TOKEN (the agent's enrollment token) and
 DEACONGUARD_VERSION (same as --version).
 
 Setup options are passed to `deaconguard setup server` or `deaconguard setup agent`:

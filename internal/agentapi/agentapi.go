@@ -27,7 +27,7 @@ const PathPrefix = "/agent/v1/"
 const tokenPrefix = "deaconguard1."
 
 // Token is what an enrollment token carries: where the server is, the
-// fingerprint of its certificate's public key, and the one-time secret.
+// fingerprint of its certificate's public key, and the token's secret.
 type Token struct {
 	ServerURL string
 	// Pin is the base64url SHA-256 of the server certificate's

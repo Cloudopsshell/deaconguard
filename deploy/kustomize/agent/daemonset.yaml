@@ -1,0 +1,93 @@
+# One agent per node. Each scans its node, not its container: it reads the
+# node's root filesystem, read-only at /host, and runs its fixed, read-only
+# checks there with the node's own tools.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: deaconguard-agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deaconguard-agent
+      app.kubernetes.io/component: agent
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deaconguard-agent
+        app.kubernetes.io/component: agent
+    spec:
+      automountServiceAccountToken: false
+      hostPID: true
+      hostNetwork: true
+      # Resolve the server's service name from the node's network.
+      dnsPolicy: ClusterFirstWithHostNet
+      # Every node, control plane included.
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: agent
+          image: ghcr.io/cloudopsshell/deaconguard:0.15.0
+          args: [agent, run]
+          env:
+            - name: DEACONGUARD_HOST_ROOT
+              value: /host
+            - name: DEACONGUARD_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # Each node's identity stays on the node, so a restarted pod is
+            # the same host on the server.
+            - name: DEACONGUARD_AGENT_CONFIG
+              value: /var/lib/deaconguard-agent/agent.json
+            # Used once per node, to enroll.
+            - name: DEACONGUARD_ENROLL_TOKEN_FILE
+              value: /run/secrets/deaconguard-enrollment/token
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            # ClamAV, when the node has it, runs inside this limit.
+            limits:
+              memory: 2560Mi
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: [ALL]
+              # Run checks in the node's root, read every file, and list
+              # firewall and audit rules.
+              add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE]
+          volumeMounts:
+            - name: host
+              mountPath: /host
+              readOnly: true
+            # The advanced malware scan writes its rules to a temporary file.
+            - name: host-tmp
+              mountPath: /host/tmp
+            - name: identity
+              mountPath: /var/lib/deaconguard-agent
+            - name: enrollment
+              mountPath: /run/secrets/deaconguard-enrollment
+              readOnly: true
+      volumes:
+        - name: host
+          hostPath:
+            path: /
+        - name: host-tmp
+          hostPath:
+            path: /tmp
+        - name: identity
+          hostPath:
+            path: /var/lib/deaconguard-agent
+            type: DirectoryOrCreate
+        - name: enrollment
+          secret:
+            secretName: deaconguard-enrollment
+            # Only needed until each node has enrolled.
+            optional: true

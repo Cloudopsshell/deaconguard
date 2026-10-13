@@ -7,20 +7,37 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
-// EnrollmentTokenLifetime is how long a new enrollment token stays usable.
+// EnrollmentTokenLifetime is how long a new one-time enrollment token stays
+// usable.
 const EnrollmentTokenLifetime = 24 * time.Hour
 
-// EnrollmentToken is a one-time token an agent uses to enroll. Only a hash of
-// its secret is stored, so the token itself is shown once, when it is created.
+// Reusable tokens last 30 days unless their creator picks from 1 to 365.
+const (
+	ReusableTokenLifetime    = 30 * 24 * time.Hour
+	MaxReusableTokenLifetime = 365 * 24 * time.Hour
+)
+
+// EnrollmentToken is a token an agent uses to enroll. A one-time token
+// enrolls one machine; a reusable one enrolls any number until it expires or
+// is revoked, for machines that come and go, such as Kubernetes nodes. Only
+// a hash of its secret is stored, so the token itself is shown once, when it
+// is created.
 type EnrollmentToken struct {
-	ID        string  `json:"id"`
-	ServerURL string  `json:"server_url"`
-	CreatedBy string  `json:"created_by"`
-	CreatedAt string  `json:"created_at"`
-	ExpiresAt string  `json:"expires_at"`
-	UsedAt    *string `json:"used_at"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Reusable  bool   `json:"reusable"`
+	Uses      int    `json:"uses"`
+	ServerURL string `json:"server_url"`
+	CreatedBy string `json:"created_by"`
+	CreatedAt string `json:"created_at"`
+	ExpiresAt string `json:"expires_at"`
+	// UsedAt is when a one-time token enrolled its machine, or when a
+	// reusable one last enrolled one.
+	UsedAt *string `json:"used_at"`
+	// HostID is the machine a one-time token enrolled.
 	HostID    *string `json:"host_id"`
 	RevokedAt *string `json:"revoked_at"`
 	// Status is active, used, expired, or revoked.
@@ -29,8 +46,35 @@ type EnrollmentToken struct {
 
 var ErrInvalidEnrollmentToken = errors.New("the enrollment token is invalid, expired, revoked, or already used")
 
+// TokenOptions makes a reusable token. The zero value makes a one-time token
+// that lasts EnrollmentTokenLifetime.
+type TokenOptions struct {
+	Reusable bool
+	// Lifetime is how long a reusable token lasts: ReusableTokenLifetime
+	// when zero, at most MaxReusableTokenLifetime.
+	Lifetime time.Duration
+	// Name says what a reusable token is for, such as a cluster's name.
+	Name string
+}
+
 // CreateEnrollmentToken stores a new token and returns it with its secret.
-func CreateEnrollmentToken(serverURL, createdBy string) (EnrollmentToken, string, error) {
+func CreateEnrollmentToken(serverURL, createdBy string, options TokenOptions) (EnrollmentToken, string, error) {
+	lifetime := EnrollmentTokenLifetime
+	if options.Reusable {
+		lifetime = options.Lifetime
+		if lifetime == 0 {
+			lifetime = ReusableTokenLifetime
+		}
+		if lifetime < time.Hour || lifetime > MaxReusableTokenLifetime {
+			return EnrollmentToken{}, "", errors.New("a reusable token lasts from 1 to 365 days")
+		}
+	} else if options.Lifetime != 0 || options.Name != "" {
+		return EnrollmentToken{}, "", errors.New("only reusable tokens take a lifetime and a name")
+	}
+	name := strings.TrimSpace(options.Name)
+	if len(name) > 80 || strings.ContainsFunc(name, unicode.IsControl) {
+		return EnrollmentToken{}, "", errors.New("a token's name is at most 80 characters, with no control characters")
+	}
 	db, err := database()
 	if err != nil {
 		return EnrollmentToken{}, "", err
@@ -45,23 +89,36 @@ func CreateEnrollmentToken(serverURL, createdBy string) (EnrollmentToken, string
 	}
 	now := time.Now().UTC()
 	token := EnrollmentToken{
-		ID: id, ServerURL: serverURL, CreatedBy: createdBy, Status: "active",
-		CreatedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(EnrollmentTokenLifetime).Format(time.RFC3339),
+		ID: id, Name: name, Reusable: options.Reusable, ServerURL: serverURL, CreatedBy: createdBy, Status: "active",
+		CreatedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(lifetime).Format(time.RFC3339),
 	}
-	if _, err := db.Exec(`INSERT INTO enrollment_tokens (id, secret_hash, server_url, created_by, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, token.ID, HashSecret(secret), serverURL, createdBy, token.CreatedAt, token.ExpiresAt); err != nil {
+	if _, err := db.Exec(`INSERT INTO enrollment_tokens (id, secret_hash, server_url, created_by, created_at, expires_at, reusable, name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, token.ID, HashSecret(secret), serverURL, createdBy, token.CreatedAt, token.ExpiresAt,
+		token.Reusable, token.Name); err != nil {
 		return EnrollmentToken{}, "", err
 	}
 	return token, secret, nil
 }
 
-const tokenColumns = "id, server_url, created_by, created_at, expires_at, used_at, host_id, revoked_at"
+// Describe says what kind of token this is, for the audit log.
+func (token EnrollmentToken) Describe() string {
+	kind := "one-time"
+	if token.Reusable {
+		kind = "reusable"
+		if token.Name != "" {
+			kind += " (" + token.Name + ")"
+		}
+	}
+	return kind + ", for " + token.ServerURL + ", expires " + token.ExpiresAt
+}
+
+const tokenColumns = "id, server_url, created_by, created_at, expires_at, used_at, host_id, revoked_at, reusable, uses, name"
 
 func scanToken(row rowScanner) (EnrollmentToken, error) {
 	var token EnrollmentToken
 	var usedAt, hostID, revokedAt sql.NullString
 	if err := row.Scan(&token.ID, &token.ServerURL, &token.CreatedBy, &token.CreatedAt, &token.ExpiresAt,
-		&usedAt, &hostID, &revokedAt); err != nil {
+		&usedAt, &hostID, &revokedAt, &token.Reusable, &token.Uses, &token.Name); err != nil {
 		return EnrollmentToken{}, err
 	}
 	optional := func(value sql.NullString) *string {
@@ -74,7 +131,7 @@ func scanToken(row rowScanner) (EnrollmentToken, error) {
 	switch {
 	case token.RevokedAt != nil:
 		token.Status = "revoked"
-	case token.UsedAt != nil:
+	case token.UsedAt != nil && !token.Reusable:
 		token.Status = "used"
 	case token.ExpiresAt <= nowText():
 		token.Status = "expired"
@@ -84,14 +141,15 @@ func scanToken(row rowScanner) (EnrollmentToken, error) {
 	return token, nil
 }
 
-// ListEnrollmentTokens returns tokens from the last 30 days, newest first.
+// ListEnrollmentTokens returns tokens from the last 30 days, and reusable
+// ones until 30 days after they expire, newest first.
 func ListEnrollmentTokens() ([]EnrollmentToken, error) {
 	db, err := database()
 	if err != nil {
 		return nil, err
 	}
 	since := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
-	if _, err := db.Exec("DELETE FROM enrollment_tokens WHERE created_at < ?", since); err != nil {
+	if _, err := db.Exec("DELETE FROM enrollment_tokens WHERE created_at < ? AND (reusable = 0 OR expires_at < ?)", since, since); err != nil {
 		return nil, err
 	}
 	rows, err := db.Query("SELECT " + tokenColumns + " FROM enrollment_tokens ORDER BY created_at DESC, rowid DESC")
@@ -110,13 +168,14 @@ func ListEnrollmentTokens() ([]EnrollmentToken, error) {
 	return tokens, rows.Err()
 }
 
-// RevokeEnrollmentToken stops an unused token from being used.
+// RevokeEnrollmentToken stops a token from enrolling more machines. Machines
+// it already enrolled stay enrolled.
 func RevokeEnrollmentToken(id string) (EnrollmentToken, error) {
 	db, err := database()
 	if err != nil {
 		return EnrollmentToken{}, err
 	}
-	if _, err := db.Exec("UPDATE enrollment_tokens SET revoked_at = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL",
+	if _, err := db.Exec("UPDATE enrollment_tokens SET revoked_at = ? WHERE id = ? AND (reusable = 1 OR used_at IS NULL) AND revoked_at IS NULL",
 		nowText(), id); err != nil {
 		return EnrollmentToken{}, err
 	}
@@ -148,7 +207,8 @@ type AgentEnrollment struct {
 	Remote   string
 }
 
-// EnrollAgent spends a token and registers a new agent host. It returns the
+// EnrollAgent spends a one-time token, or counts a use of a reusable one,
+// and registers a new agent host. It returns the
 // host and the credential the agent authenticates with from then on.
 func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error) {
 	db, err := database()
@@ -169,8 +229,9 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 	}
 	defer tx.Rollback()
 	now := nowText()
-	result, err := tx.Exec(`UPDATE enrollment_tokens SET used_at = ?, host_id = ?
-		WHERE secret_hash = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
+	result, err := tx.Exec(`UPDATE enrollment_tokens SET used_at = ?, uses = uses + 1,
+		host_id = CASE WHEN reusable = 1 THEN NULL ELSE ? END
+		WHERE secret_hash = ? AND (reusable = 1 OR used_at IS NULL) AND revoked_at IS NULL AND expires_at > ?`,
 		now, id, HashSecret(secret), now)
 	if err != nil {
 		return Host{}, "", err

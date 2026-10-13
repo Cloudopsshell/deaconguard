@@ -1,0 +1,112 @@
+{{- if .Values.agent.enabled }}
+{{- $selector := dict "root" . "component" "agent" }}
+# One agent per node. Each scans its node, not its container: it reads the
+# node's root filesystem, read-only at /host, and runs its fixed, read-only
+# checks there with the node's own tools.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "deaconguard.agentName" . }}
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      {{- include "deaconguard.selector" $selector | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        {{- include "deaconguard.labels" . | nindent 8 }}
+        app.kubernetes.io/component: agent
+      {{- with .Values.agent.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- with .Values.agent.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent
+          image: {{ include "deaconguard.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [agent, run]
+          env:
+            - name: DEACONGUARD_HOST_ROOT
+              value: /host
+            - name: DEACONGUARD_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: DEACONGUARD_AGENT_CONFIG
+              value: /var/lib/deaconguard-agent/agent.json
+            - name: DEACONGUARD_ENROLL_TOKEN_FILE
+              value: /run/secrets/deaconguard-enrollment/{{ .Values.agent.enrollment.secretKey }}
+          {{- with .Values.agent.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: [ALL]
+              # Run checks in the node's root, read every file, and list
+              # firewall and audit rules.
+              add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE]
+          volumeMounts:
+            - name: host
+              mountPath: /host
+              readOnly: true
+            # The advanced malware scan writes its rules to a temporary file.
+            - name: host-tmp
+              mountPath: /host/tmp
+            - name: identity
+              mountPath: /var/lib/deaconguard-agent
+            - name: enrollment
+              mountPath: /run/secrets/deaconguard-enrollment
+              readOnly: true
+      volumes:
+        - name: host
+          hostPath:
+            path: /
+        - name: host-tmp
+          hostPath:
+            path: /tmp
+        - name: identity
+          hostPath:
+            path: {{ .Values.agent.identityPath }}
+            type: DirectoryOrCreate
+        - name: enrollment
+          secret:
+            secretName: {{ include "deaconguard.enrollmentSecret" . }}
+            # Only needed until each node has enrolled.
+            optional: true
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
