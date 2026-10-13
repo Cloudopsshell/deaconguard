@@ -8,6 +8,10 @@ under **Changed** with upgrade notes.
 
 ## [Unreleased]
 
+### Security
+
+- Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
+
 ## [0.19.0] - 2026-10-14
 
 ### Added
