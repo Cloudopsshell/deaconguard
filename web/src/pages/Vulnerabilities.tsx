@@ -5,22 +5,27 @@ import { Search, ShieldCheck } from "lucide-react";
 import { api } from "../api";
 import { Card, CardHeader, EmptyState, ErrorMessage, Loading, PageHeader, SeverityBadge, Table, Td, Th, cx } from "../components/ui";
 import { CVSSScore, ExploitBadge } from "../lib/exploit";
+import { dateTime } from "../lib/format";
 
-type Show = "fixable" | "exploited" | "all";
+type Show = "fixable" | "exploited" | "overdue" | "all";
 
 export function Vulnerabilities() {
   const [query, setQuery] = useState("");
-  const [show, setShow] = useState<Show>(() => (new URLSearchParams(window.location.search).get("show") === "exploited" ? "exploited" : "fixable"));
+  const [show, setShow] = useState<Show>(() => {
+    const wanted = new URLSearchParams(window.location.search).get("show");
+    return wanted === "exploited" || wanted === "overdue" ? wanted : "fixable";
+  });
   const fixableOnly = show === "fixable";
   const { data, error, isPending } = useQuery({ queryKey: ["vulnerabilities"], queryFn: api.vulnerabilities });
   const fixableCount = data?.filter((item) => item.fixable_host_count > 0).length ?? 0;
   const exploited = (item: { priority: string }) => item.priority === "exploited" || item.priority === "likely";
   const exploitedCount = data?.filter(exploited).length ?? 0;
+  const overdueCount = data?.filter((item) => item.overdue_host_count > 0).length ?? 0;
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const shown = (data ?? []).filter((item) =>
-      show === "fixable" ? item.fixable_host_count > 0 : show === "exploited" ? exploited(item) : true,
+      show === "fixable" ? item.fixable_host_count > 0 : show === "exploited" ? exploited(item) : show === "overdue" ? item.overdue_host_count > 0 : true,
     );
     if (!needle) return shown;
     return shown.filter(
@@ -47,6 +52,7 @@ export function Vulnerabilities() {
                 {([
                   { value: "fixable", label: `Fix now (${fixableCount.toLocaleString()})` },
                   { value: "exploited", label: `Exploited (${exploitedCount.toLocaleString()})` },
+                  ...(overdueCount > 0 || show === "overdue" ? [{ value: "overdue" as Show, label: `Overdue (${overdueCount.toLocaleString()})` }] : []),
                   { value: "all", label: `All (${(data?.length ?? 0).toLocaleString()})` },
                 ] as { value: Show; label: string }[]).map((option) => (
                   <button
@@ -113,6 +119,7 @@ export function Vulnerabilities() {
                 <Th>Exploitation</Th>
                 <Th>Packages</Th>
                 <Th>Fix</Th>
+                <Th>Due</Th>
                 <Th className="text-right">Hosts</Th>
               </tr>
             </thead>
@@ -145,6 +152,19 @@ export function Vulnerabilities() {
                       `Update on ${item.fixable_host_count} host${item.fixable_host_count === 1 ? "" : "s"}`
                     ) : (
                       <span title="No update or restart fixes it yet">Waiting</span>
+                    )}
+                  </Td>
+                  <Td className="text-xs whitespace-nowrap">
+                    {item.overdue_host_count > 0 ? (
+                      <span className="font-semibold text-red-700 dark:text-red-300" title={`Past its fix deadline on ${item.overdue_host_count} host${item.overdue_host_count === 1 ? "" : "s"}`}>
+                        Overdue{item.overdue_host_count < item.host_count ? ` on ${item.overdue_host_count}` : ""}
+                      </span>
+                    ) : item.due_at ? (
+                      <span className="text-slate-600 dark:text-slate-300" title={item.first_seen ? `First found ${dateTime(item.first_seen)}` : undefined}>
+                        {dateTime(item.due_at).split(",").slice(0, 2).join(",")}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">–</span>
                     )}
                   </Td>
                   <Td className="text-right font-semibold tabular-nums">{item.host_count}</Td>
