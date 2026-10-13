@@ -58,6 +58,7 @@ func (s *Server) stopScheduler() {
 func (s *Server) runDueSchedules(now time.Time) {
 	s.scheduler.mu.Lock()
 	defer s.scheduler.mu.Unlock()
+	s.sendDueDigests(now)
 	due, err := store.DueSchedules(now)
 	if err != nil {
 		serverLog("", store.LogError, "Could not read the scan schedules: %v", err)
