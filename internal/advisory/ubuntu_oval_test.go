@@ -12,7 +12,7 @@ import (
 func TestEvaluateUbuntuOVALFindsVulnerableDpkgPackage(t *testing.T) {
 	oval := []byte(`<oval_definitions>
   <definitions><definition id="oval:ubuntu:def:1" class="vulnerability">
-    <metadata><title>Example Ubuntu issue</title><reference source="CVE" ref_id="CVE-2025-1234" ref_url="https://ubuntu.com/security/CVE-2025-1234"/><advisory><cve cvss_severity="High"/></advisory></metadata>
+    <metadata><title>Example Ubuntu issue</title><reference source="CVE" ref_id="CVE-2025-1234" ref_url="https://ubuntu.com/security/CVE-2025-1234"/><advisory><cve cvss_severity="High">CVE-2025-0001</cve><cve cvss_severity="High" cvss_score="8.1" cvss_vector="CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H">CVE-2025-1234</cve></advisory></metadata>
     <criteria operator="AND"><criterion test_ref="oval:ubuntu:tst:1"/></criteria>
   </definition></definitions>
   <tests><dpkginfo_test id="oval:ubuntu:tst:1" check="at least one" check_existence="at_least_one_exists">
@@ -28,7 +28,8 @@ func TestEvaluateUbuntuOVALFindsVulnerableDpkgPackage(t *testing.T) {
 	if result.Evaluated != 1 || len(result.Findings) != 1 {
 		t.Fatalf("unexpected Ubuntu OVAL evaluation: %+v", result)
 	}
-	if result.Findings[0].FixedVersion != "2.0-1ubuntu1" || result.Findings[0].Severity != "HIGH" {
+	if result.Findings[0].FixedVersion != "2.0-1ubuntu1" || result.Findings[0].Severity != "HIGH" ||
+		result.Findings[0].CVSSScore != 8.1 || result.Findings[0].CVSSVector != "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H" {
 		t.Fatalf("unexpected Ubuntu OVAL finding: %+v", result.Findings[0])
 	}
 }

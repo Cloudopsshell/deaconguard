@@ -20,6 +20,14 @@ type Finding struct {
 	// CVSSSeverity is the generic CVSS rating, when the distribution
 	// publishes it alongside its own.
 	CVSSSeverity string `json:"cvss_severity,omitempty"`
+	// CVSSScore and CVSSVector are the CVSS v3 base score and vector, when
+	// the distribution publishes them (Ubuntu and Red Hat do).
+	CVSSScore  float64 `json:"cvss_score,omitempty"`
+	CVSSVector string  `json:"cvss_vector,omitempty"`
+	// Exploit is what is known about the CVE being exploited; see Enrich.
+	Exploit *Exploit `json:"exploit,omitempty"`
+	// Priority orders findings by how urgently to fix them; see Enrich.
+	Priority string `json:"priority,omitempty"`
 	// Fix says what clears the finding; see Classify.
 	Fix   string `json:"fix"`
 	URL   string `json:"url"`

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -52,14 +53,16 @@ type Report struct {
 	Generator  string     `json:"generator"`
 	Audit      *AuditPart `json:"audit,omitempty"`
 
-	Comparison      *Comparison          `json:"comparison,omitempty"`
-	Policies        []audit.PolicyResult `json:"policies,omitempty"`
-	Compliance      []compliance.Result  `json:"compliance,omitempty"`
-	Packages        *store.FixSummary    `json:"packages,omitempty"`
-	Severity        store.SeverityCounts `json:"severity"`
-	Vulnerabilities []Vulnerability      `json:"vulnerabilities"`
-	CheckResults    []CheckPart          `json:"check_results"`
-	Inventory       *checks.Inventory    `json:"inventory,omitempty"`
+	Comparison *Comparison          `json:"comparison,omitempty"`
+	Policies   []audit.PolicyResult `json:"policies,omitempty"`
+	Compliance []compliance.Result  `json:"compliance,omitempty"`
+	Packages   *store.FixSummary    `json:"packages,omitempty"`
+	Severity   store.SeverityCounts `json:"severity"`
+	// Exploit is set when the scan had KEV or EPSS data.
+	Exploit         *ExploitPart      `json:"exploit,omitempty"`
+	Vulnerabilities []Vulnerability   `json:"vulnerabilities"`
+	CheckResults    []CheckPart       `json:"check_results"`
+	Inventory       *checks.Inventory `json:"inventory,omitempty"`
 }
 
 // AuditPart is the graded part of an audit's report.
@@ -73,6 +76,16 @@ type AuditPart struct {
 	Controls   []audit.Control  `json:"controls"`
 }
 
+// ExploitPart says what the scan knew about its vulnerabilities being
+// exploited, and from which data.
+type ExploitPart struct {
+	Known        int    `json:"known"`
+	KnownFixable int    `json:"known_fixable"`
+	Likely       int    `json:"likely"`
+	KEVVersion   string `json:"kev_version,omitempty"`
+	EPSSDate     string `json:"epss_date,omitempty"`
+}
+
 // Vulnerability is one package finding.
 type Vulnerability struct {
 	ID        string `json:"id"`
@@ -82,6 +95,53 @@ type Vulnerability struct {
 	Severity  string `json:"severity"`
 	Fix       string `json:"fix"`
 	Title     string `json:"title"`
+	// Priority, KEV, EPSS and CVSS come from the scan; see advisory.Enrich.
+	Priority   string   `json:"priority,omitempty"`
+	KEV        bool     `json:"kev,omitempty"`
+	KEVDue     string   `json:"kev_due,omitempty"`
+	Ransomware bool     `json:"ransomware,omitempty"`
+	EPSS       *float64 `json:"epss,omitempty"`
+	CVSSScore  float64  `json:"cvss_score,omitempty"`
+	CVSSVector string   `json:"cvss_vector,omitempty"`
+}
+
+// Exploitation describes in a few words what is known about a
+// vulnerability being exploited, for tables: "Known exploited", "EPSS 42%",
+// or "".
+func (v Vulnerability) Exploitation() string {
+	switch {
+	case v.KEV && v.Ransomware:
+		return "Known exploited, ransomware"
+	case v.KEV:
+		return "Known exploited"
+	case v.EPSS != nil:
+		return "EPSS " + Percent(*v.EPSS)
+	default:
+		return ""
+	}
+}
+
+// CVSS is the CVSS score with one decimal, or "".
+func (v Vulnerability) CVSS() string {
+	if v.CVSSScore == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.1f", v.CVSSScore)
+}
+
+// Percent shows a probability as a percentage: 0.4231 is "42%"; below 1%
+// and from 99% it keeps a decimal, such as "0.3%" or "99.9%".
+func Percent(value float64) string {
+	percent := value * 100
+	switch {
+	case percent < 1:
+		return fmt.Sprintf("%.1f%%", percent)
+	case percent >= 99:
+		// Round down, so 0.99957 never shows as a certain 100%.
+		return fmt.Sprintf("%.1f%%", math.Floor(percent*10)/10)
+	default:
+		return fmt.Sprintf("%.0f%%", percent)
+	}
 }
 
 // CheckPart is the result of one check other than packages and hardening.
@@ -159,21 +219,47 @@ func Build(source Source) (Report, error) {
 			return Report{}, err
 		}
 		var findings []struct {
-			ID, Package, Severity, Fix, Title string
-			Installed                         string `json:"installed_version"`
-			Fixed                             string `json:"fixed_version"`
+			ID, Package, Severity, Fix, Title, Priority string
+			Installed                                   string  `json:"installed_version"`
+			Fixed                                       string  `json:"fixed_version"`
+			CVSSScore                                   float64 `json:"cvss_score"`
+			CVSSVector                                  string  `json:"cvss_vector"`
+			Exploit                                     *struct {
+				KEV        bool     `json:"kev"`
+				KEVDue     string   `json:"kev_due"`
+				Ransomware bool     `json:"ransomware"`
+				EPSS       *float64 `json:"epss"`
+			} `json:"exploit"`
 		}
 		if err := json.Unmarshal(encoded, &findings); err != nil {
 			return Report{}, fmt.Errorf("read the vulnerabilities: %w", err)
 		}
 		for _, finding := range findings {
-			report.Vulnerabilities = append(report.Vulnerabilities, Vulnerability{ID: finding.ID, Package: finding.Package,
-				Installed: finding.Installed, Fixed: finding.Fixed, Severity: strings.ToUpper(finding.Severity), Fix: finding.Fix, Title: finding.Title})
+			vulnerability := Vulnerability{ID: finding.ID, Package: finding.Package,
+				Installed: finding.Installed, Fixed: finding.Fixed, Severity: strings.ToUpper(finding.Severity), Fix: finding.Fix, Title: finding.Title,
+				Priority: finding.Priority, CVSSScore: finding.CVSSScore, CVSSVector: finding.CVSSVector}
+			if exploit := finding.Exploit; exploit != nil {
+				vulnerability.KEV, vulnerability.KEVDue, vulnerability.Ransomware, vulnerability.EPSS = exploit.KEV, exploit.KEVDue, exploit.Ransomware, exploit.EPSS
+			}
+			report.Vulnerabilities = append(report.Vulnerabilities, vulnerability)
+		}
+		if source.Scan.Exploit.Data {
+			report.Exploit = &ExploitPart{Known: source.Scan.Exploit.Known, KnownFixable: source.Scan.Exploit.KnownFixable, Likely: source.Scan.Exploit.Likely}
+			if data, ok := source.Report["exploit_data"].(map[string]any); ok {
+				for name, target := range map[string]*string{"kev": &report.Exploit.KEVVersion, "epss": &report.Exploit.EPSSDate} {
+					if values, ok := data[name].(map[string]any); ok && values["available"] == true {
+						*target, _ = values["version"].(string)
+					}
+				}
+			}
 		}
 		sort.SliceStable(report.Vulnerabilities, func(a, b int) bool {
 			left, right := report.Vulnerabilities[a], report.Vulnerabilities[b]
 			if actionable(left.Fix) != actionable(right.Fix) {
 				return actionable(left.Fix)
+			}
+			if store.PriorityRank(left.Priority) != store.PriorityRank(right.Priority) {
+				return store.PriorityRank(left.Priority) > store.PriorityRank(right.Priority)
 			}
 			if severityRank[left.Severity] != severityRank[right.Severity] {
 				return severityRank[left.Severity] < severityRank[right.Severity]
