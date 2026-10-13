@@ -129,13 +129,28 @@ type Scan struct {
 	HasLog bool `json:"has_log"`
 	// Audit marks a handover audit: every check, graded together.
 	Audit bool `json:"audit"`
+	// Exploit counts the CVEs in CISA's KEV catalog, those of them a fix is
+	// waiting for, and those EPSS rates likely to be exploited.
+	// ExploitData is false when the scan had neither KEV nor EPSS data, so
+	// zeros mean unknown.
+	Exploit ExploitCounts `json:"exploit"`
+}
+
+// ExploitCounts counts a scan's findings by what is known about them being
+// exploited.
+type ExploitCounts struct {
+	Known        int  `json:"known"`
+	KnownFixable int  `json:"known_fixable"`
+	Likely       int  `json:"likely"`
+	Data         bool `json:"data"`
 }
 
 // CheckPackages is the package vulnerability check every earlier scan ran.
 const CheckPackages = "packages"
 
 const scanColumns = `id, host_id, address, status, error, started_at, finished_at, os,
-	finding_count, unsupported_count, critical, high, medium, low, unknown, feed_stale, checks, events_json IS NOT NULL, fix_summary, audit`
+	finding_count, unsupported_count, critical, high, medium, low, unknown, feed_stale, checks, events_json IS NOT NULL, fix_summary, audit,
+	exploited, exploited_fixable, likely, exploit_data`
 
 func encodeChecks(checks []string) string { return "," + strings.Join(checks, ",") + "," }
 
@@ -156,7 +171,8 @@ func scanScan(row rowScanner) (Scan, error) {
 	var checks, fixSummary string
 	err := row.Scan(&scan.ID, &scan.HostID, &scan.Address, &scan.Status, &scan.Error, &scan.StartedAt, &finishedAt, &scan.OS, &scan.FindingCount, &scan.UnsupportedCount,
 		&scan.Severity.Critical, &scan.Severity.High, &scan.Severity.Medium, &scan.Severity.Low, &scan.Severity.Unknown,
-		&feedStale, &checks, &scan.HasLog, &fixSummary, &scan.Audit)
+		&feedStale, &checks, &scan.HasLog, &fixSummary, &scan.Audit,
+		&scan.Exploit.Known, &scan.Exploit.KnownFixable, &scan.Exploit.Likely, &scan.Exploit.Data)
 	if err != nil {
 		return Scan{}, err
 	}
@@ -534,6 +550,8 @@ type HostSummary struct {
 	NextScan *NextScan `json:"next_scan,omitempty"`
 	// ThisServer marks the agent host that is the server's own machine.
 	ThisServer bool `json:"this_server"`
+	// Tags are the host's tags, sorted.
+	Tags []string `json:"tags"`
 }
 
 // CheckSummary is one check's result within a scan.
@@ -573,9 +591,16 @@ func HostSummaries() ([]HostSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	tags, err := hostTags()
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]HostSummary, 0, len(hosts))
 	for _, host := range hosts {
-		summary := HostSummary{Host: host}
+		summary := HostSummary{Host: host, Tags: tags[host.ID]}
+		if summary.Tags == nil {
+			summary.Tags = []string{}
+		}
 		if next, ok := upcoming[host.ID]; ok {
 			summary.NextScan = &next
 		}
@@ -635,6 +660,14 @@ func latestChecks(db *sql.DB, hostID string) (map[string]CheckSummary, error) {
 type Vulnerability struct {
 	CVE      string `json:"cve"`
 	Severity string `json:"severity"`
+	// Priority is the most urgent priority among its findings; KEV, EPSS
+	// and the CVSS score come from the newest scan that had them.
+	Priority   string   `json:"priority"`
+	KEV        bool     `json:"kev"`
+	KEVDue     string   `json:"kev_due,omitempty"`
+	Ransomware bool     `json:"ransomware,omitempty"`
+	EPSS       *float64 `json:"epss,omitempty"`
+	CVSSScore  float64  `json:"cvss_score,omitempty"`
 	// FixableHosts counts the hosts where installing updates or restarting
 	// fixes it.
 	FixableHosts int      `json:"fixable_host_count"`
@@ -645,24 +678,30 @@ type Vulnerability struct {
 }
 
 type AffectedPackage struct {
-	HostID           string `json:"host_id"`
-	Address          string `json:"address"`
-	ScanID           string `json:"scan_id"`
-	ScannedAt        string `json:"scanned_at"`
-	Package          string `json:"package"`
-	InstalledVersion string `json:"installed_version"`
-	FixedVersion     string `json:"fixed_version"`
-	Fix              string `json:"fix"`
-	Severity         string `json:"severity"`
-	URL              string `json:"url"`
-	Title            string `json:"title"`
+	HostID           string   `json:"host_id"`
+	Address          string   `json:"address"`
+	ScanID           string   `json:"scan_id"`
+	ScannedAt        string   `json:"scanned_at"`
+	Package          string   `json:"package"`
+	InstalledVersion string   `json:"installed_version"`
+	FixedVersion     string   `json:"fixed_version"`
+	Fix              string   `json:"fix"`
+	Severity         string   `json:"severity"`
+	URL              string   `json:"url"`
+	Title            string   `json:"title"`
+	Priority         string   `json:"priority"`
+	KEV              bool     `json:"kev"`
+	KEVDue           string   `json:"kev_due,omitempty"`
+	Ransomware       bool     `json:"ransomware,omitempty"`
+	EPSS             *float64 `json:"epss,omitempty"`
+	CVSSScore        float64  `json:"cvss_score,omitempty"`
 }
 
 // latestFindings selects findings from the newest successful scan of each
 // registered host.
 const latestFindings = `
 SELECT s.host_id, h.address, s.id, s.started_at, f.cve, f.package, f.installed_version, f.fixed_version,
-	f.fix, f.severity, f.url, f.title
+	f.fix, f.severity, f.url, f.title, f.priority, f.kev, f.kev_due, f.ransomware, f.epss, f.cvss_score
 FROM findings f
 JOIN scans s ON s.id = f.scan_id
 JOIN hosts h ON h.id = s.host_id
@@ -688,7 +727,8 @@ func queryLatestFindings(filter string, arguments ...any) ([]AffectedPackage, []
 		var item AffectedPackage
 		var cve string
 		if err := rows.Scan(&item.HostID, &item.Address, &item.ScanID, &item.ScannedAt, &cve, &item.Package,
-			&item.InstalledVersion, &item.FixedVersion, &item.Fix, &item.Severity, &item.URL, &item.Title); err != nil {
+			&item.InstalledVersion, &item.FixedVersion, &item.Fix, &item.Severity, &item.URL, &item.Title,
+			&item.Priority, &item.KEV, &item.KEVDue, &item.Ransomware, &item.EPSS, &item.CVSSScore); err != nil {
 			return nil, nil, err
 		}
 		item.Fix = findingFix(item.Fix, item.FixedVersion)
@@ -721,6 +761,17 @@ func Vulnerabilities() ([]Vulnerability, error) {
 		if severityRank(item.Severity) > severityRank(vulnerability.Severity) {
 			vulnerability.Severity = item.Severity
 		}
+		if vulnerability.Priority == "" || (item.Priority != "" && PriorityRank(item.Priority) > PriorityRank(vulnerability.Priority)) {
+			vulnerability.Priority = item.Priority
+		}
+		if item.KEV {
+			vulnerability.KEV, vulnerability.KEVDue = true, item.KEVDue
+			vulnerability.Ransomware = vulnerability.Ransomware || item.Ransomware
+		}
+		if item.EPSS != nil && (vulnerability.EPSS == nil || *item.EPSS > *vulnerability.EPSS) {
+			vulnerability.EPSS = item.EPSS
+		}
+		vulnerability.CVSSScore = max(vulnerability.CVSSScore, item.CVSSScore)
 		hosts[cve][item.HostID] = true
 		if actionableFix(item.Fix) {
 			fixable[cve][item.HostID] = true
@@ -738,6 +789,9 @@ func Vulnerabilities() ([]Vulnerability, error) {
 		result = append(result, *vulnerability)
 	}
 	sort.Slice(result, func(i, j int) bool {
+		if left, right := PriorityRank(result[i].Priority), PriorityRank(result[j].Priority); left != right {
+			return left > right
+		}
 		left, right := severityRank(result[i].Severity), severityRank(result[j].Severity)
 		if left != right {
 			return left > right
@@ -757,6 +811,23 @@ func VulnerabilityHosts(cve string) ([]AffectedPackage, error) {
 	return affected, err
 }
 
+// PriorityRank orders fix priorities: exploited, likely, severe, other.
+// Findings from before 0.16.0 have none and rank last.
+func PriorityRank(priority string) int {
+	switch priority {
+	case "exploited":
+		return 4
+	case "likely":
+		return 3
+	case "severe":
+		return 2
+	case "other":
+		return 1
+	default:
+		return 0
+	}
+}
+
 func severityRank(severity string) int {
 	switch strings.ToUpper(severity) {
 	case "CRITICAL":
@@ -773,15 +844,26 @@ func severityRank(severity string) int {
 }
 
 type findingRecord struct {
-	ID               string `json:"id"`
-	Package          string `json:"package"`
-	InstalledVersion string `json:"installed_version"`
-	FixedVersion     string `json:"fixed_version"`
-	Fix              string `json:"fix"`
-	CVSSSeverity     string `json:"cvss_severity"`
-	Severity         string `json:"severity"`
-	URL              string `json:"url"`
-	Title            string `json:"title"`
+	ID               string  `json:"id"`
+	Package          string  `json:"package"`
+	InstalledVersion string  `json:"installed_version"`
+	FixedVersion     string  `json:"fixed_version"`
+	Fix              string  `json:"fix"`
+	CVSSSeverity     string  `json:"cvss_severity"`
+	Severity         string  `json:"severity"`
+	URL              string  `json:"url"`
+	Title            string  `json:"title"`
+	CVSSScore        float64 `json:"cvss_score"`
+	CVSSVector       string  `json:"cvss_vector"`
+	Priority         string  `json:"priority"`
+	Exploit          *struct {
+		KEV            bool     `json:"kev"`
+		KEVAdded       string   `json:"kev_added"`
+		KEVDue         string   `json:"kev_due"`
+		Ransomware     bool     `json:"ransomware"`
+		EPSS           *float64 `json:"epss"`
+		EPSSPercentile *float64 `json:"epss_percentile"`
+	} `json:"exploit"`
 }
 
 // insertReport stores a report produced outside the server, such as a CLI scan
@@ -909,12 +991,35 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 	for _, state := range fixStates {
 		fixes.Counts[state] = 0
 	}
+	var exploit ExploitCounts
+	knownCVEs, likelyCVEs := make(map[string]bool), make(map[string]bool)
+	if data, ok := report["exploit_data"].(map[string]any); ok {
+		for _, source := range []string{"kev", "epss"} {
+			if values, ok := data[source].(map[string]any); ok && values["available"] == true {
+				exploit.Data = true
+			}
+		}
+	}
 	for index, finding := range findings {
 		counts.add(finding.Severity)
 		findings[index].Fix = findingFix(finding.Fix, finding.FixedVersion)
 		fixes.Counts[findings[index].Fix]++
 		if actionableFix(findings[index].Fix) {
 			fixes.Actionable.add(finding.Severity)
+		}
+		// One CVE often affects several binary packages of one source
+		// package; exploit counts are of CVEs.
+		switch finding.Priority {
+		case "exploited":
+			knownCVEs[finding.ID] = knownCVEs[finding.ID] || actionableFix(findings[index].Fix)
+		case "likely":
+			likelyCVEs[finding.ID] = true
+		}
+	}
+	exploit.Known, exploit.Likely = len(knownCVEs), len(likelyCVEs)
+	for _, fixable := range knownCVEs {
+		if fixable {
+			exploit.KnownFixable++
 		}
 	}
 	fixSummary := ""
@@ -942,10 +1047,11 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 	}
 	result, err := tx.Exec(`UPDATE scans SET status = ?, error = '', finished_at = ?, os = ?,
 		finding_count = ?, unsupported_count = ?, critical = ?, high = ?, medium = ?, low = ?, unknown = ?,
-		feed_stale = ?, report_json = ?, fix_summary = ? WHERE id = ? AND status = ?`,
+		feed_stale = ?, report_json = ?, fix_summary = ?, exploited = ?, exploited_fixable = ?, likely = ?, exploit_data = ?
+		WHERE id = ? AND status = ?`,
 		ScanSucceeded, finishedAt, operatingSystem, len(findings), unsupported,
 		counts.Critical, counts.High, counts.Medium, counts.Low, counts.Unknown,
-		feedStale, string(encoded), fixSummary, id, ScanRunning)
+		feedStale, string(encoded), fixSummary, exploit.Known, exploit.KnownFixable, exploit.Likely, exploit.Data, id, ScanRunning)
 	if err != nil {
 		return err
 	}
@@ -958,9 +1064,28 @@ func applyReport(tx *sql.Tx, id string, report map[string]any, finishedAt string
 		return err
 	}
 	for _, finding := range findings {
-		if _, err := tx.Exec(`INSERT INTO findings (scan_id, cve, package, installed_version, fixed_version, fix, severity, cvss_severity, url, title)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, finding.ID, finding.Package, finding.InstalledVersion,
-			finding.FixedVersion, finding.Fix, strings.ToUpper(finding.Severity), strings.ToUpper(finding.CVSSSeverity), finding.URL, finding.Title); err != nil {
+		var kev, ransomware bool
+		var kevAdded, kevDue string
+		var epss, percentile *float64
+		if finding.Exploit != nil {
+			kev, ransomware, kevAdded, kevDue = finding.Exploit.KEV, finding.Exploit.Ransomware, finding.Exploit.KEVAdded, finding.Exploit.KEVDue
+			epss, percentile = finding.Exploit.EPSS, finding.Exploit.EPSSPercentile
+		}
+		if _, err := tx.Exec(`INSERT INTO findings (scan_id, cve, package, installed_version, fixed_version, fix, severity, cvss_severity, url, title,
+			cvss_score, cvss_vector, kev, kev_added, kev_due, ransomware, epss, epss_percentile, priority)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, finding.ID, finding.Package, finding.InstalledVersion,
+			finding.FixedVersion, finding.Fix, strings.ToUpper(finding.Severity), strings.ToUpper(finding.CVSSSeverity), finding.URL, finding.Title,
+			finding.CVSSScore, finding.CVSSVector, kev, kevAdded, kevDue, ransomware, epss, percentile, finding.Priority); err != nil {
+			return err
+		}
+	}
+	if slices.Contains(reportChecks(report), CheckPackages) && len(finishedAt) >= 10 {
+		// The host's vulnerabilities on that day, for trends; a later scan
+		// the same day replaces them.
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO host_trends (host_id, day, critical, high, medium, low, unknown, exploited, likely)
+			SELECT s.host_id, ?, ?, ?, ?, ?, ?, ?, ? FROM scans s JOIN hosts h ON h.id = s.host_id WHERE s.id = ?`,
+			finishedAt[:10], counts.Critical, counts.High, counts.Medium, counts.Low, counts.Unknown,
+			exploit.Known, exploit.Likely, id); err != nil {
 			return err
 		}
 	}

@@ -30,6 +30,8 @@ import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
 import { HostLog } from "../components/HostLog";
 import { ThisServerBadge, agentOnline, connectionLabel } from "../lib/hosts";
+import { TagEditor } from "../components/Tags";
+import { TrendChart } from "../components/TrendChart";
 import { AgentStatus } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 
@@ -71,6 +73,9 @@ export function HostDetail() {
         description={
           <>
             {connectionLabel(data)}
+            <span className="mt-1.5 block">
+              <TagEditor key={data.tags.join(",")} hostId={data.id} tags={data.tags} canEdit={canOperate} />
+            </span>
             {data.transport === "local" && <SudoToggle host={data} />}
             {data.transport === "agent" && (
               <span className="mt-1 block">
@@ -174,6 +179,8 @@ export function HostDetail() {
       )}
 
       <Results host={data} onRun={(check) => setScanning({ initial: [check] })} />
+
+      <TrendChart host={data.id} title="This host's vulnerabilities over time" />
 
       <HostAudits hostId={data.id} />
 

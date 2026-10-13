@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"deaconguard/internal/advisory"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -18,9 +20,22 @@ func response(body string) *http.Response {
 	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}
 }
 
+// exploitData answers the KEV and EPSS downloads as unavailable, which
+// leaves the findings unmarked.
+func exploitData(request *http.Request) (*http.Response, bool) {
+	switch request.URL.String() {
+	case advisory.KEVSource, advisory.EPSSSource:
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, true
+	}
+	return nil, false
+}
+
 func TestScanDebianBookwormUsesOfficialTrackerAndDPKGInventory(t *testing.T) {
 	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if answer, ok := exploitData(request); ok {
+			return answer, nil
+		}
 		if request.URL.Host != "security-tracker.debian.org" {
 			t.Fatalf("unexpected feed host: %s", request.URL.Host)
 		}
@@ -37,12 +52,19 @@ func TestScanDebianBookwormUsesOfficialTrackerAndDPKGInventory(t *testing.T) {
 	if report.Findings[0].FixedVersion != "1.0-2" || report.AdvisoryDatabase.Source != "https://security-tracker.debian.org/tracker/data/json" {
 		t.Fatalf("unexpected advisory result: %+v", report.Findings[0])
 	}
+	// Without exploit data the finding is not marked either way.
+	if report.ExploitData.KEV.Available || report.ExploitData.KEV.Error == "" || report.Findings[0].Exploit != nil || report.Findings[0].Priority != "severe" {
+		t.Fatalf("exploit data: %+v, finding %+v", report.ExploitData, report.Findings[0])
+	}
 }
 
 func TestScanAmazonLinux2023UsesALASAndRPMInventory(t *testing.T) {
 	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	const advisoryURL = "https://alas.aws.amazon.com/AL2023/ALAS2023-2026-100.html"
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if answer, ok := exploitData(request); ok {
+			return answer, nil
+		}
 		switch request.URL.String() {
 		case "https://alas.aws.amazon.com/AL2023/alas.rss":
 			return response(`<rss><channel><item><title>ALAS2023-2026-100 (Important): example-source</title><description>CVE-2026-12345</description><link>` + advisoryURL + `</link></item></channel></rss>`), nil

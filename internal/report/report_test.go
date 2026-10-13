@@ -27,12 +27,19 @@ func sample(t *testing.T) Report {
 		{ID: "NET-01", Category: "Network", Title: "IP forwarding is off", Severity: "medium", Status: checks.ControlNA, Evidence: "runs containers"},
 	}
 	scan := store.Scan{ID: "scan1", HostID: "host1", Address: "ip-10-92-0-52", OS: "Ubuntu 24.04 LTS", StartedAt: "2026-10-12T09:00:00Z",
-		Checks: audit.Checks, Fixes: &store.FixSummary{Counts: map[string]int{"available": 1, "none": 1}, Actionable: store.SeverityCounts{High: 1}}}
+		Checks: audit.Checks, Fixes: &store.FixSummary{Counts: map[string]int{"available": 2, "none": 1}, Actionable: store.SeverityCounts{High: 1, Medium: 1}},
+		Exploit: store.ExploitCounts{Known: 2, KnownFixable: 1, Data: true}}
+	epss := 0.42
 	raw := map[string]any{
 		"findings": []any{
-			map[string]any{"id": "CVE-2026-0002", "package": "zlib1g", "installed_version": "1:1.3", "fixed_version": "", "severity": "low", "fix": "none"},
-			map[string]any{"id": "CVE-2026-0001", "package": "openssl", "installed_version": "3.0.13", "fixed_version": "3.0.14", "severity": "HIGH", "fix": "available"},
+			map[string]any{"id": "CVE-2026-0002", "package": "zlib1g", "installed_version": "1:1.3", "fixed_version": "", "severity": "low", "fix": "none",
+				"priority": "exploited", "exploit": map[string]any{"kev": true, "kev_due": "2026-11-01"}},
+			map[string]any{"id": "CVE-2026-0001", "package": "openssl", "installed_version": "3.0.13", "fixed_version": "3.0.14", "severity": "HIGH", "fix": "available",
+				"priority": "severe", "cvss_score": 7.5, "exploit": map[string]any{"kev": false, "epss": &epss}},
+			map[string]any{"id": "CVE-2026-0003", "package": "sudo", "installed_version": "1.9.15", "fixed_version": "1.9.16", "severity": "MEDIUM", "fix": "available",
+				"priority": "exploited", "cvss_score": 8.8, "exploit": map[string]any{"kev": true, "kev_due": "2026-10-30", "ransomware": true}},
 		},
+		"exploit_data": map[string]any{"kev": map[string]any{"available": true, "version": "2026.10.08"}, "epss": map[string]any{"available": true, "version": "2026-10-12"}},
 		"check_results": map[string]any{
 			checks.Hardening: checks.Result{Status: "completed", Controls: controls, Inventory: &checks.Inventory{Hostname: "ip-10-92-0-52", OS: "Ubuntu 24.04 LTS",
 				Kernel: "Linux 6.8.0", Architecture: "x86_64", CPUs: 2, MemoryBytes: 4 << 30, Disks: []checks.Disk{{Mount: "/", SizeBytes: 40 << 30, UsedBytes: 12 << 30, UsedPercent: 30}},
@@ -56,8 +63,22 @@ func sample(t *testing.T) Report {
 
 func TestReportBuildsInEveryFormat(t *testing.T) {
 	report := sample(t)
-	if report.Kind != "audit" || report.Audit.Counts.Accepted != 1 || report.Vulnerabilities[0].ID != "CVE-2026-0001" {
+	if report.Kind != "audit" || report.Audit.Counts.Accepted != 1 {
 		t.Fatalf("report = %+v", report)
+	}
+	// Fixable first; among them, known exploited first, whatever the severity.
+	if order := report.Vulnerabilities[0].ID + " " + report.Vulnerabilities[1].ID + " " + report.Vulnerabilities[2].ID; order != "CVE-2026-0003 CVE-2026-0001 CVE-2026-0002" {
+		t.Fatalf("order: %s", order)
+	}
+	if e := report.Exploit; e == nil || e.Known != 2 || e.KnownFixable != 1 || e.KEVVersion != "2026.10.08" || e.EPSSDate != "2026-10-12" {
+		t.Fatalf("exploit: %+v", report.Exploit)
+	}
+	if first := report.Vulnerabilities[0]; first.Exploitation() != "Known exploited, ransomware" || first.CVSS() != "8.8" ||
+		report.Vulnerabilities[1].Exploitation() != "EPSS 42%" || Percent(0.003) != "0.3%" || Percent(0.99957) != "99.9%" || Percent(1) != "100.0%" {
+		t.Fatalf("labels: %q %q %q", first.Exploitation(), first.CVSS(), report.Vulnerabilities[1].Exploitation())
+	}
+	if view := newView(report, ""); len(view.Waiting) != 1 || view.Waiting[0].Exploited != 1 {
+		t.Fatalf("waiting: %+v", view.Waiting)
 	}
 	snapshot, fingerprint, err := Snapshot(report)
 	if err != nil || len(fingerprint) != 64 {
@@ -72,7 +93,8 @@ func TestReportBuildsInEveryFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(page, []byte("<script>alert")) || !bytes.Contains(page, []byte("Acme Corp")) || !bytes.Contains(page, []byte(FormatFingerprint(fingerprint))) {
+	if bytes.Contains(page, []byte("<script>alert")) || !bytes.Contains(page, []byte("Acme Corp")) || !bytes.Contains(page, []byte(FormatFingerprint(fingerprint))) ||
+		!bytes.Contains(page, []byte("Known exploited, ransomware")) || !bytes.Contains(page, []byte("2 known to be exploited (CISA KEV)")) {
 		t.Fatal("the HTML report is not escaped, or misses its client or fingerprint")
 	}
 
@@ -91,8 +113,11 @@ func TestReportBuildsInEveryFormat(t *testing.T) {
 			}
 		}
 	}
-	if len(records) != 1+4+2+1 {
+	if len(records) != 1+4+3+1 {
 		t.Fatalf("%d CSV rows", len(records))
+	}
+	if records[5][1] != "CVE-2026-0003" || records[5][7] != "8.8" || records[5][9] != "yes, due 2026-10-30, used in ransomware" || records[6][8] != "0.4200" {
+		t.Fatalf("exploit columns: %q %q", records[5], records[6])
 	}
 
 	document, err := PDF(report, fingerprint)
