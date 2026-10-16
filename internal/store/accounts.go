@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 	"unicode"
 )
@@ -37,9 +38,7 @@ type User struct {
 }
 
 const (
-	// passwordIterations follows OWASP's PBKDF2-HMAC-SHA256 recommendation.
-	passwordIterations = 600_000
-	MinPasswordLength  = 12
+	MinPasswordLength = 12
 	// SessionLifetime is how long a sign-in lasts.
 	SessionLifetime = 12 * time.Hour
 )
@@ -54,6 +53,21 @@ var (
 	ErrLastAccount = errors.New("this is the only administrator that can sign in; make another account an administrator, or turn one on, first")
 	ErrUnknownRole = errors.New("the role must be admin, operator or viewer")
 )
+
+// productionPasswordIterations follows OWASP's PBKDF2-HMAC-SHA256
+// recommendation.
+const productionPasswordIterations = 600_000
+
+// passwordIterations is productionPasswordIterations. Test binaries use far fewer, so the many sign-ins in tests don't take
+// minutes under the race detector: each hash records its own count, which
+// verifying reads, so nothing else changes. testing.Testing is false in
+// every binary but a test.
+var passwordIterations = func() int {
+	if testing.Testing() {
+		return 1_000
+	}
+	return productionPasswordIterations
+}()
 
 // dummyHash is compared against when the username is unknown, so a failed
 // sign-in takes as long whether or not the account exists.
