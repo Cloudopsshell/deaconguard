@@ -60,14 +60,30 @@ jobs:
           # Without this, setup-go uses the runner's built-in Go even when a
           # newer patch release with security fixes is out.
           check-latest: true
-          cache: true
+          cache: false
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+
+      # Pull request jobs run on this runner too, and its Go and npm caches
+      # persist between jobs. A release must not reuse anything they left
+      # there, so it builds with empty caches in this job's own temporary
+      # directory, which the runner deletes afterwards, and checks every
+      # module against go.sum.
+      - name: Build with empty caches
+        run: |
+          {
+            echo "GOCACHE=$RUNNER_TEMP/go-build"
+            echo "GOMODCACHE=$RUNNER_TEMP/go-mod"
+            echo "npm_config_cache=$RUNNER_TEMP/npm"
+          } >> "$GITHUB_ENV"
+
+      - name: Download and verify Go modules
+        run: |
+          go mod download
+          go mod verify
 
       # Go, Node.js and web/package-lock.json give the exact versions.
       - name: Add the dependency tables to the release notes
