@@ -1,0 +1,7 @@
+{
+  "name": "dependabot-webhook-test",
+  "version": "1.0.0",
+  "dependencies": {
+    "minimist": "1.2.5"
+  }
+}
