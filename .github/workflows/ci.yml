@@ -30,7 +30,10 @@ jobs:
           # Without this, setup-go uses the runner's built-in Go even when a
           # newer patch release with security fixes is out.
           check-latest: true
-          cache: true
+          # The runner keeps Go's build and module caches on its own volume
+          # (GOCACHE, GOMODCACHE), so the GitHub cache, 1.3 GB downloaded and
+          # uploaded again by every job, only cost time.
+          cache: false
 
       - name: Check formatting
         run: |
@@ -51,6 +54,15 @@ jobs:
       - name: Check for known vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
+      # DeaconGuard is MIT and ships its dependencies inside the binary, so
+      # each must allow that. Add a licence here only after reading it; see
+      # CONTRIBUTING.md, "Third-party content".
+      - name: Go module licences
+        run: go run github.com/google/go-licenses/v2@v2.0.1 check ./... --allowed_licenses=MIT,ISC,BSD-2-Clause,BSD-3-Clause,Apache-2.0
+
+      - name: No restricted third-party content
+        run: sh scripts/check-content.sh
+
   web:
     name: Web UI build
     runs-on: [self-hosted, deaconguard]
@@ -62,12 +74,17 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
+      # npm's download cache is on the runner's volume (npm_config_cache).
       - name: Install dependencies
         working-directory: web
         run: npm ci
+
+      - name: Web UI licences
+        working-directory: web
+        run: |
+          npx --yes license-checker-rseidelsohn@5.0.1 --production --excludePrivatePackages \
+            --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0" >/dev/null
 
       - name: Type-check and build
         working-directory: web
@@ -86,43 +103,6 @@ jobs:
           scandir: packaging
         env:
           SHELLCHECK_OPTS: -s sh
-
-  licences:
-    name: Licences and third-party content
-    runs-on: [self-hosted, deaconguard]
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.26.x"
-          check-latest: true
-          cache: true
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      # DeaconGuard is MIT and ships its dependencies inside the binary, so
-      # each must allow that. Add a licence here only after reading it; see
-      # CONTRIBUTING.md, "Third-party content".
-      - name: Go module licences
-        run: go run github.com/google/go-licenses/v2@v2.0.1 check ./... --allowed_licenses=MIT,ISC,BSD-2-Clause,BSD-3-Clause,Apache-2.0
-
-      - name: Web UI licences
-        working-directory: web
-        run: |
-          npm ci
-          npx --yes license-checker-rseidelsohn@5.0.1 --production --excludePrivatePackages \
-            --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0" >/dev/null
-
-      - name: No restricted third-party content
-        run: sh scripts/check-content.sh
 
   release-config:
     name: Release config

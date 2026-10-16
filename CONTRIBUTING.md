@@ -51,7 +51,7 @@ DeaconGuard runs on other people's servers, so these rules are not negotiable:
 
 ## Third-party content
 
-DeaconGuard is MIT-licensed, and every release ships its dependencies inside the binary. CI enforces these rules, in the **Licences and third-party content** job:
+DeaconGuard is MIT-licensed, and every release ships its dependencies inside the binary. CI enforces these rules, in the **Go tests** and **Web UI build** jobs:
 
 - **Dependencies** must be MIT, ISC, BSD-2-Clause, BSD-3-Clause or Apache-2.0, for Go modules and the web UI's runtime packages alike. Copyleft (GPL, LGPL, AGPL) and source-available licences (SSPL, BUSL) can't be used. If a dependency needs another licence, read it and ask in the pull request before adding it to the list in `.github/workflows/ci.yml`.
 - **No CIS Benchmark material.** Its licence forbids using it in a product. Don't copy, paraphrase line by line, or name CIS Benchmarks or CIS Controls. Base hardening controls on public-domain sources (DISA STIG, NIST SP 800-53, NSA/CISA guides) or permissively licensed ones (ComplianceAsCode, BSD), and write them in our own words.
