@@ -96,15 +96,23 @@ nfpms:
     formats:
       - deb
       - rpm
-    # The install script creates the deaconguard user with useradd.
+    # The install script creates the deaconguard user with useradd. The
+    # server needs a CA bundle to download advisory feeds over HTTPS.
     overrides:
       deb:
         dependencies:
           - passwd
+          - ca-certificates
       rpm:
         # A file, not shadow-utils: SUSE packages useradd as shadow.
         dependencies:
           - /usr/sbin/useradd
+          - ca-certificates
+        # On SUSE, ca-certificates holds no certificates of its own; they come
+        # from ca-certificates-mozilla. Fedora, RHEL and Amazon Linux have no
+        # such package, and dnf skips a missing weak dependency.
+        recommends:
+          - ca-certificates-mozilla
     bindir: /usr/bin
     contents:
       - src: README.md
