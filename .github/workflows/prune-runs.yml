@@ -1,6 +1,6 @@
 name: Prune old runs
 
-# Keeps only the newest 5 finished runs of each workflow (CI, CLA, releases,
+# Keeps only the newest 10 finished runs of each workflow (CI, CLA, releases,
 # Dependabot and this one), and deletes older runs with their logs. Logs of a
 # public repository are public, so this keeps less history on show.
 #
@@ -29,10 +29,10 @@ jobs:
     name: Prune
     runs-on: [self-hosted, deaconguard]
     steps:
-      - name: Delete all but the newest 5 runs of each workflow
+      - name: Delete all but the newest 10 runs of each workflow
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          KEEP: "5"
+          KEEP: "10"
         with:
           script: |
             const keep = Number(process.env.KEEP);
