@@ -33,6 +33,13 @@ jobs:
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
           if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
 
+      # The Compose file, the Kustomize manifests and the Helm chart must pin the
+      # version being released. A pre-release such as 1.2.0-rc.1 checks 1.2.0.
+      - name: Check the deploy files pin this version
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          sh scripts/set-version.sh --check "${version%%-*}"
+
       - name: Extract release notes from CHANGELOG.md
         run: |
           version="${{ steps.version.outputs.version }}"
