@@ -4,6 +4,7 @@ Releases are built by the [release workflow](.github/workflows/release.yml) when
 
 - Linux and macOS archives, `.deb` and `.rpm` packages, `install.sh`, and `checksums.txt` on the GitHub release, with the notes from the matching `CHANGELOG.md` section.
 - `deaconguard_X.Y.Z_sbom.spdx.json`, the SBOM (Syft), and a "Dependencies" section appended to the notes by `scripts/release-dependencies.sh`. That script fails the release if its table names a package `install.sh` no longer installs.
+- The container image and the Helm chart on GHCR. The chart's version comes from the tag; the Compose and Kustomize files in `deploy/` must already pin it (see step 1).
 - `checksums.txt.sigstore.json`, a keyless [Sigstore](https://www.sigstore.dev) signature of `checksums.txt`. GitHub vouches that this workflow, for this tag, produced it, so there is no signing key to create or keep.
 
 ## Choose the version
@@ -17,6 +18,7 @@ Follow [Semantic Versioning](https://semver.org):
 ## Steps
 
 1. **Update `CHANGELOG.md`** on a branch: move the entries under `[Unreleased]` into a new section `## [X.Y.Z] - YYYY-MM-DD`, grouped as Added, Changed, Deprecated, Removed, Fixed, and Security, and update the comparison links at the bottom. List any upgrade steps under **Changed**.
+   On the same branch, run `sh scripts/set-version.sh X.Y.Z`. It writes the version into the Compose file, the Kustomize manifests and the Helm chart, so they deploy this release's image. Don't edit those versions by hand: CI checks the files agree, and the release workflow stops if they don't match the tag.
 2. **Merge** the branch into `main` through a pull request once the CI checks pass and it is approved.
 3. **Tag a release candidate** from `main` to test the pipeline without affecting users:
 

@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-18
+
+### Fixed
+
+- **Compose and Kustomize:** the files in `deploy/` now pin the image of their own release. At 1.0.1 they still deployed image 1.0.0 (the same code, so nothing behaved differently). A check in the release workflow now stops a release whose deploy files name another version.
+
 ## [1.0.1] - 2026-10-17
 
 ### Fixed
@@ -39,6 +45,7 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Cloudopsshell/deaconguard/releases/tag/v1.0.0

@@ -116,3 +116,7 @@ jobs:
         with:
           version: "~> v2"
           args: check
+
+      - name: Check the deploy files pin one version
+        run: |
+          sh scripts/set-version.sh --check "$(sed -n 's/^version: //p' deploy/helm/deaconguard/Chart.yaml)"
