@@ -37,7 +37,7 @@ A pull request can be merged when:
 
 - the author has signed the **[CLA](CLA.md)**;
 - the **CI** checks pass (Go formatting, vet, tests with the race detector, the vulnerability scan, the web UI build, ShellCheck of the install script, and the release configuration check);
-- it has an **approving review** from a maintainer, given after the last push;
+- it has an **approving review** from a [maintainer](MAINTAINERS.md), given after the last push;
 - every review conversation is resolved.
 
 ## Rules for scanner code
