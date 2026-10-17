@@ -10,9 +10,9 @@ Releases are built by the [release workflow](.github/workflows/release.yml) when
 
 Follow [Semantic Versioning](https://semver.org):
 
-- **Patch** (`0.1.0` → `0.1.1`): bug fixes only.
-- **Minor** (`0.1.1` → `0.2.0`): new features. Before 1.0.0, also any breaking change, such as a database change that cannot be downgraded or a changed CLI flag.
-- **Major** (`1.x` → `2.0.0`): breaking changes after 1.0.0.
+- **Patch** (`1.0.0` → `1.0.1`): bug fixes only.
+- **Minor** (`1.0.1` → `1.1.0`): new features that keep working with existing installs, scripts and API clients.
+- **Major** (`1.x` → `2.0.0`): any breaking change, such as a database change that cannot be downgraded, a removed or changed CLI flag, or a changed API.
 
 ## Steps
 
