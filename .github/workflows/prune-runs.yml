@@ -11,8 +11,10 @@ on:
   workflow_run:
     workflows: [CI, CLA, Release packages]
     types: [completed]
+  # Every night at midnight Stockholm time, following summer and winter time.
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "0 0 * * *"
+      timezone: "Europe/Stockholm"
   workflow_dispatch:
 
 permissions:
