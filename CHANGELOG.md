@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-17
+
 ### Fixed
 
 - **Packages:** the `.deb` and `.rpm` packages now depend on `ca-certificates`, and the `.rpm` recommends `ca-certificates-mozilla` for SUSE. On a minimal system without a CA bundle, the server couldn't download any advisory feed ("x509: certificate signed by unknown authority"). The install script was not affected.
@@ -37,5 +39,6 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Cloudopsshell/deaconguard/releases/tag/v1.0.0
