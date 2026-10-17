@@ -10,7 +10,7 @@ You accept this agreement by signing it through the CLA Assistant check on your 
 
 **"You"** (or **"Your"**) means the copyright owner, or the legal entity authorized by the copyright owner, that is making this agreement with the Maintainer. For legal entities, the entity making a Contribution and all other entities that control, are controlled by, or are under common control with that entity are considered a single Contributor. "Control" means (i) the power, direct or indirect, to cause the direction or management of such entity, whether by contract or otherwise, or (ii) ownership of fifty percent (50%) or more of the outstanding shares, or (iii) beneficial ownership of such entity.
 
-**"Maintainer"** means Vipin John Wilson (GitHub: [vjwilson1987](https://github.com/vjwilson1987)), the owner of the DeaconGuard project, and any person or legal entity to whom this agreement is assigned under section 9.
+**"Maintainer"** means Vipin John Wilson (GitHub: [wilsonvj](https://github.com/wilsonvj)), the owner of the DeaconGuard project, and any person or legal entity to whom this agreement is assigned under section 9.
 
 **"Contribution"** means any original work of authorship, including any modifications or additions to an existing work, that You intentionally submit to the Maintainer for inclusion in, or documentation of, DeaconGuard (the "Work"). "Submit" means any form of electronic, verbal, or written communication sent to the Maintainer or its representatives, including but not limited to pull requests, issues, and discussions on the DeaconGuard repositories, but excluding communication that You conspicuously mark or otherwise designate in writing as "Not a Contribution."
 

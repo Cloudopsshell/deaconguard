@@ -82,7 +82,7 @@ The script detects the distribution and architecture, then:
 2. **Installs [YARA-X](https://virustotal.github.io/yara-x/)** (`yr`, for the Advanced antivirus scan) and **[cosign](https://docs.sigstore.dev)** (to verify releases) to `/usr/local/bin`: each a pinned version, checked against a pinned checksum. A `yr` installed elsewhere, such as by a package, and an existing cosign are left as they are.
 3. Downloads the `.deb` or `.rpm` package from GitHub over HTTPS, **verifies with cosign that `checksums.txt` was signed by this repository's release workflow**, and checks the package against it. DeaconGuard is not installed when a check fails. It then runs `deaconguard setup server`, which creates the first dashboard account and starts the server, or `deaconguard setup agent`, which enrolls the machine and starts the agent. Running it again upgrades DeaconGuard and keeps the existing setup.
 
-- `curl … | DEACONGUARD_VERSION=0.4.0 sudo -E sh -` (or `curl … | sudo sh -s -- --version 0.4.0`) installs that release instead of the latest.
+- `curl … | DEACONGUARD_VERSION=1.0.0 sudo -E sh -` (or `curl … | sudo sh -s -- --version 1.0.0`) installs that release instead of the latest.
 - `--server` or `--agent` choose the mode explicitly. Other options go to `deaconguard setup`, for example `curl … | sudo sh -s -- --listen 0.0.0.0:9443`; see [Run the server](#run-the-server) and [the agent](#scan-other-machines-with-the-agent).
 - The script needs `curl`, `sha256sum`, systemd, and root. To read it before running it, open [get.deaconguard.io](https://get.deaconguard.io) in a browser, or download it first: `curl -fsSL https://get.deaconguard.io -o install.sh`, then `sudo sh install.sh`.
 
@@ -93,7 +93,7 @@ Each method below downloads into `/tmp`, verifies the checksum, and installs. Se
 #### Debian and Ubuntu
 
 ```sh
-VERSION=0.1.1
+VERSION=1.0.0
 ARCH=$(dpkg --print-architecture)
 cd /tmp
 curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_linux_${ARCH}.deb"
@@ -106,7 +106,7 @@ deaconguard version
 #### RHEL, Rocky Linux, AlmaLinux, Oracle Linux, Fedora, and Amazon Linux
 
 ```sh
-VERSION=0.1.1
+VERSION=1.0.0
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 cd /tmp
 curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_linux_${ARCH}.rpm"
@@ -127,7 +127,7 @@ sudo zypper install --allow-unsigned-rpm "./deaconguard_${VERSION}_linux_${ARCH}
 #### Other Linux systems and macOS
 
 ```sh
-VERSION=0.1.1
+VERSION=1.0.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 cd /tmp
@@ -141,7 +141,7 @@ deaconguard version
 
 macOS builds can run the server and the CLI but cannot scan the Mac itself. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
 
-With the [GitHub CLI](https://cli.github.com), `gh release download v0.1.1 -R Cloudopsshell/deaconguard -p 'FILE'` downloads a release file instead of `curl`.
+With the [GitHub CLI](https://cli.github.com), `gh release download v1.0.0 -R Cloudopsshell/deaconguard -p 'FILE'` downloads a release file instead of `curl`.
 
 #### From source
 
@@ -502,7 +502,7 @@ Package reports cover the installed DPKG/RPM packages and the running kernel whe
 
 ## Versioning
 
-DeaconGuard follows [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`. Patch releases only fix bugs; minor releases add features. Before 1.0.0, a minor release may also contain breaking changes, always listed with upgrade steps in [CHANGELOG.md](CHANGELOG.md). Versions with a suffix, such as `0.2.0-rc.1`, are pre-releases for testing and are marked as such on GitHub. Every binary reports its version with `deaconguard version`, and each scan report records the version that produced it.
+DeaconGuard follows [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`. Patch releases only fix bugs; minor releases add features without breaking anything; breaking changes only come in a new major version, always listed with upgrade steps in [CHANGELOG.md](CHANGELOG.md). Versions with a suffix, such as `1.1.0-rc.1`, are pre-releases for testing and are marked as such on GitHub. Every binary reports its version with `deaconguard version`, and each scan report records the version that produced it.
 
 ## Development
 
