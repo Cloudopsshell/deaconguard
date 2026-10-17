@@ -4,7 +4,7 @@ Version 1.0
 
 Thank you for contributing to DeaconGuard. This agreement records the rights you grant in your contributions, so that the project can keep using, distributing and licensing them in the future. It is based on the Apache Software Foundation Individual Contributor License Agreement v2.2. You keep the copyright in your contributions; this agreement only grants a license to use them.
 
-You accept this agreement by signing it through the CLA Assistant check on your first pull request. It then applies to all of your past and future Contributions to DeaconGuard.
+You accept this agreement by signing it on your first pull request, when the CLA bot asks you to, by commenting "I have read the CLA Document and I hereby sign the CLA". It then applies to all of your past and future Contributions to DeaconGuard.
 
 ## 1. Definitions
 

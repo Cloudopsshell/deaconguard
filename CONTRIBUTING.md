@@ -25,7 +25,13 @@ make ui-dev       # web UI with hot reload; run ./deaconguard serve alongside it
 
 ## Sign the Contributor License Agreement
 
-Before your first pull request can be merged, you need to sign the [DeaconGuard Contributor License Agreement](CLA.md). You keep the copyright in your work; the agreement grants the project a license to use and distribute your contribution. When you open your first pull request, the CLA Assistant bot comments with a link: sign in with GitHub and accept. This takes a minute, is needed only once, and covers all of your later contributions.
+Before your first pull request can be merged, you need to sign the [DeaconGuard Contributor License Agreement](CLA.md). You keep the copyright in your work; the agreement grants the project a license to use and distribute your contribution. When you open your first pull request, a CLA bot comments with a link to the agreement. To sign, reply on the pull request with exactly:
+
+```text
+I have read the CLA Document and I hereby sign the CLA
+```
+
+The **CLA** check then passes. Signing is needed only once and covers all of your later contributions; the record is kept on the `cla-signatures` branch. If the check doesn't update, comment `recheck`. Every commit must be made with an email address on your GitHub account, so the bot can tell who wrote it.
 
 If your employer has rights to code you write, make sure you have their permission before you sign.
 
