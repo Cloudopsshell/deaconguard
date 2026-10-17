@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Packages:** the `.deb` and `.rpm` packages now depend on `ca-certificates`, and the `.rpm` recommends `ca-certificates-mozilla` for SUSE. On a minimal system without a CA bundle, the server couldn't download any advisory feed ("x509: certificate signed by unknown authority"). The install script was not affected.
+
 ## [1.0.0] - 2026-10-17
 
 The first stable release, and the first published from this repository. DeaconGuard was developed as versions 0.1.0 to 0.19.0 before this; those releases are not republished here. Notes in the documentation such as "agents before 0.16.0" refer to them.
