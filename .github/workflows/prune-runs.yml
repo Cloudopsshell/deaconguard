@@ -1,0 +1,58 @@
+name: Prune old runs
+
+# Keeps only the newest 10 finished runs of each workflow (CI, CLA, releases,
+# Dependabot and this one), and deletes older runs with their logs. Logs of a
+# public repository are public, so this keeps less history on show.
+#
+# Never deleted: runs still in progress, and runs for the head commit of an
+# open pull request, whose checks the pull request still needs.
+
+on:
+  workflow_run:
+    workflows: [CI, CLA, Release packages]
+    types: [completed]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: prune-runs
+  cancel-in-progress: true
+
+jobs:
+  prune:
+    name: Prune
+    runs-on: [self-hosted, deaconguard]
+    steps:
+      - name: Delete all but the newest 10 runs of each workflow
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          KEEP: "10"
+        with:
+          script: |
+            const keep = Number(process.env.KEEP);
+            const { owner, repo } = context.repo;
+
+            const pulls = await github.paginate(github.rest.pulls.list, { owner, repo, state: "open", per_page: 100 });
+            const openHeads = new Set(pulls.map((pull) => pull.head.sha));
+
+            const workflows = await github.paginate(github.rest.actions.listRepoWorkflows, { owner, repo, per_page: 100 });
+            let deleted = 0;
+            for (const workflow of workflows) {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner, repo, workflow_id: workflow.id, status: "completed", per_page: 100,
+              });
+              runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+              for (const run of runs.slice(keep)) {
+                if (run.id === context.runId || openHeads.has(run.head_sha)) continue;
+                await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id });
+                deleted++;
+                core.info(`Deleted ${workflow.name} run ${run.id} from ${run.created_at}`);
+              }
+            }
+            core.notice(`Deleted ${deleted} old runs; kept the newest ${keep} of each workflow.`);
