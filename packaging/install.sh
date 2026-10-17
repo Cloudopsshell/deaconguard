@@ -64,7 +64,7 @@ Usage: install.sh [--server | --agent] [--version VERSION] [SETUP OPTIONS]
                       that scans this machine as root (--no-agent to skip it)
   --agent             install, enroll, and start the agent; asks for the token
                       unless DEACONGUARD_TOKEN is set
-  --version VERSION   install this release, such as 0.4.0; default: the latest
+  --version VERSION   install this release, such as 1.0.0; default: the latest
 
 Environment: DEACONGUARD_TOKEN (the agent's enrollment token) and
 DEACONGUARD_VERSION (same as --version).
@@ -221,7 +221,7 @@ main() {
 			mode="${1#--}"
 			;;
 		--version)
-			[ $# -ge 2 ] || fail "--version needs a version, such as 0.2.0"
+			[ $# -ge 2 ] || fail "--version needs a version, such as 1.0.0"
 			version="${2#v}"
 			shift
 			;;
@@ -334,7 +334,7 @@ main() {
 		version="${latest##*/tag/v}"
 	fi
 	case "$version" in
-	"" | *[!0-9A-Za-z.-]* | */*) fail "could not determine the release to install; pass --version, such as --version 0.2.0" ;;
+	"" | *[!0-9A-Za-z.-]* | */*) fail "could not determine the release to install; pass --version, such as --version 1.0.0" ;;
 	esac
 	ok "Release v$version"
 
