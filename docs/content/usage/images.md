@@ -1,14 +1,24 @@
 ---
 title: Images in registries
-description: Check container images in Docker Hub, GHCR, Quay, Harbor and other registries before they run, without pulling or running them.
+description: Check container images in Docker Hub, GHCR, Quay, Harbor and other registries before they run, from the dashboard or the command line, without running them.
 ---
 
 DeaconGuard checks container images **where they are stored**, before anything runs them: their OS packages against their distribution's advisories, their [application libraries](./libraries-and-sbom.md) against OSV, and their release support, as for [running containers](./containers.md). It needs DeaconGuard 1.3.0 or later.
+
+Check images from the dashboard's **Images** page, where the server keeps each image's results and history, or from the command line, in a pipeline for example:
 
 ```bash
 deaconguard image scan nginx:1.27
 deaconguard image scan ghcr.io/acme/shop:4.2 --platform linux/arm64
 ```
+
+## In the dashboard
+
+On **Images**, **Add image** takes an image's name, as in `docker pull`, and a platform (`linux/amd64` unless you choose another), and checks it at once. Each image shows its last scan, its vulnerabilities, those known to be exploited and how many a newer image fixes. **Scan now** checks it again; an image's page shows its latest result, what to fix first, and its last 20 scans with their digests, so you can see when the tag moved to a new build.
+
+The server reads the image itself, one at a time, so the machine running DeaconGuard needs to reach the registry over HTTPS. A scan interrupted by a server restart is marked failed; scan it again.
+
+Operators add, scan and remove images; viewers see the results. Removing an image deletes its results in DeaconGuard, never anything in the registry.
 
 ## Nothing in the image is run
 
@@ -26,7 +36,11 @@ No container is created and nothing in the image is executed. Docker isn't neede
 
 Any registry that implements the standard registry API works: Docker Hub, GitHub's GHCR, Quay, Harbor, GitLab, Google Artifact Registry, Azure Container Registry, Amazon ECR, a self-hosted `registry`. Public images need no login.
 
-For a private image, give a login (a username and a token or password with **pull** access) in the environment:
+For a private image, DeaconGuard needs a login for its registry: a username and a token or password with **pull** access. Prefer a read-only token where the registry offers one.
+
+**In the dashboard**, an admin saves it under **Images**, **Registry logins**: the registry's host (`docker.io`, `ghcr.io`, `registry.example.com:5000`), the username and the token. It is used for every image in that registry. The server stores it in its database and never shows it again; to change it, edit the login and type a new one, or leave it empty to keep the saved one. The audit log records who added, changed or deleted each login, without the token.
+
+**On the command line**, give it in the environment:
 
 ```bash
 DEACONGUARD_REGISTRY_USERNAME=robot \

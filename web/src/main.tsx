@@ -24,6 +24,8 @@ import { Settings } from "./pages/Settings";
 import { Verify } from "./pages/Verify";
 import { Policies } from "./pages/Policies";
 import { Notifications } from "./pages/Notifications";
+import { Images } from "./pages/Images";
+import { ImageDetail } from "./pages/ImageDetail";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -45,6 +47,8 @@ const router = createBrowserRouter([
           { path: "/scans/:scanId", element: <ScanReport /> },
           { path: "/vulnerabilities", element: <Vulnerabilities /> },
           { path: "/vulnerabilities/:cve", element: <VulnerabilityDetail /> },
+          { path: "/images", element: <Images /> },
+          { path: "/images/:imageId", element: <ImageDetail /> },
           { path: "/agents", element: <Agents /> },
           { path: "/schedules", element: <Schedules /> },
           { path: "/logs", element: <Logs /> },

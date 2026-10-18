@@ -384,7 +384,7 @@ Every scan can be downloaded as a **software bill of materials** of all its OS p
 
 ### Images in registries
 
-`deaconguard image scan IMAGE` checks an image where it is stored, such as `nginx:1.27` or `ghcr.io/acme/shop:4.2`, before anything runs it: its packages, libraries and release support, as for running containers. It reads the image through the registry API as data, checking every layer against its digest; nothing is pulled into Docker or run, and what was read from each layer is cached, so shared base layers are read once. `--fail-on high` exits with status 4 for pipelines. See [Images in registries](https://docs.deaconguard.io/usage/images).
+`deaconguard image scan IMAGE` checks an image where it is stored, such as `nginx:1.27` or `ghcr.io/acme/shop:4.2`, before anything runs it: its packages, libraries and release support, as for running containers. It reads the image through the registry API as data, checking every layer against its digest; nothing is pulled into Docker or run, and what was read from each layer is cached, so shared base layers are read once. `--fail-on high` exits with status 4 for pipelines. The dashboard's **Images** page does the same on the server, keeps each image's results and history, and holds registry logins for private images. See [Images in registries](https://docs.deaconguard.io/usage/images).
 
 ### Which vulnerabilities to fix first
 

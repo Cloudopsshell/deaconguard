@@ -55,6 +55,12 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `GET /api/scans/{id}/sbom?format=cyclonedx` | Viewer | The scan's [software bill of materials](../usage/libraries-and-sbom.md#download-an-sbom), as CycloneDX 1.6 (`cyclonedx`, the default) or SPDX 2.3 (`spdx`) JSON; 404 for scans from before 1.1.0 |
 | `GET /api/vulnerabilities` | Viewer | Every CVE on every host, most urgent first, with KEV, EPSS, CVSS and fix deadlines |
 | `GET /api/vulnerabilities/{cve}` | Viewer | The hosts and packages one CVE affects |
+| `GET /api/images` | Viewer | The [registry images](../usage/images.md) DeaconGuard checks, each with its latest scan |
+| `POST /api/images` | Operator | Add an image and start its first scan: `{"reference": "ghcr.io/acme/shop:4.2", "platform": "linux/amd64"}` |
+| `POST /api/images/{id}/scans` | Operator | Scan an image again; 409 while a scan of it is queued or running |
+| `GET /api/images/{id}` | Viewer | One image with its last 20 scans, without their results |
+| `GET /api/image-scans/{id}` | Viewer | One image scan with its full result; poll until `status` is `succeeded` or `failed` |
+| `POST /api/registry-logins` | Admin | Save a registry login: `{"registry": "ghcr.io", "username": "robot", "secret": "…"}`; the secret is never returned |
 | `GET /api/audits` | Viewer | Audits, with their grades |
 | `PUT /api/hosts/{id}/tags` | Operator | Set a host's tags: `{"tags": ["prod", "web"]}` |
 | `GET /api/trends?days=90&tag=prod` | Viewer | Open vulnerabilities per day |
