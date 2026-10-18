@@ -51,3 +51,17 @@ func TestRejectsMalformedRPMInventory(t *testing.T) {
 		t.Fatal("expected malformed RPM row to fail")
 	}
 }
+
+func TestParseAPKInstalled(t *testing.T) {
+	contents := "C:Q1abc=\nP:musl\nV:1.2.5-r1\nA:x86_64\no:musl\n\nC:Q1def=\nP:libcrypto3\nV:3.3.2-r0\nA:x86_64\no:openssl\n\nP:noversion\n"
+	packages, err := ParseAPKInstalled(contents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packages) != 2 || packages[1].Name != "libcrypto3" || packages[1].Source != "openssl" || packages[1].Version != "3.3.2-r0" || packages[1].Arch != "x86_64" {
+		t.Errorf("packages = %+v", packages)
+	}
+	if _, err := ParseAPKInstalled(""); err == nil {
+		t.Error("an empty database must be an error")
+	}
+}

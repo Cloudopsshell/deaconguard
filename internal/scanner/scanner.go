@@ -1,6 +1,8 @@
 package scanner
 
 import (
+	"context"
+	"deaconguard/internal/osv"
 	"fmt"
 	"net/http"
 	"sort"
@@ -54,7 +56,7 @@ type Distro struct {
 	VersionID string `json:"version_id"`
 }
 
-func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, now time.Time) (Report, error) {
+func Scan(osRelease, dpkgStatus, rpmQuery, apkInstalled, kernel string, client *http.Client, now time.Time) (Report, error) {
 	if len(osRelease) == 0 || len(osRelease) > 16*1024 {
 		return Report{}, fmt.Errorf("OS release inventory is missing or exceeds 16 KiB")
 	}
@@ -69,6 +71,12 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 			return Report{}, fmt.Errorf("dpkg inventory is missing or exceeds 32 MiB")
 		}
 		packages, err = inventory.ParseDPKGStatus(dpkgStatus)
+	} else if target.Family == platform.Alpine {
+		packageManager = "apk"
+		if len(apkInstalled) == 0 || len(apkInstalled) > maxInventoryBytes {
+			return Report{}, fmt.Errorf("apk inventory is missing or exceeds 32 MiB")
+		}
+		packages, err = inventory.ParseAPKInstalled(apkInstalled)
 	} else {
 		packageManager = "rpm"
 		if len(rpmQuery) == 0 || len(rpmQuery) > maxInventoryBytes {
@@ -115,6 +123,14 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 			var family advisory.FamilyEvaluation
 			family, err = advisory.EvaluateFamilyOVAL(target, feed.Data, packages)
 			evaluation, assumedSigned = family.DebianEvaluation, family.AssumedSigned
+		}
+	case platform.Alpine:
+		feed, err = advisory.LoadAlpineSecDB(target, client, now)
+		if err == nil {
+			evaluation, err = advisory.EvaluateAlpine(target, packages, feed.Data)
+		}
+		if err == nil {
+			alpineSeverities(evaluation.Findings)
 		}
 	case platform.Rocky, platform.Fedora:
 		evaluation, feed.Metadata, err = advisory.LoadUpdateInfo(target, packages, client, now)
@@ -194,6 +210,8 @@ func PlatformName(target platform.Platform) string {
 		return "Fedora " + target.VersionID
 	case platform.OpenSUSELeap:
 		return "openSUSE Leap " + target.VersionID
+	case platform.Alpine:
+		return "Alpine Linux " + target.VersionID
 	case platform.SLES:
 		if target.Major == 15 {
 			return fmt.Sprintf("SUSE Linux Enterprise 15 SP%d", target.Minor)
@@ -225,6 +243,8 @@ func coverage(family platform.Family, assumedSigned bool) string {
 		text = "Rocky Linux security errata (updateinfo) from the BaseOS and AppStream repositories"
 	case platform.Fedora:
 		text = "Fedora security updates (updateinfo) from the updates repository"
+	case platform.Alpine:
+		text = "Alpine security database (secdb) for the main and community repositories. It lists fixed vulnerabilities only, so ones Alpine hasn't fixed yet aren't reported; severities are the CVEs' CVSS scores from OSV"
 	default:
 		return "No advisory coverage"
 	}
@@ -245,4 +265,36 @@ func releaseLifecycle(target platform.Platform, client *http.Client, now time.Ti
 		return lifecycle.Fedora(feed.Data, now)
 	}
 	return lifecycle.Of(target, now)
+}
+
+// alpineSeverities rates Alpine findings, which Alpine's database doesn't,
+// with each CVE's CVSS v3 score from its OSV record. Only CVE IDs are sent.
+// A CVE whose record can't be fetched stays UNKNOWN; the scan goes on.
+func alpineSeverities(findings []advisory.Finding) {
+	var ids []string
+	for _, finding := range findings {
+		if strings.HasPrefix(finding.ID, "CVE-") {
+			ids = append(ids, finding.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	records, _ := osv.NewClient().Records(ctx, ids)
+	for index := range findings {
+		record, ok := records[findings[index].ID]
+		if !ok {
+			continue
+		}
+		if score, vector, ok := osv.CVSS3(record); ok {
+			findings[index].CVSSScore, findings[index].CVSSVector = score, vector
+			findings[index].Severity = osv.SeverityOfScore(score)
+			findings[index].CVSSSeverity = findings[index].Severity
+		}
+		if summary := strings.TrimSpace(record.Summary); summary != "" {
+			findings[index].Title = summary
+		}
+	}
 }
