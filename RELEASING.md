@@ -17,8 +17,14 @@ Follow [Semantic Versioning](https://semver.org):
 
 ## Steps
 
-1. **Update `CHANGELOG.md`** on a branch: move the entries under `[Unreleased]` into a new section `## [X.Y.Z] - YYYY-MM-DD`, grouped as Added, Changed, Deprecated, Removed, Fixed, and Security, and update the comparison links at the bottom. List any upgrade steps under **Changed**.
-   On the same branch, run `sh scripts/set-version.sh X.Y.Z`. It writes the version into the Compose file, the Kustomize manifests and the Helm chart, so they deploy this release's image. Don't edit those versions by hand: CI checks the files agree, and the release workflow stops if they don't match the tag.
+1. **Prepare the release** on a branch. Changes land under `## [Unreleased]` in `CHANGELOG.md` as they are merged, grouped as Added, Changed, Deprecated, Removed, Fixed, and Security, with any upgrade steps under **Changed**. Then run:
+
+   ```sh
+   git switch main && git pull && git switch -c release/X.Y.Z
+   sh scripts/prepare-release.sh X.Y.Z
+   ```
+
+   It moves the Unreleased entries into `## [X.Y.Z] - YYYY-MM-DD`, updates the comparison links, and runs `scripts/set-version.sh X.Y.Z`, which writes the version into the Compose file, the Kustomize manifests and the Helm chart. Don't edit those versions by hand: CI checks the files agree, and the release workflow stops if they don't match the tag. Commit, push and open the release pull request.
 2. **Merge** the branch into `main` through a pull request once the CI checks pass and it is approved.
 3. **Tag a release candidate** from `main` to test the pipeline without affecting users:
 
