@@ -88,3 +88,18 @@ func severityOfScore(score float64) string {
 	}
 	return "UNKNOWN"
 }
+
+// CVSS3 is a record's CVSS v3 base score and vector, if it has one.
+func CVSS3(record Vulnerability) (float64, string, bool) {
+	for _, severity := range record.Severity {
+		if severity.Type == "CVSS_V3" {
+			if score, ok := cvss3BaseScore(severity.Score); ok {
+				return score, severity.Score, true
+			}
+		}
+	}
+	return 0, "", false
+}
+
+// SeverityOfScore is the CVSS qualitative rating of a base score.
+func SeverityOfScore(score float64) string { return severityOfScore(score) }

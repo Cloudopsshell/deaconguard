@@ -15,6 +15,7 @@ description: Which Linux distributions DeaconGuard scans, the advisory data it u
 | openSUSE Leap | 15.6, 16.0 | SUSE's CVE OVAL. |
 | SUSE Linux Enterprise Server and Desktop | 15 SP6 and later, 16 | SUSE's CVE OVAL. |
 | Amazon Linux | 2023 | ALAS RSS and bulletins, with replacement RPM versions. AWS notes that bulletin pages and repository metadata can briefly disagree. |
+| Alpine Linux | 3.18 and later | Alpine's security database (secdb) for the main and community repositories. It lists only vulnerabilities Alpine has fixed, so ones it hasn't fixed yet aren't reported. Alpine rates nothing, so severities are each CVE's CVSS v3 score from [OSV](https://osv.dev), or unknown when no score is published. |
 
 All on **amd64 and arm64**. Advisory checks DeaconGuard can't evaluate are listed with the scan, never treated as clean.
 
@@ -39,10 +40,11 @@ The dashboard lists hosts past regular support. The hosts list and each host's p
 
 - **CentOS Stream 9 and 10** are recognised but deliberately rejected: their official repositories publish no `updateinfo` metadata, and RHEL OVAL isn't assumed to match them.
 - **RHEL 10** isn't enabled yet: no official RHEL 10 feed was present in Red Hat's feed index.
-- **Alpine** is planned, together with container scanning, in a later release.
 - **openSUSE Tumbleweed**, **Amazon Linux 2**, and other distributions and releases not listed above. The install script won't set up an agent on them.
 
-The server itself can run on any of the distributions above; only the machines you scan need a supported release.
+The server itself can run on any of the distributions above except Alpine; only the machines you scan need a supported release.
+
+**Alpine machines:** the install script and packages need systemd, which Alpine doesn't use, so they don't set up an agent there. Run `deaconguard agent enroll` and `deaconguard agent run` from the [release archive](./installation/manual-install.md) under your own OpenRC service, or run the agent's [container image](./installation/docker.md). Alpine is most common inside containers, which DeaconGuard will scan in a coming release.
 
 ## Feed hosts
 
@@ -59,6 +61,7 @@ The server downloads the advisory data, so it needs HTTPS access to the hosts fo
 | Fedora | `dl.fedoraproject.org`, `archives.fedoraproject.org`, `bodhi.fedoraproject.org` |
 | openSUSE, SUSE Linux Enterprise | `ftp.suse.com` |
 | Amazon Linux | `alas.aws.amazon.com` |
+| Alpine Linux | `secdb.alpinelinux.org`, and `api.osv.dev` for severities (only CVE IDs are sent) |
 
 ## What a report covers
 

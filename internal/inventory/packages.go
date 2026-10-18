@@ -107,3 +107,33 @@ func sourcePackageName(sourceRPM string) string {
 	}
 	return sourceRPM[:previous]
 }
+
+// ParseAPKInstalled parses Alpine's /lib/apk/db/installed: one block per
+// package, separated by blank lines, with lines such as P:name, V:version,
+// A:architecture and o:origin (the source package, which Alpine's security
+// database is keyed by).
+func ParseAPKInstalled(contents string) ([]Package, error) {
+	packages := make([]Package, 0)
+	for _, block := range strings.Split(strings.TrimSpace(contents), "\n\n") {
+		fields := make(map[string]string)
+		for _, line := range strings.Split(block, "\n") {
+			if len(line) > 2 && line[1] == ':' {
+				if _, seen := fields[line[:1]]; !seen {
+					fields[line[:1]] = line[2:]
+				}
+			}
+		}
+		if fields["P"] == "" || fields["V"] == "" {
+			continue
+		}
+		source := fields["o"]
+		if source == "" {
+			source = fields["P"]
+		}
+		packages = append(packages, Package{Name: fields["P"], Version: fields["V"], Source: source, Arch: fields["A"]})
+	}
+	if len(packages) == 0 {
+		return nil, fmt.Errorf("package inventory contains no installed apk packages")
+	}
+	return packages, nil
+}

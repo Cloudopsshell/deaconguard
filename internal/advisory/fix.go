@@ -98,6 +98,11 @@ func classify(finding Finding, family platform.Family, packages []inventory.Pack
 			return FixUbuntuPro
 		}
 		return FixAvailable
+	case platform.Alpine:
+		if finding.FixedVersion == "" {
+			return FixNone
+		}
+		return FixAvailable
 	case platform.RHEL, platform.AmazonLinux, platform.Rocky, platform.Alma, platform.Oracle, platform.Fedora, platform.OpenSUSELeap, platform.SLES:
 		if finding.FixedVersion == "" {
 			return FixNone
