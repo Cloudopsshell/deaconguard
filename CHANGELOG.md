@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Alpine Linux** 3.18 and later: installed packages (`/lib/apk/db/installed`) are checked against Alpine's security database for the main and community repositories, with Alpine's own version ordering. Alpine lists only vulnerabilities it has fixed, and rates none, so each CVE's severity is its CVSS v3 score from OSV (only CVE IDs are sent), or unknown when none is published. The release lifecycle uses Alpine's published end-of-life dates. The install script still needs systemd, so on Alpine machines run the agent from the release archive or its container image.
+
 ## [1.1.0] - 2026-10-18
 
 ### Added

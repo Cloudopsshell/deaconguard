@@ -42,7 +42,7 @@ func TestScanDebianBookwormUsesOfficialTrackerAndDPKGInventory(t *testing.T) {
 		return response(`{"example":{"CVE-2025-0001":{"description":"Debian integration issue","releases":{"bookworm":{"status":"resolved","fixed_version":"1.0-2","urgency":"high"}}}}}`), nil
 	})}
 	status := "Package: example\nStatus: install ok installed\nVersion: 1.0-1\nSource: example\n\n"
-	report, err := Scan("ID=debian\nVERSION_ID=12\nVERSION_CODENAME=bookworm\n", status, "", "6.1.0", client, time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC))
+	report, err := Scan("ID=debian\nVERSION_ID=12\nVERSION_CODENAME=bookworm\n", status, "", "", "6.1.0", client, time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestScanAmazonLinux2023UsesALASAndRPMInventory(t *testing.T) {
 		}
 	})}
 	rpmQuery := "example\t0\t1.0\t1.amzn2023.0.1\texample-source-1.0-1.amzn2023.0.1.src.rpm\tx86_64\n"
-	report, err := Scan("ID=amzn\nVERSION_ID=2023\nNAME=Amazon Linux\n", "", rpmQuery, "6.1.0-aws", client, time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC))
+	report, err := Scan("ID=amzn\nVERSION_ID=2023\nNAME=Amazon Linux\n", "", rpmQuery, "", "6.1.0-aws", client, time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestScanRejectsCentOSStreamBeforeAdvisoryLookup(t *testing.T) {
 		t.Fatal("unsupported CentOS Stream must not query RHEL or another vendor feed")
 		return nil, nil
 	})}
-	_, err := Scan("NAME=CentOS Stream\nID=centos\nVERSION_ID=10\n", "", "", "6.1.0", client, time.Now())
+	_, err := Scan("NAME=CentOS Stream\nID=centos\nVERSION_ID=10\n", "", "", "", "6.1.0", client, time.Now())
 	if err == nil || !strings.Contains(err.Error(), "no authoritative advisory feed") {
 		t.Fatalf("unexpected CentOS Stream result: %v", err)
 	}
