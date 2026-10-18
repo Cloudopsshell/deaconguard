@@ -42,6 +42,7 @@ type call struct {
 	body         any
 	cookie       *http.Cookie
 	bearer       string
+	headers      map[string]string
 }
 
 func do(t *testing.T, s *Server, c call) *httptest.ResponseRecorder {
@@ -65,6 +66,9 @@ func do(t *testing.T, s *Server, c call) *httptest.ResponseRecorder {
 	}
 	if c.bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+c.bearer)
+	}
+	for name, value := range c.headers {
+		req.Header.Set(name, value)
 	}
 	recorder := httptest.NewRecorder()
 	s.ServeHTTP(recorder, req)
