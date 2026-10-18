@@ -215,7 +215,7 @@ func SupportsYARA(version string) bool {
 
 // checkSince is the agent version (major, minor) that added each check that
 // older agents don't have.
-var checkSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}}
+var checkSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}, "containers": {1, 2}}
 
 // SupportsCheck reports whether an agent of version runs check. Builds
 // without a release version, such as "dev", are assumed to.
@@ -239,7 +239,7 @@ func ErrAgentTooOld(address, version, check string) error {
 	if version == "" {
 		version = "an unknown version"
 	}
-	names := map[string]string{"hardening": "the hardening audit", "libraries": "the application library check"}
+	names := map[string]string{"hardening": "the hardening audit", "libraries": "the application library check", "containers": "the running container check"}
 	name := names[check]
 	if name == "" {
 		name = "the " + check + " check"

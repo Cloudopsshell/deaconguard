@@ -141,7 +141,16 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 				inputs.YARA = checks.YARAInput{Unavailable: "this scan has no source for the rules"}
 			}
 		}
-		result := checks.Run(id, executor, detected, now, inputs)
+		var result checks.Result
+		if id == checks.Containers {
+			result = collectContainers(executor)
+			// An agent sends what it read; a scan run here checks it now.
+			if options.CollectInventory == nil && result.Status == checks.StatusCompleted {
+				evaluateContainers(&result, progress)
+			}
+		} else {
+			result = checks.Run(id, executor, detected, now, inputs)
+		}
 		// An agent sends the library list to the server, which checks it
 		// against OSV; a scan run here checks it now.
 		if id == checks.Libraries && options.CollectInventory == nil && result.Status != checks.StatusFailed {

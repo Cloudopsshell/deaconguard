@@ -55,6 +55,10 @@ var definitions = []Definition{
 		Description: "Finds the libraries applications use (npm, Python, Go, Ruby, Rust and PHP) and checks them against the OSV vulnerability database. The server sends OSV only the libraries' names and versions.",
 	},
 	{
+		ID: Containers, Name: "Running containers", Sudo: "recommended",
+		Description: "Finds the containers running on the host (Docker, Podman, containerd) and checks each one's OS packages and application libraries, as for the host itself. Nothing inside a container is run.",
+	},
+	{
 		ID: Integrity, Name: "System file integrity", Sudo: "recommended",
 		Description: "Verifies installed system files against the package manager's checksums to find replaced binaries and libraries.",
 		Warning:     "Reads every packaged file on the host, which can take several minutes.",
@@ -139,6 +143,8 @@ type Result struct {
 	// Libraries is what the application library check found on the host;
 	// the server checks it against OSV.
 	Libraries *libraries.Result `json:"libraries,omitempty"`
+	// Containers are the running containers, set by the container check.
+	Containers []ContainerResult `json:"containers,omitempty"`
 }
 
 func (result *Result) add(finding Finding) {

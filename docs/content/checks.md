@@ -6,7 +6,7 @@ description: What each DeaconGuard check looks at, and the commands it runs.
 Each scan runs the checks you choose, in the dashboard's scan dialog or with:
 
 ```bash
-deaconguard scan HOST_ID --checks packages,libraries,integrity,malware,config,hardening,antivirus
+deaconguard scan HOST_ID --checks packages,libraries,containers,integrity,malware,config,hardening,antivirus
 ```
 
 **Package vulnerabilities** is the default. A [server audit](./usage/audits.md) runs every check at once and grades the result. The antivirus scan is **Basic** (ClamAV) unless you choose **Advanced** in the scan dialog, or add `yara` to `--checks`, which runs YARA rules as well.
@@ -15,6 +15,7 @@ deaconguard scan HOST_ID --checks packages,libraries,integrity,malware,config,ha
 | --- | --- | --- | --- |
 | Package vulnerabilities | `packages` | Compares installed packages and the running kernel with the distribution's official advisories (see [Supported distributions](./supported-distributions.md)), and marks each vulnerability [known or likely to be exploited](./usage/vulnerabilities.md) from CISA KEV and EPSS. | `/etc/os-release`, the DPKG status file or `rpm -qa`, `uname -r` |
 | Application libraries | `libraries` | Finds the libraries applications use (npm, Python, Go, Ruby, Rust and PHP) from their lock files and installed packages, and checks them against [OSV](https://osv.dev) on the server. See [Application libraries and SBOM](./usage/libraries-and-sbom.md). Needs agent 1.1.0 or later. | `find` for package-manager files on `/`, `/home`, `/opt`, `/srv`, `/usr/local`, `/var/www` and `/root` (not `/usr/lib` or `/usr/share`), and `head -c` to read each, at most 4 MB |
+| Running containers | `containers` | Finds the containers running on the machine (Docker, Podman, containerd or CRI-O) and checks each one's OS packages and libraries, as for the machine itself. Nothing in a container is run, and links in a container are never followed. See [Running containers](./usage/containers.md). Needs agent 1.2.0 or later, as root. | `docker`/`podman`/`crictl` `ps` and `inspect`; then each container's files read through `/proc/PID/root` by the agent itself |
 | System file integrity | `integrity` | Verifies packaged files against the package manager's checksums. Changed binaries and libraries, a classic rootkit sign, are reported; edited configuration files are counted but not reported. | `dpkg --verify` or `rpm -Va` |
 | Malware & compromise indicators | `malware` | Looks for crypto-miner processes; programs running from `/tmp`, `/dev/shm`, memory or deleted files; programs disguised as kernel threads; `/etc/ld.so.preload`; hidden executables in temporary directories; and download-and-execute or reverse-shell patterns in cron and systemd. This is not a full antivirus scan. | `/proc`, `ps`, `find` on temporary directories, cron and systemd files |
 | Security configuration | `config` | Reports SSH root or password login, empty passwords, X11 forwarding; risky services such as Redis, databases, Telnet or the Docker API listening on all interfaces; pending reboots; disabled automatic updates; and, with sudo, a missing host firewall. | sshd configuration, `ss`/`netstat`, reboot and update settings, firewall rules |
