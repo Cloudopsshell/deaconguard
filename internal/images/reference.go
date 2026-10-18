@@ -99,3 +99,22 @@ func (r Reference) reference() string {
 	}
 	return r.Tag
 }
+
+// RegistryHost names a registry as references do, for saved logins: "docker.io"
+// is registry-1.docker.io, and a scheme or trailing slash is dropped.
+func RegistryHost(text string) (string, error) {
+	host := strings.ToLower(strings.TrimSpace(text))
+	host = strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	host = strings.TrimSuffix(host, "/")
+	switch host {
+	case "docker.io", "index.docker.io", "registry.hub.docker.com", "hub.docker.com":
+		host = dockerHub
+	}
+	if host == "" || !registryPattern.MatchString(host) {
+		return "", fmt.Errorf("%q is not a registry host, such as ghcr.io or registry.example.com:5000", text)
+	}
+	return host, nil
+}
+
+// Platforms are the platforms an image can be checked for.
+var Platforms = []string{"linux/amd64", "linux/arm64", "linux/arm/v7", "linux/386", "linux/ppc64le", "linux/s390x"}

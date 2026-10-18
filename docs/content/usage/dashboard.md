@@ -12,6 +12,7 @@ The server serves the dashboard over HTTPS with sign-in, optionally [with two-st
 - **Host page:** its tags, per-check results, full scan reports with search and filters, its vulnerabilities over time, the host's audits, and the scan history. **Run audit** starts a [server audit](./audits.md).
 - **Server audits:** every audit with its grade, and the switch to audit machines as they enroll. Audit and scan pages have **Reports**: create, download (PDF, HTML, Excel, CSV, JSON) and share them; see [Reports](./reports.md). **Verify a report** checks a report's fingerprint. Each audit's page has the grade, what holds it back, every baseline control with how to fix it, accepted risks and the machine's inventory. See [Server audits](./audits.md).
 - **Vulnerabilities:** each vulnerability, with its CVSS score and exploitation, most urgent first, and the hosts it affects. See [Vulnerabilities and what to fix first](./vulnerabilities.md).
+- **Images:** container images in registries, checked without running them, with each one's results and scan history, and registry logins for private images (admins). See [Images in registries](./images.md).
 - **Agents** (server only): enrolled agents, their status and the server port each uses, and enrollment tokens. With an [agent port](../security/securing-the-dashboard.md#give-agents-their-own-port), it shows which agents have moved to it.
 - **Schedules:** automatic scans on chosen days. See [Schedules](#schedules).
 - **Logs:** what the server and each agent did. See [Logs](#logs).
