@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-18
+
 ### Added
 
 - **Running containers:** a new check, `containers`, finds the containers running on a machine (Docker, Podman, and containerd or CRI-O through `crictl`, such as Kubernetes nodes) and checks each one's OS packages against its distribution's advisories and its libraries against OSV, with its release support. Nothing inside a container is run: the agent reads each container's files itself through `/proc/PID/root` and never follows a symbolic link there, so a container can't make it read a host file. RPM-based images are read from `rpmdb.sqlite` directly; distroless images from `status.d`. Containers with the same contents are checked once. The scan's **Running containers** tab lists every container with its OS, support, vulnerabilities and what to fix in its image. It needs agent 1.2.0 or later, as root; the Kubernetes DaemonSet already qualifies.
@@ -63,7 +65,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.0...v1.0.1
