@@ -213,9 +213,9 @@ func SupportsYARA(version string) bool {
 	return major > 0 || minor >= 5
 }
 
-// checkSince is the agent minor version (0.x) that added each check that
+// checkSince is the agent version (major, minor) that added each check that
 // older agents don't have.
-var checkSince = map[string]int{"yara": 5, "hardening": 12}
+var checkSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}}
 
 // SupportsCheck reports whether an agent of version runs check. Builds
 // without a release version, such as "dev", are assumed to.
@@ -228,7 +228,7 @@ func SupportsCheck(version, check string) bool {
 	if _, err := fmt.Sscanf(version, "%d.%d.", &major, &minor); err != nil {
 		return version != ""
 	}
-	return major > 0 || minor >= since
+	return major > since[0] || (major == since[0] && minor >= since[1])
 }
 
 // ErrAgentTooOld explains why a check was refused for an agent.
@@ -239,8 +239,14 @@ func ErrAgentTooOld(address, version, check string) error {
 	if version == "" {
 		version = "an unknown version"
 	}
-	return fmt.Errorf("the hardening audit needs the DeaconGuard agent 0.%d.0 or later on %s, which runs %s; "+
-		"upgrade it there with: curl -fsSL https://get.deaconguard.io | sudo sh -", checkSince[check], address, version)
+	names := map[string]string{"hardening": "the hardening audit", "libraries": "the application library check"}
+	name := names[check]
+	if name == "" {
+		name = "the " + check + " check"
+	}
+	since := checkSince[check]
+	return fmt.Errorf("%s needs the DeaconGuard agent %d.%d.0 or later on %s, which runs %s; "+
+		"upgrade it there with: curl -fsSL https://get.deaconguard.io | sudo sh -", name, since[0], since[1], address, version)
 }
 
 // ErrNeedsNewerAgent explains why an advanced scan was refused for an agent.

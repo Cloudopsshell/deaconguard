@@ -41,7 +41,7 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 - **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself. The server also runs [in a container](#docker-compose-and-kubernetes), with Docker, Compose or Kubernetes, and the agent runs on every Kubernetes node as a DaemonSet.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
 - **Server memory:** give the server at least **1 GB of memory** (RAM plus swap). It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB. With too little, Linux stops the server mid-scan, and the dashboard says so after it restarts.
-- **Network:** the server needs HTTPS access to the distributions' advisory feeds (the hosts are listed under [Supported distributions](#supported-distributions)), and to `www.cisa.gov` and `epss.empiricalsecurity.com` for exploit data. With [notifications](#notifications), it also reaches your mail server and webhooks. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
+- **Network:** the server needs HTTPS access to the distributions' advisory feeds (the hosts are listed under [Supported distributions](#supported-distributions)), and to `www.cisa.gov` and `epss.empiricalsecurity.com` for exploit data. With the [application library check](#application-libraries-and-sbom), it also reaches `api.osv.dev`, sending only library names and versions. With [notifications](#notifications), it also reaches your mail server and webhooks. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
 
 ## Install
 
@@ -218,6 +218,7 @@ or work in the terminal:
 deaconguard host list
 deaconguard scan HOST_ID --checks packages,malware,config
 deaconguard report REPORT_ID --json
+deaconguard sbom SCAN_ID > sbom.cdx.json
 ```
 
 For a one-off scan without registering the machine:
@@ -359,11 +360,12 @@ Uninstalling stops the services and keeps your data. To delete it as well, remov
 
 ## Checks
 
-Each scan runs the checks you choose, in the web UI's scan dialog or with `deaconguard scan HOST_ID --checks packages,integrity,malware,config,hardening,antivirus`. Package vulnerabilities is the default. The antivirus scan is **Basic** (ClamAV) by default; choose **Advanced** in the dialog, or add `yara` to `--checks`, to run YARA rules as well.
+Each scan runs the checks you choose, in the web UI's scan dialog or with `deaconguard scan HOST_ID --checks packages,libraries,integrity,malware,config,hardening,antivirus`. Package vulnerabilities is the default. The antivirus scan is **Basic** (ClamAV) by default; choose **Advanced** in the dialog, or add `yara` to `--checks`, to run YARA rules as well.
 
 | Check | What it does | Commands |
 | --- | --- | --- |
 | Package vulnerabilities | Compares installed packages and the running kernel with official advisories (see [Supported distributions](#supported-distributions)), and says whether the release still gets security fixes. | `/etc/os-release`, the DPKG status file or `rpm -qa` (with each package's signing key), `uname -r` |
+| Application libraries | Finds the libraries applications use (npm, Python, Go, Ruby, Rust and PHP) from their lock files and installed packages, and checks them against [OSV](https://osv.dev) on the server; see [Application libraries and SBOM](#application-libraries-and-sbom). Agent 1.1.0 or later. | `find` for package-manager files outside `/usr/lib` and `/usr/share`, and `head -c` to read each |
 | System file integrity | Verifies packaged files against the package manager's checksums. Changed binaries and libraries, a classic rootkit sign, are reported; edited configuration files are counted but not reported. | `dpkg --verify` or `rpm -Va` |
 | Malware & compromise indicators | Looks for crypto-miner processes, programs running from `/tmp`, `/dev/shm`, memory, or deleted files, programs disguised as kernel threads, `/etc/ld.so.preload`, hidden executables in temporary directories, and download-and-execute or reverse-shell patterns in cron and systemd. This is not a complete antivirus scan. | `/proc`, `ps`, `find` on temporary directories, cron and systemd files |
 | Security configuration | Reports SSH root or password login, empty passwords, X11 forwarding, risky services such as Redis, databases, Telnet, or the Docker API listening on all interfaces, pending reboots, disabled automatic updates, and, with sudo, a missing host firewall. | sshd configuration, `ss`/`netstat`, reboot and update settings, firewall rules |
@@ -372,6 +374,12 @@ Each scan runs the checks you choose, in the web UI's scan dialog or with `deaco
 | Antivirus scan, Advanced | Everything Basic does, plus [YARA-X](https://virustotal.github.io/yara-x/) with the [YARA Forge](https://github.com/YARAHQ/yara-forge) **core** rules (about 5,000 public rules chosen for few false positives) on the same directories, for webshells, crypto miners, backdoors, and attacker tools. The server downloads the latest weekly rules from GitHub, keeps them for 12 hours, and sends them to agents with each scan; they are written to a private temporary file on the host and deleted afterwards. Each match is reported with the rule's author, a severity from its score, and its reference. Needs agent 0.5.0 or later; skipped when `yr` is not installed or the rules cannot be downloaded. | `yr scan` |
 
 Every command is a fixed string in DeaconGuard's source; nothing from the user or the host is inserted into it.
+
+### Application libraries and SBOM
+
+The **Application libraries** check (`libraries`) reads the lock files and installed packages of npm, Python, Go, Ruby, Rust and PHP projects, skipping the distribution's own copies in `/usr/lib` and `/usr/share`, which the package check covers. The agent sends the list to the server, and only the server asks [OSV](https://osv.dev) about it: just each library's ecosystem, name and version, never a host name or path. Each finding names the OSV and CVE IDs, the severity, the fixed versions, and whether it is known or likely to be exploited. If OSV can't be reached, the check fails rather than looking clean. It isn't part of server audits yet.
+
+Every scan can be downloaded as a **software bill of materials** of all its OS packages and libraries, as CycloneDX 1.6 or SPDX 2.3 JSON with package URLs: **SBOM** on the scan's page, `deaconguard sbom SCAN_ID [--format cyclonedx|spdx]` on the server, or `GET /api/scans/{id}/sbom`. See [Application libraries and SBOM](https://docs.deaconguard.io/usage/libraries-and-sbom).
 
 ### Which vulnerabilities to fix first
 

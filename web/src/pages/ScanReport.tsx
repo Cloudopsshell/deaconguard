@@ -1,9 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, ExternalLink, Flame, Search, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, FileDown, Flame, Search, ShieldCheck } from "lucide-react";
 import { ReportsPanel } from "../components/ReportsPanel";
-import { api, type CheckId, type Finding, type FixState, type Report, type Severity } from "../api";
+import { api, sbomDownloadUrl, type CheckId, type Finding, type FixState, type Report, type Severity } from "../api";
 import { actionable, fixCommand, fixMeta, fixOf, fixOrder } from "../lib/fixes";
 import { CheckResultView } from "../components/CheckResultView";
 import { checkMeta, checkOrder } from "../lib/checks";
@@ -45,7 +45,12 @@ export function ScanReport() {
       <PageHeader
         title={`Scan report · ${scan.address}`}
         description={`${scan.os || "Unknown OS"} · ${dateTime(scan.finished_at ?? scan.started_at)}`}
-        action={<StatusBadge status={scan.status} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {report?.sbom_available && <SBOMLinks scanId={scan.id} />}
+            <StatusBadge status={scan.status} />
+          </div>
+        }
       />
       {!report ? (
         <Card className="p-5">
@@ -60,6 +65,22 @@ export function ScanReport() {
         </>
       )}
     </>
+  );
+}
+
+/** Downloads of the scan's software bill of materials, in both common formats. */
+function SBOMLinks({ scanId }: { scanId: string }) {
+  const link =
+    "inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-300 ring-inset hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700 dark:hover:bg-slate-800";
+  return (
+    <div className="flex items-center gap-1.5" title="Software bill of materials: every OS package and application library this scan found">
+      <a href={sbomDownloadUrl(scanId, "cyclonedx")} className={link}>
+        <FileDown className="size-4" aria-hidden /> SBOM (CycloneDX)
+      </a>
+      <a href={sbomDownloadUrl(scanId, "spdx")} className={link}>
+        SPDX
+      </a>
+    </div>
   );
 }
 

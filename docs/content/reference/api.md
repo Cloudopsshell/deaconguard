@@ -51,6 +51,7 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `POST /api/hosts/{id}/scans` | Operator | Start a scan: `{"checks": ["packages", "integrity", "malware", "config", "hardening", "antivirus"]}` |
 | `POST /api/hosts/{id}/audits` | Operator | Start a [server audit](../usage/audits.md): `{}` |
 | `GET /api/scans/{id}` | Viewer | A scan's status and full results; poll until `scan.status` is `succeeded` or `failed` |
+| `GET /api/scans/{id}/sbom?format=cyclonedx` | Viewer | The scan's [software bill of materials](../usage/libraries-and-sbom.md#download-an-sbom), as CycloneDX 1.6 (`cyclonedx`, the default) or SPDX 2.3 (`spdx`) JSON; 404 for scans from before 1.1.0 |
 | `GET /api/vulnerabilities` | Viewer | Every CVE on every host, most urgent first, with KEV, EPSS, CVSS and fix deadlines |
 | `GET /api/vulnerabilities/{cve}` | Viewer | The hosts and packages one CVE affects |
 | `GET /api/audits` | Viewer | Audits, with their grades |

@@ -98,3 +98,25 @@ func TestSupportsYARA(t *testing.T) {
 		}
 	}
 }
+
+func TestSupportsLibraries(t *testing.T) {
+	for version, want := range map[string]bool{
+		"1.1.0": true, "1.1.0-rc.1": true, "1.2.3": true, "2.0.0": true, "dev": true,
+		"1.0.2": false, "0.19.0": false, "": false,
+	} {
+		if got := agentapi.SupportsCheck(version, "libraries"); got != want {
+			t.Errorf("agentapi.SupportsCheck(%q, libraries) = %v, want %v", version, got, want)
+		}
+	}
+	// Checks from 0.x stay available on 1.x agents.
+	if !agentapi.SupportsCheck("1.0.0", "hardening") || agentapi.SupportsCheck("0.11.0", "hardening") {
+		t.Error("hardening gating changed")
+	}
+	err := agentapi.ErrAgentTooOld("web-01", "1.0.2", "libraries")
+	if err == nil || !strings.Contains(err.Error(), "the application library check needs the DeaconGuard agent 1.1.0 or later on web-01, which runs 1.0.2") {
+		t.Errorf("ErrAgentTooOld = %v", err)
+	}
+	if err := agentapi.ErrAgentTooOld("db-01", "0.11.0", "hardening"); !strings.Contains(err.Error(), "the hardening audit needs the DeaconGuard agent 0.12.0 or later") {
+		t.Errorf("hardening message = %v", err)
+	}
+}

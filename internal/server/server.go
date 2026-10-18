@@ -26,6 +26,7 @@ import (
 	"deaconguard/internal/checks"
 	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/local"
+	"deaconguard/internal/sbom"
 	"deaconguard/internal/store"
 )
 
@@ -154,6 +155,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/logs/download", s.needs(store.RoleOperator, s.downloadLogs))
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.needs(store.RoleOperator, s.startScan))
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
+	mux.HandleFunc("GET /api/scans/{id}/sbom", s.downloadSBOM)
 	mux.HandleFunc("DELETE /api/scans/{id}", s.needs(store.RoleOperator, s.deleteScan))
 	mux.HandleFunc("GET /api/prompts", s.needs(store.RoleOperator, s.listPrompts))
 	mux.HandleFunc("GET /api/activity", s.listActivity)
@@ -840,6 +842,39 @@ func (s *Server) getScan(w http.ResponseWriter, r *http.Request) {
 		detail.Report = report
 	}
 	writeJSON(w, http.StatusOK, detail)
+}
+
+// downloadSBOM writes a scan's software bill of materials: every installed OS
+// package and application library, as CycloneDX (the default) or SPDX JSON.
+func (s *Server) downloadSBOM(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = sbom.CycloneDX
+	}
+	report, err := store.GetFullReport(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	contents, name, err := sbom.Build(report, format)
+	switch {
+	case errors.Is(err, sbom.ErrNoInventory):
+		writeError(w, http.StatusNotFound, err)
+		return
+	case err != nil:
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	address, _ := report["address"].(string)
+	s.audit(r, "scan.sbom", address, strings.ToUpper(format)+" for scan "+r.PathValue("id")[:min(8, len(r.PathValue("id")))])
+	header := w.Header()
+	if format == sbom.SPDX {
+		header.Set("Content-Type", "application/spdx+json")
+	} else {
+		header.Set("Content-Type", "application/vnd.cyclonedx+json")
+	}
+	header.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	w.Write(contents)
 }
 
 func (s *Server) deleteScan(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package scanner
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,7 +33,25 @@ type Report struct {
 	Maintenance    string               `json:"maintenance"`
 	PackageManager string               `json:"package_manager"`
 	PackageCount   int                  `json:"package_count"`
-	Evaluator      string               `json:"evaluator"`
+	// InstalledPackages and Distro are kept for the scan's SBOM; the scan
+	// report the UI and API show leaves the package list out.
+	InstalledPackages []InstalledPackage `json:"installed_packages,omitempty"`
+	Distro            Distro             `json:"distro"`
+	Evaluator         string             `json:"evaluator"`
+}
+
+// InstalledPackage is one installed OS package, as the package manager names it.
+type InstalledPackage struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Arch    string `json:"arch,omitempty"`
+	Source  string `json:"source,omitempty"`
+}
+
+// Distro is the distribution's ID and version from /etc/os-release.
+type Distro struct {
+	ID        string `json:"id"`
+	VersionID string `json:"version_id"`
 }
 
 func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, now time.Time) (Report, error) {
@@ -116,22 +135,42 @@ func Scan(osRelease, dpkgStatus, rpmQuery, kernel string, client *http.Client, n
 	}
 	life := releaseLifecycle(target, client, now)
 	return Report{
-		FixCounts:        fixCounts,
-		OS:               PlatformName(target),
-		ScannedAt:        now.UTC().Format(time.RFC3339),
-		FindingCount:     len(evaluation.Findings),
-		Findings:         evaluation.Findings,
-		UnsupportedCount: len(evaluation.Unsupported),
-		Unsupported:      evaluation.Unsupported,
-		Coverage:         coverage(target.Family, assumedSigned),
-		Lifecycle:        life,
-		AdvisoryDatabase: feed.Metadata,
-		ExploitData:      exploitData,
-		Maintenance:      life.Note,
-		PackageManager:   packageManager,
-		Evaluator:        "DeaconGuard Go scanner",
-		PackageCount:     len(packages),
+		FixCounts:         fixCounts,
+		OS:                PlatformName(target),
+		ScannedAt:         now.UTC().Format(time.RFC3339),
+		FindingCount:      len(evaluation.Findings),
+		Findings:          evaluation.Findings,
+		UnsupportedCount:  len(evaluation.Unsupported),
+		Unsupported:       evaluation.Unsupported,
+		Coverage:          coverage(target.Family, assumedSigned),
+		Lifecycle:         life,
+		AdvisoryDatabase:  feed.Metadata,
+		ExploitData:       exploitData,
+		Maintenance:       life.Note,
+		PackageManager:    packageManager,
+		Evaluator:         "DeaconGuard Go scanner",
+		PackageCount:      len(packages),
+		InstalledPackages: installedPackages(packages),
+		Distro:            Distro{ID: target.ID, VersionID: target.VersionID},
 	}, nil
+}
+
+func installedPackages(packages []inventory.Package) []InstalledPackage {
+	installed := make([]InstalledPackage, 0, len(packages))
+	for _, p := range packages {
+		source := p.Source
+		if source == p.Name {
+			source = ""
+		}
+		installed = append(installed, InstalledPackage{Name: p.Name, Version: p.Version, Arch: p.Arch, Source: source})
+	}
+	sort.Slice(installed, func(i, j int) bool {
+		if installed[i].Name != installed[j].Name {
+			return installed[i].Name < installed[j].Name
+		}
+		return installed[i].Arch < installed[j].Arch
+	})
+	return installed
 }
 
 // PlatformName is the display name of a detected platform, such as "Ubuntu 24.04 LTS".
