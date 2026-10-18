@@ -193,7 +193,7 @@ func evaluatePackages(report map[string]any, inventory target.Inventory, progres
 	}
 	evaluationSlots <- struct{}{}
 	progress.info("Loading the distribution's advisory feed and evaluating installed packages")
-	packages, err := scanner.Scan(inventory.OSRelease, inventory.DPKGStatus, inventory.RPMQuery, inventory.Kernel, nil, time.Now().UTC())
+	packages, err := scanner.Scan(inventory.OSRelease, inventory.DPKGStatus, inventory.RPMQuery, inventory.APKInstalled, inventory.Kernel, nil, time.Now().UTC())
 	<-evaluationSlots
 	if err != nil {
 		return err

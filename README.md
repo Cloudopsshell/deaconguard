@@ -476,10 +476,11 @@ When sudo needs a password, the scan pauses and the browser asks for it. The ans
 | openSUSE Leap | 15.6, 16.0 | SUSE's CVE OVAL | `ftp.suse.com` |
 | SUSE Linux Enterprise Server and Desktop | 15 SP6 and later, 16 | SUSE's CVE OVAL | `ftp.suse.com` |
 | Amazon Linux | 2023 | ALAS RSS and bulletins, with replacement RPM versions. AWS notes that bulletin pages and repository metadata can briefly disagree. | `alas.aws.amazon.com` |
+| Alpine Linux | 3.18 and later | Alpine's security database (secdb), fixed vulnerabilities only; severities from each CVE's CVSS score on OSV | `secdb.alpinelinux.org`, `api.osv.dev` |
 
 Advisory checks DeaconGuard can't evaluate are listed, never treated as clean. On the RHEL rebuilds, Oracle Linux and SUSE, a finding needs the package to be signed by the distribution: the RPM query reports each package's signing key, so a package from a third-party repository with the same name isn't matched against the distribution's advisories. Agents before 0.19.0 don't report keys; their packages are assumed to be the distribution's, and the scan's coverage says so.
 
-CentOS Stream 9/10 is recognized but deliberately rejected: the official repositories checked here publish no `updateinfo` metadata, and RHEL OVAL is not assumed to be compatible. RHEL 10 is not enabled because no official RHEL 10 feed was present in the verified Red Hat feed index. openSUSE Tumbleweed, Amazon Linux 2, Alpine (planned with container scanning), and other distributions are not supported.
+CentOS Stream 9/10 is recognized but deliberately rejected: the official repositories checked here publish no `updateinfo` metadata, and RHEL OVAL is not assumed to be compatible. RHEL 10 is not enabled because no official RHEL 10 feed was present in the verified Red Hat feed index. openSUSE Tumbleweed, Amazon Linux 2, and other distributions are not supported. On Alpine machines the install script, which needs systemd, sets up no agent: run the agent from the release archive or its container image.
 
 ### Release lifecycle
 

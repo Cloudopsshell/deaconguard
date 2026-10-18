@@ -21,6 +21,7 @@ const (
 	Fedora       Family = "fedora"
 	OpenSUSELeap Family = "opensuse-leap"
 	SLES         Family = "sles"
+	Alpine       Family = "alpine"
 )
 
 type Platform struct {
@@ -132,6 +133,20 @@ func Detect(contents string) (Platform, error) {
 		}
 		platform.Family = SLES
 		platform.Minor = minor
+	case "alpine":
+		// Alpine's security database exists per branch from 3.18; each
+		// branch's end of life is in internal/lifecycle.
+		// VERSION_ID is the full release, such as 3.22.1.
+		minor := 0
+		if fields := strings.Split(version, "."); len(fields) >= 2 {
+			minor, _ = strconv.Atoi(fields[1])
+		}
+		if major != 3 || minor < 18 {
+			return Platform{}, fmt.Errorf("unsupported Alpine Linux release %q: 3.18 and later are supported", version)
+		}
+		platform.Family = Alpine
+		platform.Minor = minor
+		platform.Codename = fmt.Sprintf("v%d.%d", major, minor)
 	case "centos":
 		if strings.Contains(strings.ToLower(values["NAME"]), "centos stream") && (major == 9 || major == 10) {
 			return Platform{}, fmt.Errorf("CentOS Stream %d is recognized but unsupported: no authoritative advisory feed is available", major)

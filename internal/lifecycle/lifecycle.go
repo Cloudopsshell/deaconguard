@@ -80,6 +80,17 @@ var releases = map[platform.Family]map[string]phase{
 		"15.6": {"2026-04-30", "", "", "https://en.opensuse.org/Lifetime"},
 		"16.0": {"2027-10", "", "", "https://en.opensuse.org/Lifetime"},
 	},
+	// Alpine's main repository is supported for two years per branch;
+	// the dates are from https://alpinelinux.org/releases.json.
+	platform.Alpine: {
+		"3.18": {"2025-05-09", "", "", "https://alpinelinux.org/releases/"},
+		"3.19": {"2025-11-01", "", "", "https://alpinelinux.org/releases/"},
+		"3.20": {"2026-04-01", "", "", "https://alpinelinux.org/releases/"},
+		"3.21": {"2026-11-01", "", "", "https://alpinelinux.org/releases/"},
+		"3.22": {"2027-05-01", "", "", "https://alpinelinux.org/releases/"},
+		"3.23": {"2027-11-01", "", "", "https://alpinelinux.org/releases/"},
+		"3.24": {"2028-06-01", "", "", "https://alpinelinux.org/releases/"},
+	},
 	platform.SLES: {
 		"15.6": {"2025-12-31", "2028-12-31", "SUSE Long Term Service Pack Support (LTSS)", "https://www.suse.com/lifecycle/"},
 		"15.7": {"2031-07-31", "2034-07-31", "SUSE LTSS", "https://www.suse.com/lifecycle/"},
@@ -92,6 +103,8 @@ func Of(target platform.Platform, now time.Time) Lifecycle {
 	switch target.Family {
 	case platform.Debian, platform.RHEL, platform.Rocky, platform.Alma, platform.Oracle:
 		release = fmt.Sprint(target.Major)
+	case platform.Alpine:
+		release = fmt.Sprintf("%d.%d", target.Major, target.Minor)
 	}
 	dates, known := releases[target.Family][release]
 	if !known || dates.Regular == "" {

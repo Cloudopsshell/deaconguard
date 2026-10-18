@@ -52,7 +52,9 @@ type Inventory struct {
 	OSRelease  string `json:"os_release"`
 	DPKGStatus string `json:"dpkg_status,omitempty"`
 	RPMQuery   string `json:"rpm_query,omitempty"`
-	Kernel     string `json:"kernel"`
+	// APKInstalled is Alpine's /lib/apk/db/installed.
+	APKInstalled string `json:"apk_installed,omitempty"`
+	Kernel       string `json:"kernel"`
 }
 
 // OSRelease reads /etc/os-release.
@@ -81,6 +83,12 @@ func CollectInventory(t Target) (Inventory, error) {
 			return Inventory{}, fmt.Errorf("read /var/lib/dpkg/status: %w", err)
 		}
 		inventory.DPKGStatus = string(packages)
+	} else if detected.Family == platform.Alpine {
+		packages, err := t.Run("head -c 33554433 /lib/apk/db/installed", nil, MaxPackageBytes, CommandTimeout)
+		if err != nil {
+			return Inventory{}, fmt.Errorf("read /lib/apk/db/installed: %w", err)
+		}
+		inventory.APKInstalled = string(packages)
 	} else {
 		// The last column is who signed each package, for feeds that check it.
 		query := "rpm -qa --qf '%{NAME}\\t%{EPOCHNUM}\\t%{VERSION}\\t%{RELEASE}\\t%{SOURCERPM}\\t%{ARCH}\\t%|RSAHEADER?{%{RSAHEADER:pgpsig}}:{%|DSAHEADER?{%{DSAHEADER:pgpsig}}:{(none)}|}|\\n'"
