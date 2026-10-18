@@ -43,6 +43,17 @@ This needs root, which the agent has. A local `deaconguard serve` that doesn't r
 
 Containers with the same contents, such as replicas of one image, are checked once.
 
+## Scan new containers automatically
+
+On an agent's host page, turn on **Scan new containers automatically** (operators and admins). The agent then looks at the running containers about once a minute; when new ones have started, it tells the server, which queues a Running containers scan of that machine. So a container you deploy is checked within about two minutes, without waiting for the next scheduled scan.
+
+- It is **off** by default, per machine.
+- At most **one automatic scan every 10 minutes** per machine, and none while another scan of it is waiting or running, so a machine that starts containers all the time, such as a CI runner, isn't scanned all the time. Containers that start in between are covered by the next one.
+- Stopped containers don't trigger anything. The agent only counts container IDs; the scan itself reads the containers as described above.
+- It needs agent 1.2.0 or later. The automatic scans appear in the scan history and the audit log, started by `server`.
+
+Through the [API](../reference/api.md): `PATCH /api/hosts/{id}` with `{"auto_scan_containers": true}`.
+
 ## Results
 
 The scan's **Running containers** tab lists every container with its image, runtime, distribution and its support, how many packages and libraries it has, its vulnerabilities by severity, how many are known to be exploited, and how many an update of the image fixes. Open a container to see what to fix: each vulnerability that has a fixed version or is known to be exploited, most urgent first. The same findings, named after their container, are in [reports](./reports.md) and the API.

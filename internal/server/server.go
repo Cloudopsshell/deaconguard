@@ -628,7 +628,8 @@ func (s *Server) addHost(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateHostRequest struct {
-	AllowSudo *bool `json:"allow_sudo"`
+	AllowSudo          *bool `json:"allow_sudo"`
+	AutoScanContainers *bool `json:"auto_scan_containers"`
 }
 
 func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
@@ -636,16 +637,26 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &request) {
 		return
 	}
-	if request.AllowSudo == nil {
+	if request.AllowSudo == nil && request.AutoScanContainers == nil {
 		writeError(w, http.StatusBadRequest, errors.New("nothing to update"))
 		return
 	}
-	host, err := store.SetAllowSudo(r.PathValue("id"), *request.AllowSudo)
-	if err != nil {
-		writeError(w, http.StatusNotFound, err)
-		return
+	var host store.Host
+	var err error
+	if request.AllowSudo != nil {
+		if host, err = store.SetAllowSudo(r.PathValue("id"), *request.AllowSudo); err != nil {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		s.audit(r, "host.sudo", host.Address, fmt.Sprintf("allow sudo: %t", *request.AllowSudo))
 	}
-	s.audit(r, "host.sudo", host.Address, fmt.Sprintf("allow sudo: %t", *request.AllowSudo))
+	if request.AutoScanContainers != nil {
+		if host, err = store.SetAutoScanContainers(r.PathValue("id"), *request.AutoScanContainers); err != nil {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		s.audit(r, "host.containers", host.Address, fmt.Sprintf("scan new containers automatically: %t", *request.AutoScanContainers))
+	}
 	writeJSON(w, http.StatusOK, host)
 }
 
