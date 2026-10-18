@@ -6,7 +6,7 @@ description: Run the DeaconGuard server in Kubernetes, and an agent on every nod
 In Kubernetes, DeaconGuard runs as two parts, usually in two namespaces:
 
 - **The server**, a StatefulSet with one pod and a volume for its database, behind a Service with the dashboard on port 8443 and the agent API on 8444. It runs under the **restricted** [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/): non-root, read-only root filesystem, no capabilities.
-- **The agent**, a DaemonSet with one pod on every node, control plane included. Each pod scans **its node**: it reads the node's root filesystem, read-only, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent [installed on the node](./install-script.md). It needs the **privileged** Pod Security Standard for that: the node's processes, network and filesystem.
+- **The agent**, a DaemonSet with one pod on every node, control plane included. Each pod scans **its node**: it reads the node's root filesystem, read-only, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent [installed on the node](./install-script.md). It needs the **privileged** Pod Security Standard for that: the node's processes, network and filesystem. With the [Running containers](../usage/containers.md) check, a node's scan also covers the containers of its pods.
 
 Agents enroll with a [reusable token](../usage/agents.md#reusable-tokens): one token, in a secret, for every node, including nodes added later.
 

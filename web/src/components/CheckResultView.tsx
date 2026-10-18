@@ -3,6 +3,7 @@ import type { CheckId, CheckResult } from "../api";
 import { checkStatusStyle } from "../lib/checks";
 import { normalizeSeverity, severityOrder } from "../lib/format";
 import { Card, CardHeader, EmptyState, ErrorMessage, SeverityBadge, Table, Td, Th, cx } from "./ui";
+import { ContainersTable } from "./ContainersTable";
 
 /** Shows one non-package check: its coverage, notes, and findings. */
 export function CheckResultView({ check, name, result }: { check: CheckId; name: string; result: CheckResult }) {
@@ -39,6 +40,8 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
           </div>
         )}
       </Card>
+
+      {check === "containers" && (result.containers ?? []).length > 0 && <ContainersTable containers={result.containers ?? []} />}
 
       {result.status !== "skipped" && result.status !== "failed" && (
         <Card>

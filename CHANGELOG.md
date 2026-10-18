@@ -10,6 +10,7 @@ upgrade notes.
 
 ### Added
 
+- **Running containers:** a new check, `containers`, finds the containers running on a machine (Docker, Podman, and containerd or CRI-O through `crictl`, such as Kubernetes nodes) and checks each one's OS packages against its distribution's advisories and its libraries against OSV, with its release support. Nothing inside a container is run: the agent reads each container's files itself through `/proc/PID/root` and never follows a symbolic link there, so a container can't make it read a host file. RPM-based images are read from `rpmdb.sqlite` directly; distroless images from `status.d`. Containers with the same contents are checked once. The scan's **Running containers** tab lists every container with its OS, support, vulnerabilities and what to fix in its image. It needs agent 1.2.0 or later, as root; the Kubernetes DaemonSet already qualifies.
 - **Alpine Linux** 3.18 and later: installed packages (`/lib/apk/db/installed`) are checked against Alpine's security database for the main and community repositories, with Alpine's own version ordering. Alpine lists only vulnerabilities it has fixed, and rates none, so each CVE's severity is its CVSS v3 score from OSV (only CVE IDs are sent), or unknown when none is published. The release lifecycle uses Alpine's published end-of-life dates. The install script still needs systemd, so on Alpine machines run the agent from the release archive or its container image.
 
 ## [1.1.0] - 2026-10-18

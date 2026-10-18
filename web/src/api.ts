@@ -8,7 +8,7 @@ export type ScanStatus =
   | "failed"
   | "needs_sudo";
 
-export type CheckId = "packages" | "libraries" | "integrity" | "malware" | "config" | "hardening" | "antivirus" | "yara";
+export type CheckId = "packages" | "libraries" | "containers" | "integrity" | "malware" | "config" | "hardening" | "antivirus" | "yara";
 export type CheckStatus = "completed" | "partial" | "skipped" | "failed";
 
 export interface SeverityCounts {
@@ -581,6 +581,27 @@ export interface CheckResult {
   notes: string[] | null;
   error?: string;
   findings: CheckFinding[] | null;
+  /** Set by the running container check (1.2.0 and later). */
+  containers?: ContainerResult[];
+}
+
+/** One running container and what its check found. */
+export interface ContainerResult {
+  id: string;
+  name: string;
+  image: string;
+  image_id: string;
+  runtime: "docker" | "podman" | "cri" | string;
+  os?: string;
+  lifecycle?: Lifecycle | null;
+  packages: number;
+  libraries: number;
+  severity: Partial<Record<string, number>>;
+  exploited: number;
+  fixable: number;
+  findings?: CheckFinding[];
+  notes?: string[];
+  error?: string;
 }
 
 /** Runs scans of its hosts on chosen days at a time of day. */
