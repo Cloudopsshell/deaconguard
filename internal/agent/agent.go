@@ -148,6 +148,8 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 	}
 	log := &agentLog{journal: logf}
 	log.info("DeaconGuard agent %s for %s, host %s", buildinfo.Version, config.ServerURL, config.HostID)
+	machine, _ := local.New()
+	watch := newContainerWatch(machine)
 	backoff := time.Duration(0)
 	connected := false
 	var lastMove time.Time
@@ -162,8 +164,15 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 		// Before waiting for work, so lines kept while the server could not be
 		// reached arrive as soon as it answers again.
 		log.send(ctx, client)
+		watch.poll(time.Now())
+		fresh := watch.take()
+		client.setNewContainers(fresh)
 		var job agentapi.Job
 		err := client.call(ctx, http.MethodGet, "job", nil, &job, agentapi.JobWait+30*time.Second)
+		client.setNewContainers(0)
+		if err != nil {
+			watch.giveBack(fresh)
+		}
 		switch {
 		case ctx.Err() != nil:
 			return nil
@@ -288,6 +297,14 @@ type client struct {
 	// suggestedPort is the agent port the server last named, if any.
 	mu            sync.Mutex
 	suggestedPort string
+	// newContainers is sent with the next request for work.
+	newContainers int
+}
+
+func (c *client) setNewContainers(count int) {
+	c.mu.Lock()
+	c.newContainers = count
+	c.mu.Unlock()
 }
 
 // agentPort returns the port the server asked agents to use, if it did.
@@ -373,6 +390,11 @@ func (c *client) exchange(ctx context.Context, method, path string, body any, li
 	}
 	request.Header.Set("User-Agent", buildinfo.UserAgent())
 	request.Header.Set(agentapi.HeaderVersion, buildinfo.Version)
+	c.mu.Lock()
+	if c.newContainers > 0 && strings.HasSuffix(request.URL.Path, "/job") {
+		request.Header.Set(agentapi.HeaderNewContainers, strconv.Itoa(c.newContainers))
+	}
+	c.mu.Unlock()
 	request.Header.Set(agentapi.HeaderHostname, local.Hostname())
 	request.Header.Set(agentapi.HeaderUsername, local.Username())
 	request.Header.Set(agentapi.HeaderOS, osName())

@@ -194,6 +194,10 @@ const (
 	PathHello       = "hello"
 )
 
+// HeaderNewContainers, on an agent's request for work, counts the containers
+// it saw start since it last asked; the server may scan them (1.2.0 and later).
+const HeaderNewContainers = "X-DeaconGuard-New-Containers"
+
 // Headers the agent sends with every request.
 const (
 	HeaderVersion  = "X-DeaconGuard-Agent-Version"

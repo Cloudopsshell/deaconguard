@@ -25,6 +25,9 @@ type Host struct {
 	AllowSudo bool `json:"allow_sudo"`
 	// Transport is how DeaconGuard reaches the host.
 	Transport string `json:"transport"`
+	// AutoScanContainers scans the running containers when its agent sees
+	// new ones (1.2.0 and later).
+	AutoScanContainers bool `json:"auto_scan_containers"`
 }
 
 const (
@@ -223,6 +226,11 @@ func migrate(db *sql.DB) error {
 	}
 	if version < 20 {
 		if err := execInTx(db, schemaV20); err != nil {
+			return err
+		}
+	}
+	if version < 21 {
+		if err := execInTx(db, schemaV21); err != nil {
 			return err
 		}
 	}
@@ -686,6 +694,13 @@ const schemaV20 = `
 ALTER TABLE scans ADD COLUMN lifecycle TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 20;`
 
+// schemaV21 lets a host's running containers be scanned when its agent sees
+// new ones, at most every few minutes (last_auto_scan).
+const schemaV21 = `
+ALTER TABLE hosts ADD COLUMN auto_scan_containers INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE hosts ADD COLUMN last_auto_scan TEXT NOT NULL DEFAULT '';
+PRAGMA user_version = 21;`
+
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.
 const backfillV8 = `
@@ -710,7 +725,7 @@ func ListHosts() ([]Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query("SELECT id, address, username, allow_sudo, transport FROM hosts ORDER BY created_at, rowid")
+	rows, err := db.Query("SELECT id, address, username, allow_sudo, transport, auto_scan_containers FROM hosts ORDER BY created_at, rowid")
 	if err != nil {
 		return nil, err
 	}
@@ -732,7 +747,7 @@ type rowScanner interface {
 
 func scanHost(row rowScanner) (Host, error) {
 	var host Host
-	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.AllowSudo, &host.Transport); err != nil {
+	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.AllowSudo, &host.Transport, &host.AutoScanContainers); err != nil {
 		return Host{}, err
 	}
 	return host, nil
@@ -777,11 +792,47 @@ func GetHost(id string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	host, err := scanHost(db.QueryRow("SELECT id, address, username, allow_sudo, transport FROM hosts WHERE id = ?", id))
+	host, err := scanHost(db.QueryRow("SELECT id, address, username, allow_sudo, transport, auto_scan_containers FROM hosts WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Host{}, fmt.Errorf("unknown host ID: %s", id)
 	}
 	return host, err
+}
+
+// SetAutoScanContainers records whether a host's running containers are
+// scanned when its agent sees new ones.
+func SetAutoScanContainers(id string, on bool) (Host, error) {
+	db, err := database()
+	if err != nil {
+		return Host{}, err
+	}
+	result, err := db.Exec("UPDATE hosts SET auto_scan_containers = ? WHERE id = ?", on, id)
+	if err != nil {
+		return Host{}, err
+	}
+	if changed, err := result.RowsAffected(); err != nil {
+		return Host{}, err
+	} else if changed == 0 {
+		return Host{}, fmt.Errorf("unknown host ID: %s", id)
+	}
+	return GetHost(id)
+}
+
+// TakeAutoScan claims a host's next automatic container scan, at most one
+// per interval: it is true, and the time recorded, only when the last one
+// was longer ago.
+func TakeAutoScan(id string, now time.Time, interval time.Duration) (bool, error) {
+	db, err := database()
+	if err != nil {
+		return false, err
+	}
+	result, err := db.Exec("UPDATE hosts SET last_auto_scan = ? WHERE id = ? AND auto_scan_containers = 1 AND (last_auto_scan = '' OR last_auto_scan <= ?)",
+		now.UTC().Format(time.RFC3339), id, now.Add(-interval).UTC().Format(time.RFC3339))
+	if err != nil {
+		return false, err
+	}
+	changed, err := result.RowsAffected()
+	return changed == 1, err
 }
 
 // SetAllowSudo records whether deeper checks may use sudo on a host.
