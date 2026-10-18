@@ -21,7 +21,7 @@ module.exports = {
       type: 'category',
       label: 'Using DeaconGuard',
       collapsed: false,
-      items: ['usage/server', 'usage/agents', 'usage/vulnerabilities', 'usage/libraries-and-sbom', 'usage/audits', 'usage/compliance', 'usage/policies', 'usage/reports', 'usage/notifications', 'usage/accounts', 'usage/local-mode', 'usage/dashboard', 'usage/backup-and-restore'],
+      items: ['usage/server', 'usage/agents', 'usage/vulnerabilities', 'usage/libraries-and-sbom', 'usage/containers', 'usage/audits', 'usage/compliance', 'usage/policies', 'usage/reports', 'usage/notifications', 'usage/accounts', 'usage/local-mode', 'usage/dashboard', 'usage/backup-and-restore'],
     },
     'checks',
     'supported-distributions',

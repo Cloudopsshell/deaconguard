@@ -1,13 +1,14 @@
 import type { ComponentType } from "react";
-import { Boxes, Bug, FileCheck2, Radar, ScanSearch, ShieldCheck, Skull, SlidersHorizontal } from "lucide-react";
+import { Boxes, Bug, Container, FileCheck2, Radar, ScanSearch, ShieldCheck, Skull, SlidersHorizontal } from "lucide-react";
 import type { CheckId, CheckStatus, SeverityCounts } from "../api";
 import { severityOrder } from "./format";
 
-export const checkOrder: CheckId[] = ["packages", "libraries", "integrity", "malware", "config", "antivirus", "yara"];
+export const checkOrder: CheckId[] = ["packages", "libraries", "containers", "integrity", "malware", "config", "antivirus", "yara"];
 
 export const checkMeta: Record<CheckId, { label: string; short: string; icon: ComponentType<{ className?: string }> }> = {
   packages: { label: "Vulnerabilities", short: "CVEs", icon: Bug },
   libraries: { label: "Application libraries", short: "Libraries", icon: Boxes },
+  containers: { label: "Running containers", short: "Containers", icon: Container },
   integrity: { label: "File integrity", short: "Integrity", icon: FileCheck2 },
   malware: { label: "Malware indicators", short: "Malware", icon: Skull },
   config: { label: "Configuration", short: "Config", icon: SlidersHorizontal },
