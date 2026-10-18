@@ -88,12 +88,12 @@ The script detects the distribution and architecture, then:
 
 ### Install the package yourself
 
-Each method below downloads into `/tmp`, verifies the checksum, and installs. Set `VERSION` to the release you want; the machine's architecture (`amd64` or `arm64`) is detected for you. Then run `sudo deaconguard setup server` or `sudo deaconguard setup agent`.
+Each method below downloads into `/tmp`, verifies the checksum, and installs the latest release: `https://get.deaconguard.io/stable.txt` holds its version number. To install another release, set `VERSION` yourself, such as `VERSION=1.0.0`. The machine's architecture (`amd64` or `arm64`) is detected for you. Then run `sudo deaconguard setup server` or `sudo deaconguard setup agent`.
 
 #### Debian and Ubuntu
 
 ```sh
-VERSION=1.0.0
+VERSION=$(curl -fsSL https://get.deaconguard.io/stable.txt)
 ARCH=$(dpkg --print-architecture)
 cd /tmp
 curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_linux_${ARCH}.deb"
@@ -106,7 +106,7 @@ deaconguard version
 #### RHEL, Rocky Linux, AlmaLinux, Oracle Linux, Fedora, and Amazon Linux
 
 ```sh
-VERSION=1.0.0
+VERSION=$(curl -fsSL https://get.deaconguard.io/stable.txt)
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 cd /tmp
 curl -fsSLO "https://github.com/Cloudopsshell/deaconguard/releases/download/v${VERSION}/deaconguard_${VERSION}_linux_${ARCH}.rpm"
@@ -127,7 +127,7 @@ sudo zypper install --allow-unsigned-rpm "./deaconguard_${VERSION}_linux_${ARCH}
 #### Other Linux systems and macOS
 
 ```sh
-VERSION=1.0.0
+VERSION=$(curl -fsSL https://get.deaconguard.io/stable.txt)
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
 cd /tmp
@@ -141,7 +141,7 @@ deaconguard version
 
 macOS builds can run the server and the CLI but cannot scan the Mac itself. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
 
-With the [GitHub CLI](https://cli.github.com), `gh release download v1.0.0 -R Cloudopsshell/deaconguard -p 'FILE'` downloads a release file instead of `curl`.
+With the [GitHub CLI](https://cli.github.com), `gh release download -R Cloudopsshell/deaconguard -p 'FILE'` downloads a file of the latest release instead of `curl` (add a tag such as `v1.0.0` for another release).
 
 #### From source
 
