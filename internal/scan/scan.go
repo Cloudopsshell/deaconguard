@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/local"
+	"deaconguard/internal/osv"
 	"deaconguard/internal/platform"
 	"deaconguard/internal/scanner"
 	"deaconguard/internal/store"
@@ -140,6 +142,11 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 			}
 		}
 		result := checks.Run(id, executor, detected, now, inputs)
+		// An agent sends the library list to the server, which checks it
+		// against OSV; a scan run here checks it now.
+		if id == checks.Libraries && options.CollectInventory == nil && result.Status != checks.StatusFailed {
+			evaluateLibraries(&result, progress)
+		}
 		results[id] = result
 		if note := executor.SudoNote(); note != "" && !sudoNoted {
 			sudoNoted = true
@@ -215,6 +222,46 @@ func evaluatePackages(report map[string]any, inventory target.Inventory, progres
 		report[key] = value
 	}
 	return nil
+}
+
+// EvaluateLibraries checks the library list an agent sent against OSV, in
+// place in the report's check results, as a scan run here would have.
+func EvaluateLibraries(report map[string]any, emit func(Event)) error {
+	raw, ok := report["check_results"]
+	if !ok || raw == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	var results map[string]checks.Result
+	if err := json.Unmarshal(encoded, &results); err != nil {
+		return fmt.Errorf("read check results: %w", err)
+	}
+	result, ok := results[checks.Libraries]
+	if !ok {
+		return nil
+	}
+	progress := &reporter{emit: emit}
+	progress.startPhase(checks.Libraries, "Checking the libraries the agent found against OSV")
+	if result.Status != checks.StatusFailed {
+		evaluateLibraries(&result, progress)
+	}
+	progress.findings(result)
+	progress.endPhase(result.Status, result.Summary)
+	results[checks.Libraries] = result
+	report["check_results"] = results
+	return nil
+}
+
+func evaluateLibraries(result *checks.Result, progress *reporter) {
+	count := 0
+	if result.Libraries != nil {
+		count = len(result.Libraries.Libraries)
+	}
+	progress.info("Checking %d libraries against OSV (osv.dev): only names and versions are sent", count)
+	osv.Evaluate(result, osv.NewClient(), &http.Client{Timeout: 60 * time.Second}, time.Now().UTC())
 }
 
 func checkName(id string) string {

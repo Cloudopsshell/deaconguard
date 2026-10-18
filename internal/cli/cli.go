@@ -15,6 +15,7 @@ import (
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/local"
+	"deaconguard/internal/sbom"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
 	"deaconguard/internal/yararules"
@@ -44,6 +45,8 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runAudit(arguments[1:], output, diagnostics)
 	case "report":
 		err = runReport(arguments[1:], output)
+	case "sbom":
+		err = runSBOM(arguments[1:], output)
 	case "serve":
 		err = runServe(arguments[1:], output)
 	case "record-stop":
@@ -182,7 +185,7 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			continue
 		}
 		if index+1 >= len(arguments) {
-			return fmt.Errorf("--checks requires a comma-separated list such as packages,integrity,malware,config,hardening,antivirus (add yara for the advanced antivirus scan)")
+			return fmt.Errorf("--checks requires a comma-separated list such as packages,libraries,integrity,malware,config,hardening,antivirus (add yara for the advanced antivirus scan)")
 		}
 		index++
 		selected = strings.Split(arguments[index], ",")
@@ -251,6 +254,39 @@ func runReport(arguments []string, output io.Writer) error {
 		return err
 	}
 	return showReport(report, asJSON, output)
+}
+
+// runSBOM prints a scan's software bill of materials as CycloneDX (the
+// default) or SPDX JSON.
+func runSBOM(arguments []string, output io.Writer) error {
+	usage := fmt.Errorf("usage: deaconguard sbom SCAN_ID [--format cyclonedx|spdx]")
+	id, format := "", sbom.CycloneDX
+	for index := 0; index < len(arguments); index++ {
+		switch argument := arguments[index]; {
+		case argument == "--format" && index+1 < len(arguments):
+			index++
+			format = arguments[index]
+		case strings.HasPrefix(argument, "--format="):
+			format = strings.TrimPrefix(argument, "--format=")
+		case strings.HasPrefix(argument, "-") || id != "":
+			return usage
+		default:
+			id = argument
+		}
+	}
+	if id == "" {
+		return usage
+	}
+	report, err := store.GetFullReport(id)
+	if err != nil {
+		return err
+	}
+	contents, _, err := sbom.Build(report, format)
+	if err != nil {
+		return err
+	}
+	_, err = output.Write(contents)
+	return err
 }
 
 func parseIDAndJSON(arguments []string, command string) (string, bool, error) {
@@ -420,10 +456,11 @@ Scanning:
   deaconguard host list
   deaconguard host sudo HOST_ID on|off
   deaconguard host remove HOST_ID        for an agent host, also revokes its agent
-  deaconguard scan HOST_ID [--checks packages,integrity,malware,config,hardening,antivirus,yara] [--json]
+  deaconguard scan HOST_ID [--checks packages,libraries,integrity,malware,config,hardening,antivirus,yara] [--json]
                                        yara is the advanced antivirus scan; it runs ClamAV too
   deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   deaconguard report REPORT_ID [--json]
+  deaconguard sbom SCAN_ID [--format cyclonedx|spdx]   the scan's software bill of materials (CycloneDX by default)
   deaconguard audit HOST_ID [--advanced] [--json]
                                        handover audit: every check, the hardening baseline,
                                        and a grade; --advanced adds the YARA antivirus scan

@@ -905,7 +905,32 @@ func SaveReport(report map[string]any) (map[string]any, error) {
 	return withReportID(report, id), nil
 }
 
+// GetReport loads a scan's report as the UI, API, CLI and reports show it.
+// The installed package list and the application library list, kept for the
+// SBOM, are left out: sbom_available says whether GetFullReport has them.
 func GetReport(id string) (map[string]any, error) {
+	report, err := GetFullReport(id)
+	if err != nil {
+		return nil, err
+	}
+	packages, hasPackages := report["installed_packages"].([]any)
+	delete(report, "installed_packages")
+	hasLibraries := false
+	if results, ok := report["check_results"].(map[string]any); ok {
+		if result, ok := results["libraries"].(map[string]any); ok {
+			if found, ok := result["libraries"].(map[string]any); ok {
+				list, _ := found["libraries"].([]any)
+				hasLibraries = len(list) > 0
+				result["libraries"] = map[string]any{"count": len(list), "files": found["files"]}
+			}
+		}
+	}
+	report["sbom_available"] = (hasPackages && len(packages) > 0) || hasLibraries
+	return report, nil
+}
+
+// GetFullReport loads a scan's report with everything the scan recorded.
+func GetFullReport(id string) (map[string]any, error) {
 	if !validID(id) {
 		return nil, fmt.Errorf("invalid report ID")
 	}
