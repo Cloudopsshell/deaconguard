@@ -1,6 +1,6 @@
 // Package checks implements the optional host checks that run alongside the
 // package vulnerability scan: file integrity, malware indicators, security
-// configuration, the hardening audit, ClamAV, and the advanced scan with YARA-X. Every command is a fixed, read-only string
+// configuration, the hardening audit, application libraries, ClamAV, and the advanced scan with YARA-X. Every command is a fixed, read-only string
 // defined here; nothing from the user or the host is interpolated into it.
 package checks
 
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"deaconguard/internal/libraries"
 	"deaconguard/internal/platform"
 )
 
@@ -48,6 +49,10 @@ var definitions = []Definition{
 	{
 		ID: Packages, Name: "Package vulnerabilities", Sudo: "none", Default: true,
 		Description: "Installed packages and the running kernel compared with the distribution's official security advisories.",
+	},
+	{
+		ID: Libraries, Name: "Application libraries", Sudo: "recommended",
+		Description: "Finds the libraries applications use (npm, Python, Go, Ruby, Rust and PHP) and checks them against the OSV vulnerability database. The server sends OSV only the libraries' names and versions.",
 	},
 	{
 		ID: Integrity, Name: "System file integrity", Sudo: "recommended",
@@ -131,6 +136,9 @@ type Result struct {
 	// Facts are the settings the hardening audit read, for custom policies
 	// the server evaluates.
 	Facts *Facts `json:"facts,omitempty"`
+	// Libraries is what the application library check found on the host;
+	// the server checks it against OSV.
+	Libraries *libraries.Result `json:"libraries,omitempty"`
 }
 
 func (result *Result) add(finding Finding) {
@@ -181,6 +189,8 @@ type Inputs struct {
 func Run(id string, executor *Executor, target platform.Platform, now time.Time, inputs Inputs) Result {
 	var result Result
 	switch id {
+	case Libraries:
+		result = runLibraries(executor)
 	case Integrity:
 		result = runIntegrity(executor, target)
 	case Malware:

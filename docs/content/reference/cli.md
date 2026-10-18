@@ -13,9 +13,10 @@ Run `deaconguard help` for this list on your machine, and `deaconguard version` 
 | `deaconguard host list` | List hosts. |
 | `deaconguard host sudo HOST_ID on\|off` | Allow or stop the deeper checks using sudo. |
 | `deaconguard host remove HOST_ID` | Remove a host; for an agent host, also revoke its agent. |
-| `deaconguard scan HOST_ID [--checks LIST] [--json]` | Scan a host. `LIST` is a comma-separated choice of `packages,integrity,malware,config,hardening,antivirus,yara`. |
+| `deaconguard scan HOST_ID [--checks LIST] [--json]` | Scan a host. `LIST` is a comma-separated choice of `packages,libraries,integrity,malware,config,hardening,antivirus,yara`. |
 | `deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]` | Scan this machine without registering it. |
 | `deaconguard report REPORT_ID [--json]` | Show a saved report. |
+| `deaconguard sbom SCAN_ID [--format cyclonedx\|spdx]` | Print a scan's [software bill of materials](../usage/libraries-and-sbom.md#download-an-sbom), CycloneDX by default. |
 | `deaconguard audit HOST_ID [--advanced] [--json]` | Run a [server audit](../usage/audits.md): every check and the hardening baseline, graded A to F, with the failed controls and how to fix them. `--advanced` adds the YARA antivirus scan. For an agent host, the server must be running; run it as the `deaconguard` user. |
 | `deaconguard audit --local [--allow-sudo] [--advanced] [--json]` | Audit this machine without a server. |
 

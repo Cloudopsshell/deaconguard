@@ -8,7 +8,7 @@ export type ScanStatus =
   | "failed"
   | "needs_sudo";
 
-export type CheckId = "packages" | "integrity" | "malware" | "config" | "hardening" | "antivirus" | "yara";
+export type CheckId = "packages" | "libraries" | "integrity" | "malware" | "config" | "hardening" | "antivirus" | "yara";
 export type CheckStatus = "completed" | "partial" | "skipped" | "failed";
 
 export interface SeverityCounts {
@@ -492,6 +492,11 @@ export interface VerifyResult {
 
 export const reportDownloadUrl = (id: string, format: ReportFormat) => `/api/reports/${id}/download?format=${format}`;
 
+export type SBOMFormat = "cyclonedx" | "spdx";
+
+/** A scan's software bill of materials: every OS package and application library it found. */
+export const sbomDownloadUrl = (scanId: string, format: SBOMFormat) => `/api/scans/${scanId}/sbom?format=${format}`;
+
 export interface CheckSummary {
   check: CheckId;
   scan_id: string;
@@ -691,6 +696,8 @@ export interface CheckTotals {
 export interface Report {
   report_id: string;
   os: string;
+  /** Whether the scan recorded packages or libraries for a software bill of materials (1.1.0 and later). */
+  sbom_available?: boolean;
   scanned_at: string;
   checks_run?: CheckId[];
   check_results?: Partial<Record<CheckId, CheckResult>>;

@@ -8,6 +8,16 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Application libraries:** a new check, `libraries`, finds the libraries applications use and checks them against [OSV](https://osv.dev). It reads npm (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, global packages), Python (installed packages and virtualenvs, `poetry.lock`, `Pipfile.lock`, pinned `requirements.txt`), Go (`go.mod`), Ruby (`Gemfile.lock`), Rust (`Cargo.lock`) and PHP (`composer.lock`). The distribution's own copies in `/usr/lib` and `/usr/share` are left to the package check. Findings have the OSV and CVE IDs, severity, fixed versions and CISA KEV and EPSS exploit data; one vulnerability listed under several IDs is shown once. Only the server talks to OSV, and it sends only library names and versions. If OSV can't be reached, the check fails rather than looking clean. Choose it in the scan dialog or with `--checks libraries`; it needs agent 1.1.0 or later and isn't part of server audits yet.
+- **SBOM:** every scan can be downloaded as a software bill of materials of its OS packages and libraries, in CycloneDX 1.6 or SPDX 2.3 JSON with package URLs: **SBOM** on the scan's page, `deaconguard sbom SCAN_ID [--format cyclonedx|spdx]`, or `GET /api/scans/{id}/sbom`. Scans from before 1.1.0 have none.
+
+### Changed
+
+- **Documentation** now lives in the repository's `docs/` folder and is published to docs.deaconguard.io from each release.
+- **Upgrading:** upgrade the server first, then the agents; an agent before 1.1.0 is refused the library check with a message saying to upgrade it. The server needs HTTPS access to `api.osv.dev` for the library check.
+
 ## [1.0.2] - 2026-10-18
 
 ### Fixed
