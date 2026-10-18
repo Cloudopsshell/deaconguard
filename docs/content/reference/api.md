@@ -48,7 +48,8 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `GET /api/summary` | Viewer | The dashboard's numbers: hosts, what to fix, known exploited, overdue |
 | `GET /api/hosts` | Viewer | Every host with its latest results and tags |
 | `GET /api/hosts/{id}` | Viewer | One host, with its scan history |
-| `POST /api/hosts/{id}/scans` | Operator | Start a scan: `{"checks": ["packages", "integrity", "malware", "config", "hardening", "antivirus"]}` |
+| `PATCH /api/hosts/{id}` | Operator | Change a host's settings: `{"auto_scan_containers": true}` for an agent's [automatic container scans](../usage/containers.md#scan-new-containers-automatically), or `{"allow_sudo": true}` for this machine |
+| `POST /api/hosts/{id}/scans` | Operator | Start a scan: `{"checks": ["packages", "libraries", "containers", "integrity", "malware", "config", "hardening", "antivirus"]}` |
 | `POST /api/hosts/{id}/audits` | Operator | Start a [server audit](../usage/audits.md): `{}` |
 | `GET /api/scans/{id}` | Viewer | A scan's status and full results; poll until `scan.status` is `succeeded` or `failed` |
 | `GET /api/scans/{id}/sbom?format=cyclonedx` | Viewer | The scan's [software bill of materials](../usage/libraries-and-sbom.md#download-an-sbom), as CycloneDX 1.6 (`cyclonedx`, the default) or SPDX 2.3 (`spdx`) JSON; 404 for scans from before 1.1.0 |

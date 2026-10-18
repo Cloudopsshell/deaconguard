@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -254,6 +255,32 @@ func (h *agentHub) auditNewMachine(host store.Host, version string) {
 	h.wake(host.ID)
 }
 
+// autoScanInterval is the least time between two automatic container scans
+// of one host, so a machine that starts containers all the time isn't
+// scanned all the time.
+const autoScanInterval = 10 * time.Minute
+
+// scanNewContainers queues a scan of a host's running containers when its
+// agent saw new ones and the host has that turned on. A scan already queued
+// or running covers them.
+func (h *agentHub) scanNewContainers(host store.Host, version string, count int) {
+	if !host.AutoScanContainers || !agentapi.SupportsCheck(version, checks.Containers) {
+		return
+	}
+	if taken, err := store.TakeAutoScan(host.ID, time.Now(), autoScanInterval); err != nil || !taken {
+		return
+	}
+	if _, err := h.runner.start(host, []string{checks.Containers}, true); err != nil {
+		if !errors.Is(err, errScanInProgress) {
+			serverLog(host.ID, store.LogError, "Could not scan the new containers on %s: %v", host.Address, err)
+		}
+		return
+	}
+	store.Audit("server", "scan.start", host.Address, fmt.Sprintf("%d new running containers", count), "")
+	serverLog(host.ID, store.LogInfo, "Scan of the running containers on %s queued: its agent saw %d new", host.Address, count)
+	h.wake(host.ID)
+}
+
 // job hands the agent its next queued scan, waiting up to JobWait for one.
 func (h *agentHub) job(w http.ResponseWriter, r *http.Request, host store.Host) {
 	if hostname := r.Header.Get(agentapi.HeaderHostname); store.ValidHostname(hostname) {
@@ -262,6 +289,9 @@ func (h *agentHub) job(w http.ResponseWriter, r *http.Request, host store.Host) 
 	}
 	h.presence.checkIn(host)
 	defer h.presence.checkIn(host)
+	if count, err := strconv.Atoi(r.Header.Get(agentapi.HeaderNewContainers)); err == nil && count > 0 {
+		h.scanNewContainers(host, r.Header.Get(agentapi.HeaderVersion), count)
+	}
 	deadline := time.NewTimer(agentapi.JobWait)
 	defer deadline.Stop()
 	for {

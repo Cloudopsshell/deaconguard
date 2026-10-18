@@ -27,6 +27,8 @@ export interface Host {
   /** "local" is the machine DeaconGuard runs on; "agent" machines run the DeaconGuard agent and
    * enrolled with this server. */
   transport: "local" | "agent";
+  /** Scan the running containers when the agent sees new ones (1.2.0 and later). */
+  auto_scan_containers?: boolean;
 }
 
 export interface AgentInfo {
@@ -930,6 +932,7 @@ export const api = {
   runSchedule: (id: string) => request<{ started: number; skipped: number }>("POST", `/api/schedules/${id}/run`),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
+  setAutoScanContainers: (hostId: string, on: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { auto_scan_containers: on }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
   prompts: () => request<Prompt[]>("GET", "/api/prompts"),
   activity: () => request<Activity[]>("GET", "/api/activity"),
