@@ -40,6 +40,9 @@ func openRoot(path string) (*root, error) {
 
 func (r *root) close() { unix.Close(r.fd) }
 
+// Device identifies the container root's file system.
+func (r *root) Device() uint64 { return r.dev }
+
 // openDir opens a directory inside the root, one component at a time,
 // refusing symbolic links and "..".
 func (r *root) openDir(path string, flags int) (int, error) {
@@ -77,7 +80,7 @@ func (r *root) openDir(path string, flags int) (int, error) {
 // readFile reads at most limit bytes of a regular file inside the root,
 // without following any symbolic link on the way. It reports whether the
 // file was longer than limit.
-func (r *root) readFile(path string, limit int64) ([]byte, bool, error) {
+func (r *root) ReadFile(path string, limit int64) ([]byte, bool, error) {
 	cut := strings.LastIndex(path, "/")
 	dir, name := path[:cut+1], path[cut+1:]
 	if name == "" || name == "." || name == ".." {
@@ -114,18 +117,9 @@ func (r *root) readFile(path string, limit int64) ([]byte, bool, error) {
 	return data, false, nil
 }
 
-// entry is one directory entry found by readDir.
-type entry struct {
-	name  string
-	isDir bool
-	isReg bool
-	size  int64
-	dev   uint64
-}
-
-// readDir lists a directory inside the root without following links.
+// ReadDir lists a directory inside the root without following links.
 // Symbolic links are listed as neither directories nor regular files.
-func (r *root) readDir(path string) ([]entry, error) {
+func (r *root) ReadDir(path string) ([]Entry, error) {
 	fd, err := r.openDir(path, unix.O_RDONLY)
 	if err != nil {
 		return nil, err
@@ -136,14 +130,14 @@ func (r *root) readDir(path string) ([]entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries := make([]entry, 0, len(names))
+	entries := make([]Entry, 0, len(names))
 	for _, name := range names {
 		var stat unix.Stat_t
 		if err := unix.Fstatat(fd, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			continue
 		}
 		mode := stat.Mode & unix.S_IFMT
-		entries = append(entries, entry{name: name, isDir: mode == unix.S_IFDIR, isReg: mode == unix.S_IFREG, size: stat.Size, dev: uint64(stat.Dev)})
+		entries = append(entries, Entry{Name: name, IsDir: mode == unix.S_IFDIR, IsReg: mode == unix.S_IFREG, Size: stat.Size, Dev: uint64(stat.Dev)})
 	}
 	return entries, nil
 }

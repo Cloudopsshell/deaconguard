@@ -216,7 +216,7 @@ func checkContainer(container *checks.ContainerResult, inventory *containers.Inv
 			}
 		}
 	} else if inventory.OSRelease != "" {
-		container.Notes = append(container.Notes, "No package database was found in the container.")
+		container.Notes = append(container.Notes, "No package database was found: a static or scratch image; only its libraries are checked.")
 	}
 	if inventory.Libraries != nil && len(inventory.Libraries.Libraries) > 0 {
 		container.Libraries = len(inventory.Libraries.Libraries)
@@ -255,4 +255,12 @@ func checkContainer(container *checks.ContainerResult, inventory *containers.Inv
 
 func severityRank(severity string) int {
 	return map[string]int{"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}[strings.ToUpper(severity)]
+}
+
+// EvaluateImage checks an image's packages and libraries, as a running
+// container's are checked.
+func EvaluateImage(inventory containers.Inventory) checks.ContainerResult {
+	result := checks.ContainerResult{Container: inventory.Container}
+	checkContainer(&result, &inventory)
+	return result
 }
