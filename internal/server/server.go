@@ -158,6 +158,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/images", s.listImages)
 	mux.HandleFunc("POST /api/images", s.needs(store.RoleOperator, s.addImage))
 	mux.HandleFunc("GET /api/images/{id}", s.imageDetail)
+	mux.HandleFunc("PATCH /api/images/{id}", s.needs(store.RoleOperator, s.updateImage))
 	mux.HandleFunc("DELETE /api/images/{id}", s.needs(store.RoleOperator, s.deleteImage))
 	mux.HandleFunc("POST /api/images/{id}/scans", s.needs(store.RoleOperator, s.scanImage))
 	mux.HandleFunc("GET /api/image-scans/{id}", s.imageScan)

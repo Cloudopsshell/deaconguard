@@ -75,6 +75,7 @@ func TestRolesLimitWhatAccountsCanDo(t *testing.T) {
 		{http.MethodPost, "/api/images", store.RoleOperator, map[string]any{}},
 		{http.MethodPost, "/api/images/nope/scans", store.RoleOperator, nil},
 		{http.MethodDelete, "/api/images/nope", store.RoleOperator, nil},
+		{http.MethodPatch, "/api/images/nope", store.RoleOperator, map[string]any{"watch": true}},
 		{http.MethodGet, "/api/registry-logins", store.RoleAdmin, nil},
 		{http.MethodPost, "/api/registry-logins", store.RoleAdmin, map[string]any{}},
 		{http.MethodPatch, "/api/registry-logins/nope", store.RoleAdmin, map[string]any{}},

@@ -28,16 +28,16 @@ For Jira and ServiceNow, choose the events that need someone to act, such as kno
 
 | Event | Sent when | Urgency |
 | --- | --- | --- |
-| Known exploited vulnerabilities | A host has vulnerabilities in CISA's [KEV catalog](./vulnerabilities.md) that its previous scan didn't. | Critical |
-| New critical vulnerabilities | A host has new critical vulnerabilities an update fixes. | Warning |
+| Known exploited vulnerabilities | A host, or a [registry image](./images.md), has vulnerabilities in CISA's [KEV catalog](./vulnerabilities.md) that its previous scan didn't. | Critical |
+| New critical vulnerabilities | A host has new critical vulnerabilities an update fixes, or an image new critical ones a rebuild fixes. | Warning |
 | Malware | A scan finds malware or signs of compromise. | Critical |
 | Changed system files | System files differ from what their packages installed. | Critical |
-| Failed scans | A scan fails, so the host's results are out of date. | Warning |
+| Failed scans | A scan of a host or an image fails, so its results are out of date. | Warning |
 | Audits | An [audit](./audits.md) finishes, with its grade and what holds it back. | Warning for D and F |
 | Agents offline | An agent stops checking in for 2 minutes. | Warning |
 | Digest | Daily, or weekly on chosen days, at a time in a time zone. | |
 
-Only what is new is sent: a vulnerability already reported for a host isn't reported again by its next scan. Malware and changed system files are reported by every scan that finds them.
+Only what is new is sent: a vulnerability already reported for a host or an image isn't reported again by its next scan. Image notifications go to every channel subscribed to the event, whatever its tags, since images have no tags. Malware and changed system files are reported by every scan that finds them.
 
 ## The digest
 

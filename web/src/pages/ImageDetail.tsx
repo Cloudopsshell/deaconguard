@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Flame, Play, Trash2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Flame, Play, Trash2 } from "lucide-react";
 import { api, type ImageScan } from "../api";
 import { ContainerFindings } from "../components/ContainersTable";
 import { ReleaseBadge } from "../components/ReleaseSupport";
@@ -9,7 +9,7 @@ import { Button, Card, CardHeader, ErrorMessage, Loading, PageHeader, SeverityCo
 import { dateTime, timeAgo } from "../lib/format";
 import { useRefreshAll } from "../lib/hooks";
 import { useCan } from "../lib/role";
-import { DeleteImageDialog, scanning } from "./Images";
+import { DeleteImageDialog, WatchState, scanning } from "./Images";
 
 function shortDigest(digest?: string) {
   return digest ? digest.replace("sha256:", "").slice(0, 12) : "—";
@@ -29,6 +29,7 @@ export function ImageDetail() {
   const [chosen, setChosen] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const scan = useMutation({ mutationFn: () => api.scanImage(imageId), onSettled: refresh });
+  const watch = useMutation({ mutationFn: (on: boolean) => api.setImageWatch(imageId, on), onSettled: refresh });
 
   const scans = detail.data?.scans ?? [];
   const latestResult = scans.find((item) => item.status === "succeeded");
@@ -59,6 +60,9 @@ export function ImageDetail() {
               <Button disabled={scanning(image)} loading={scan.isPending} onClick={() => scan.mutate()}>
                 <Play className="size-4" /> Scan now
               </Button>
+              <Button variant="secondary" loading={watch.isPending} onClick={() => watch.mutate(!image.watch)}>
+                {image.watch ? <EyeOff className="size-4" /> : <Eye className="size-4" />} {image.watch ? "Stop watching" : "Watch"}
+              </Button>
               <Button variant="secondary" onClick={() => setDeleting(true)} aria-label={`Remove ${image.reference}`}>
                 <Trash2 className="size-4" />
               </Button>
@@ -66,7 +70,14 @@ export function ImageDetail() {
           )
         }
       />
-      <ErrorMessage error={scan.error} />
+      <ErrorMessage error={scan.error ?? watch.error} />
+      <div className="mb-4 -mt-2">
+        {image.watch ? (
+          <WatchState image={image} />
+        ) : (
+          <p className="text-xs text-slate-500 dark:text-slate-400">Not watched: scanned only when someone presses Scan now.</p>
+        )}
+      </div>
       {latest && latest.status !== "succeeded" && (
         <Card className="mb-4 p-5">
           <div className="flex flex-wrap items-center gap-3">

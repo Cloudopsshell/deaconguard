@@ -611,14 +611,19 @@ export interface RegistryLogin {
   id: string;
   /** The registry's host: registry-1.docker.io for Docker Hub. */
   registry: string;
+  /** "ecr": username is an AWS access key ID, exchanged for ECR's 12-hour password. */
+  kind: RegistryLoginKind;
   username: string;
   created_by: string;
   created_at: string;
   updated_at: string;
 }
 
+export type RegistryLoginKind = "basic" | "ecr";
+
 export interface RegistryLoginInput {
   registry: string;
+  kind: RegistryLoginKind;
   username: string;
   /** A password or access token; empty keeps the saved one. */
   secret: string;
@@ -647,6 +652,12 @@ export interface RegistryImage {
   id: string;
   reference: string;
   platform: string;
+  /** Checked for a new build every 15 minutes, and scanned again daily. */
+  watch: boolean;
+  tag_digest?: string;
+  checked_at?: string;
+  /** Why the last check for a new build failed. */
+  watch_error?: string;
   created_by: string;
   created_at: string;
   latest?: ImageScan;
@@ -978,7 +989,8 @@ export const api = {
   runSchedule: (id: string) => request<{ started: number; skipped: number }>("POST", `/api/schedules/${id}/run`),
   images: () => request<RegistryImage[]>("GET", "/api/images"),
   image: (id: string) => request<{ image: RegistryImage; scans: ImageScan[] }>("GET", `/api/images/${id}`),
-  addImage: (reference: string, platform: string) => request<RegistryImage>("POST", "/api/images", { reference, platform }),
+  addImage: (reference: string, platform: string, watch: boolean) => request<RegistryImage>("POST", "/api/images", { reference, platform, watch }),
+  setImageWatch: (id: string, watch: boolean) => request<RegistryImage>("PATCH", `/api/images/${id}`, { watch }),
   deleteImage: (id: string) => request<null>("DELETE", `/api/images/${id}`),
   scanImage: (id: string) => request<ImageScan>("POST", `/api/images/${id}/scans`),
   imageScan: (id: string) => request<ImageScan>("GET", `/api/image-scans/${id}`),
