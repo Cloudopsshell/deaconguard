@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-18
+
 ### Added
 
 - **Application libraries:** a new check, `libraries`, finds the libraries applications use and checks them against [OSV](https://osv.dev). It reads npm (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, global packages), Python (installed packages and virtualenvs, `poetry.lock`, `Pipfile.lock`, pinned `requirements.txt`), Go (`go.mod`), Ruby (`Gemfile.lock`), Rust (`Cargo.lock`) and PHP (`composer.lock`). The distribution's own copies in `/usr/lib` and `/usr/share` are left to the package check. Findings have the OSV and CVE IDs, severity, fixed versions and CISA KEV and EPSS exploit data; one vulnerability listed under several IDs is shown once. Only the server talks to OSV, and it sends only library names and versions. If OSV can't be reached, the check fails rather than looking clean. Choose it in the scan dialog or with `--checks libraries`; it needs agent 1.1.0 or later and isn't part of server audits yet.
@@ -55,7 +57,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Cloudopsshell/deaconguard/releases/tag/v1.0.0
