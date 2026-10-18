@@ -382,6 +382,10 @@ The **Application libraries** check (`libraries`) reads the lock files and insta
 
 Every scan can be downloaded as a **software bill of materials** of all its OS packages and libraries, as CycloneDX 1.6 or SPDX 2.3 JSON with package URLs: **SBOM** on the scan's page, `deaconguard sbom SCAN_ID [--format cyclonedx|spdx]` on the server, or `GET /api/scans/{id}/sbom`. See [Application libraries and SBOM](https://docs.deaconguard.io/usage/libraries-and-sbom).
 
+### Images in registries
+
+`deaconguard image scan IMAGE` checks an image where it is stored, such as `nginx:1.27` or `ghcr.io/acme/shop:4.2`, before anything runs it: its packages, libraries and release support, as for running containers. It reads the image through the registry API as data, checking every layer against its digest; nothing is pulled into Docker or run, and what was read from each layer is cached, so shared base layers are read once. `--fail-on high` exits with status 4 for pipelines. See [Images in registries](https://docs.deaconguard.io/usage/images).
+
 ### Which vulnerabilities to fix first
 
 The server marks every package vulnerability with what is known about attackers using it, from two public sources it downloads at most every 12 hours:

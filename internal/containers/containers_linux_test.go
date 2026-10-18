@@ -38,7 +38,7 @@ func TestSymlinksAreNeverFollowed(t *testing.T) {
 	}
 	defer r.close()
 	for _, path := range []string{"/var/lib/dpkg/status", "/escape/secret", "/etc/up/secret"} {
-		data, _, err := r.readFile(path, 1024)
+		data, _, err := r.ReadFile(path, 1024)
 		if err == nil || strings.Contains(string(data), "host secret") {
 			t.Errorf("%s: read %q, %v; want refused", path, data, err)
 		}
@@ -46,10 +46,10 @@ func TestSymlinksAreNeverFollowed(t *testing.T) {
 			t.Errorf("%s: err = %v, want ErrSymlink", path, err)
 		}
 	}
-	if _, _, err := r.readFile("/etc/../../secret", 1024); err == nil {
+	if _, _, err := r.ReadFile("/etc/../../secret", 1024); err == nil {
 		t.Error(`".." must be refused`)
 	}
-	if data, _, err := r.readFile("/etc/hostname", 1024); err != nil || string(data) != "box" {
+	if data, _, err := r.ReadFile("/etc/hostname", 1024); err != nil || string(data) != "box" {
 		t.Errorf("a plain file: %q, %v", data, err)
 	}
 }

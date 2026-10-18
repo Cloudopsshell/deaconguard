@@ -101,10 +101,10 @@ func parseHeader(blob []byte) (rpmHeader, error) {
 	}
 	data := blob[start : start+size]
 	for index := 0; index < count; index++ {
-		entry := blob[8+16*index : 8+16*index+16]
-		tag := int(binary.BigEndian.Uint32(entry[0:4]))
-		kind := int(binary.BigEndian.Uint32(entry[4:8]))
-		offset := int(binary.BigEndian.Uint32(entry[8:12]))
+		Entry := blob[8+16*index : 8+16*index+16]
+		tag := int(binary.BigEndian.Uint32(Entry[0:4]))
+		kind := int(binary.BigEndian.Uint32(Entry[4:8]))
+		offset := int(binary.BigEndian.Uint32(Entry[8:12]))
 		if offset < 0 || offset >= len(data) {
 			continue
 		}

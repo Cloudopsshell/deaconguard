@@ -47,6 +47,8 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runReport(arguments[1:], output)
 	case "sbom":
 		err = runSBOM(arguments[1:], output)
+	case "image":
+		err = runImage(arguments[1:], input, output, diagnostics)
 	case "serve":
 		err = runServe(arguments[1:], output)
 	case "record-stop":
@@ -68,6 +70,10 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		return 0
 	default:
 		err = fmt.Errorf("unknown command %q", arguments[0])
+	}
+	if errors.Is(err, errFindings) {
+		fmt.Fprintf(diagnostics, "deaconguard: %v\n", err)
+		return 4
 	}
 	if err != nil {
 		fmt.Fprintf(diagnostics, "deaconguard: %v\n", err)
@@ -461,6 +467,10 @@ Scanning:
   deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   deaconguard report REPORT_ID [--json]
   deaconguard sbom SCAN_ID [--format cyclonedx|spdx]   the scan's software bill of materials (CycloneDX by default)
+  deaconguard image scan IMAGE [--platform linux/amd64] [--fail-on critical|high|medium|low] [--json]
+                                       read an image from its registry, without running it, and check it;
+                                       --fail-on exits with status 4 at or above that severity; a login from
+                                       DEACONGUARD_REGISTRY_USERNAME and DEACONGUARD_REGISTRY_PASSWORD
   deaconguard audit HOST_ID [--advanced] [--json]
                                        handover audit: every check, the hardening baseline,
                                        and a grade; --advanced adds the YARA antivirus scan

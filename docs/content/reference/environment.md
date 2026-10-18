@@ -8,6 +8,7 @@ description: Environment variables DeaconGuard and its install script read.
 | Variable | Effect |
 | --- | --- |
 | `DEACONGUARD_TOKEN` | Install an agent and enroll it with this token. The script passes it to setup through a private temporary file, never on a command line. |
+| `DEACONGUARD_REGISTRY_USERNAME`, `DEACONGUARD_REGISTRY_PASSWORD` | A login for [`deaconguard image scan`](../usage/images.md#registries-and-logins): a username and a token or password with pull access to the image's registry. |
 | `DEACONGUARD_VERSION` | Install this release, for example `@RELEASE@`, instead of the latest. |
 
 Set them **after the pipe**, before `sudo -E`, which passes them on to the installer (as root, leave out `sudo -E`):
