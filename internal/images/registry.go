@@ -77,9 +77,12 @@ var ErrUnauthorized = errors.New("the registry refused access: add a login for i
 type Resolved struct {
 	Reference Reference
 	// Digest is the platform manifest's digest: the image's ID in the registry.
-	Digest   string
-	Platform string
-	Layers   []Descriptor
+	Digest string
+	// TagDigest is the digest the reference points to, an index for a
+	// multi-platform image; TagDigest tells when the tag moves.
+	TagDigest string
+	Platform  string
+	Layers    []Descriptor
 }
 
 // Resolve fetches an image's manifest. For a multi-platform image, it
@@ -90,6 +93,7 @@ func (c *Client) Resolve(ctx context.Context, ref Reference, platform string) (R
 	if err != nil {
 		return Resolved{}, err
 	}
+	tagDigest := digest
 	var m manifest
 	if err := json.Unmarshal(body, &m); err != nil {
 		return Resolved{}, fmt.Errorf("read the manifest of %s: %w", ref, err)
@@ -129,12 +133,34 @@ func (c *Client) Resolve(ctx context.Context, ref Reference, platform string) (R
 	if len(m.Layers) == 0 {
 		return Resolved{}, fmt.Errorf("%s has no layers", ref)
 	}
-	return Resolved{Reference: ref, Digest: digest, Platform: platform, Layers: m.Layers}, nil
+	return Resolved{Reference: ref, Digest: digest, TagDigest: tagDigest, Platform: platform, Layers: m.Layers}, nil
+}
+
+// manifestTypes are the manifests DeaconGuard reads, as an Accept header.
+var manifestTypes = strings.Join([]string{mediaOCIIndex, mediaDockerList, mediaOCIManifest, mediaDockerSchema}, ", ")
+
+// TagDigest asks the registry which digest the reference points to now,
+// without downloading anything: a HEAD request, which Docker Hub doesn't
+// count against its pull limits. It is Resolved.TagDigest when unchanged.
+func (c *Client) TagDigest(ctx context.Context, ref Reference) (string, error) {
+	if ref.Digest != "" {
+		return ref.Digest, nil
+	}
+	response, err := c.request(ctx, http.MethodHead, ref, "/manifests/"+ref.reference(), manifestTypes)
+	if err != nil {
+		return "", err
+	}
+	response.Body.Close()
+	if digest := response.Header.Get("Docker-Content-Digest"); digestPattern.MatchString(digest) {
+		return digest, nil
+	}
+	// Registries needn't send the digest; read the manifest instead.
+	_, _, digest, err := c.getManifest(ctx, ref, ref.reference())
+	return digest, err
 }
 
 func (c *Client) getManifest(ctx context.Context, ref Reference, reference string) ([]byte, string, string, error) {
-	response, err := c.get(ctx, ref, "/manifests/"+reference,
-		strings.Join([]string{mediaOCIIndex, mediaDockerList, mediaOCIManifest, mediaDockerSchema}, ", "))
+	response, err := c.get(ctx, ref, "/manifests/"+reference, manifestTypes)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -206,10 +232,14 @@ func (v *verified) Verify() error {
 // asks: with a bearer token from its token service (anonymous, or with the
 // saved login), or with basic authentication.
 func (c *Client) get(ctx context.Context, ref Reference, path, accept string) (*http.Response, error) {
+	return c.request(ctx, http.MethodGet, ref, path, accept)
+}
+
+func (c *Client) request(ctx context.Context, method string, ref Reference, path, accept string) (*http.Response, error) {
 	address := fmt.Sprintf("%s://%s/v2/%s%s", c.Scheme, ref.Registry, ref.Repository, path)
 	key := ref.Registry + "/" + ref.Repository
 	for attempt := 0; attempt < 2; attempt++ {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+		request, err := http.NewRequestWithContext(ctx, method, address, nil)
 		if err != nil {
 			return nil, err
 		}

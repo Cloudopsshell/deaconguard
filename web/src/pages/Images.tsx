@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Boxes, Flame, KeyRound, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Boxes, Eye, Flame, KeyRound, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { api, type RegistryImage, type RegistryLogin, type RegistryLoginInput } from "../api";
 import { Button, Card, CardHeader, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, SeverityCountsInline, StatusBadge, Table, Td, Th } from "../components/ui";
 import { timeAgo } from "../lib/format";
@@ -85,6 +85,7 @@ export function Images() {
                       {image.platform}
                       {image.latest?.os && ` · ${image.latest.os}`}
                     </div>
+                    <WatchState image={image} />
                   </Td>
                   <Td>
                     {image.latest ? (
@@ -129,6 +130,23 @@ export function Images() {
   );
 }
 
+/** Whether the server watches the image for new builds, and why the last check failed. */
+export function WatchState({ image }: { image: RegistryImage }) {
+  if (!image.watch) return null;
+  if (image.watch_error)
+    return (
+      <div className="mt-1 flex items-start gap-1 text-xs text-amber-700 dark:text-amber-400" title={image.watch_error}>
+        <AlertTriangle className="mt-px size-3 shrink-0" aria-hidden />
+        <span className="line-clamp-2">Can't check for new builds: {image.watch_error}</span>
+      </div>
+    );
+  return (
+    <div className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+      <Eye className="size-3" aria-hidden /> Watching{image.checked_at && `, checked ${timeAgo(image.checked_at)}`}
+    </div>
+  );
+}
+
 /** The latest scan's counts: the last succeeded scan, or why the latest one failed. */
 function ImageCounts({ image }: { image: RegistryImage }) {
   const latest = image.latest;
@@ -156,8 +174,9 @@ function AddImageDialog({ onClose }: { onClose: () => void }) {
   const refresh = useRefreshAll();
   const [reference, setReference] = useState("");
   const [platform, setPlatform] = useState(platforms[0]);
+  const [watch, setWatch] = useState(true);
   const add = useMutation({
-    mutationFn: () => api.addImage(reference, platform),
+    mutationFn: () => api.addImage(reference, platform, watch),
     onSuccess: () => {
       refresh();
       onClose();
@@ -195,6 +214,21 @@ function AddImageDialog({ onClose }: { onClose: () => void }) {
             ))}
           </select>
           <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">For images built for several platforms; add the image once per platform you run.</span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={watch}
+            onChange={(event) => setWatch(event.target.checked)}
+            className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+          />
+          <span>
+            Watch for new builds
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              Every 15 minutes, ask the registry whether the tag points to a new build, and scan it when it does; and scan once a day for newly published
+              vulnerabilities.
+            </span>
+          </span>
         </label>
         <ErrorMessage error={add.error} />
         <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
@@ -268,7 +302,7 @@ function RegistryLogins() {
             <thead>
               <tr>
                 <Th>Registry</Th>
-                <Th>Username</Th>
+                <Th>Login</Th>
                 <Th>Updated</Th>
                 <Th className="text-right">Actions</Th>
               </tr>
@@ -277,7 +311,10 @@ function RegistryLogins() {
               {logins.data.map((login) => (
                 <tr key={login.id}>
                   <Td className="font-mono text-sm">{login.registry}</Td>
-                  <Td>{login.username}</Td>
+                  <Td>
+                    {login.username}
+                    {login.kind === "ecr" && <div className="text-xs text-slate-500 dark:text-slate-400">AWS access key</div>}
+                  </Td>
                   <Td className="text-sm text-slate-500 dark:text-slate-400">{timeAgo(login.updated_at)}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-2">
@@ -303,7 +340,13 @@ function RegistryLogins() {
 
 function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; onClose: () => void }) {
   const refresh = useRefreshAll();
-  const [input, setInput] = useState<RegistryLoginInput>({ registry: login?.registry ?? "", username: login?.username ?? "", secret: "" });
+  const [input, setInput] = useState<RegistryLoginInput>({
+    registry: login?.registry ?? "",
+    kind: login?.kind ?? "basic",
+    username: login?.username ?? "",
+    secret: "",
+  });
+  const ecr = input.kind === "ecr";
   const save = useMutation({
     mutationFn: () => (login ? api.updateRegistryLogin(login.id, input) : api.createRegistryLogin(input)),
     onSuccess: () => {
@@ -325,13 +368,38 @@ function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; 
           value={input.registry}
           onChange={(event) => setInput({ ...input, registry: event.target.value })}
           placeholder="ghcr.io"
-          hint="The registry's host, with its port if it has one: docker.io, ghcr.io, quay.io, registry.example.com:5000."
+          hint="The registry's host, with its port if it has one: docker.io, ghcr.io, quay.io, registry.example.com:5000, or an ECR registry such as 123456789012.dkr.ecr.eu-north-1.amazonaws.com."
           required
           data-autofocus
         />
-        <Field label="Username" value={input.username} onChange={(event) => setInput({ ...input, username: event.target.value })} autoComplete="off" required />
+        <fieldset>
+          <legend className="text-sm font-medium">Login with</legend>
+          <div className="mt-2 space-y-1.5">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" checked={!ecr} onChange={() => setInput({ ...input, kind: "basic" })} className="text-indigo-600 focus:ring-indigo-600" />
+              A username and a password or access token
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="radio" checked={ecr} onChange={() => setInput({ ...input, kind: "ecr" })} className="text-indigo-600 focus:ring-indigo-600" />
+              An AWS access key (Amazon ECR)
+            </label>
+          </div>
+          {ecr && (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              DeaconGuard exchanges it for ECR's 12-hour registry password when it needs one. Give the key's user only{" "}
+              <span className="font-mono">AmazonEC2ContainerRegistryReadOnly</span>.
+            </p>
+          )}
+        </fieldset>
         <Field
-          label="Password or access token"
+          label={ecr ? "Access key ID" : "Username"}
+          value={input.username}
+          onChange={(event) => setInput({ ...input, username: event.target.value })}
+          autoComplete="off"
+          required
+        />
+        <Field
+          label={ecr ? "Secret access key" : "Password or access token"}
           type="password"
           value={input.secret}
           onChange={(event) => setInput({ ...input, secret: event.target.value })}

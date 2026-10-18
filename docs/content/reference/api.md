@@ -56,11 +56,12 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `GET /api/vulnerabilities` | Viewer | Every CVE on every host, most urgent first, with KEV, EPSS, CVSS and fix deadlines |
 | `GET /api/vulnerabilities/{cve}` | Viewer | The hosts and packages one CVE affects |
 | `GET /api/images` | Viewer | The [registry images](../usage/images.md) DeaconGuard checks, each with its latest scan |
-| `POST /api/images` | Operator | Add an image and start its first scan: `{"reference": "ghcr.io/acme/shop:4.2", "platform": "linux/amd64"}` |
-| `POST /api/images/{id}/scans` | Operator | Scan an image again; 409 while a scan of it is queued or running |
+| `POST /api/images` | Operator | Add an image and start its first scan: `{"reference": "ghcr.io/acme/shop:4.2", "platform": "linux/amd64", "watch": true}`; watching is on unless `watch` is `false` |
+| `POST /api/images/{id}/scans` | Operator | Scan an image again, for example from CI after a push; 409 while a scan of it is queued or running |
+| `PATCH /api/images/{id}` | Operator | Watch an image for new builds, or stop: `{"watch": false}` |
 | `GET /api/images/{id}` | Viewer | One image with its last 20 scans, without their results |
 | `GET /api/image-scans/{id}` | Viewer | One image scan with its full result; poll until `status` is `succeeded` or `failed` |
-| `POST /api/registry-logins` | Admin | Save a registry login: `{"registry": "ghcr.io", "username": "robot", "secret": "…"}`; the secret is never returned |
+| `POST /api/registry-logins` | Admin | Save a registry login: `{"registry": "ghcr.io", "username": "robot", "secret": "…"}`, or for Amazon ECR `"kind": "ecr"` with an access key ID as `username`; the secret is never returned |
 | `GET /api/audits` | Viewer | Audits, with their grades |
 | `PUT /api/hosts/{id}/tags` | Operator | Set a host's tags: `{"tags": ["prod", "web"]}` |
 | `GET /api/trends?days=90&tag=prod` | Viewer | Open vulnerabilities per day |

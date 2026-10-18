@@ -708,10 +708,12 @@ PRAGMA user_version = 21;`
 
 // schemaV22 adds registry images: saved registry logins, the images to check,
 // and their scans. A scan's result is the image's checked inventory as JSON.
+// A watched image is checked for a new digest every few minutes.
 const schemaV22 = `
 CREATE TABLE registry_logins (
 	id TEXT PRIMARY KEY,
 	registry TEXT NOT NULL UNIQUE,
+	kind TEXT NOT NULL DEFAULT 'basic',
 	username TEXT NOT NULL,
 	secret TEXT NOT NULL,
 	created_by TEXT NOT NULL,
@@ -722,6 +724,10 @@ CREATE TABLE images (
 	id TEXT PRIMARY KEY,
 	reference TEXT NOT NULL,
 	platform TEXT NOT NULL,
+	watch INTEGER NOT NULL DEFAULT 0,
+	tag_digest TEXT NOT NULL DEFAULT '',
+	checked_at TEXT NOT NULL DEFAULT '',
+	watch_error TEXT NOT NULL DEFAULT '',
 	created_by TEXT NOT NULL,
 	created_at TEXT NOT NULL,
 	UNIQUE (reference, platform)
