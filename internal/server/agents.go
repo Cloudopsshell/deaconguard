@@ -405,6 +405,9 @@ func (h *agentHub) complete(scanID string, report map[string]any, inventory *tar
 	if failure == nil {
 		failure = scan.EvaluateLibraries(report, active.log.add)
 	}
+	if failure == nil {
+		failure = scan.EvaluateContainers(report, active.log.add)
+	}
 	h.runner.finish(active.host, scanID, active.log, report, failure, active.started)
 }
 

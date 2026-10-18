@@ -1,0 +1,258 @@
+package scan
+
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	"deaconguard/internal/advisory"
+	"deaconguard/internal/checks"
+	"deaconguard/internal/containers"
+	"deaconguard/internal/osv"
+	"deaconguard/internal/scanner"
+)
+
+// scanPackages evaluates a package inventory; tests replace it.
+var scanPackages = scanner.Scan
+
+// maxContainerFindings bounds the findings kept for each container.
+const maxContainerFindings = 300
+
+// collectContainers lists the running containers and reads each one. It
+// needs root, as the agent has, to see other users' processes and read
+// their containers' files.
+func collectContainers(executor *checks.Executor) checks.Result {
+	if os.Geteuid() != 0 {
+		return checks.Result{Status: checks.StatusSkipped, Summary: "Needs root",
+			Notes:    []string{"Reading running containers needs root: scan this machine with its DeaconGuard agent, which runs as root."},
+			Findings: []checks.Finding{}}
+	}
+	output, _, privileged, err := executor.RunPrivileged(containers.ListCommand, 1<<20, 2*time.Minute)
+	if err != nil && len(output) == 0 {
+		return checks.Result{Status: checks.StatusFailed, Summary: "Check could not run", Error: "list the running containers: " + err.Error(),
+			Findings: []checks.Finding{}, Notes: []string{}}
+	}
+	kernel, _, _ := executor.Run("uname -r", 256, time.Minute)
+	result := checks.Result{Status: checks.StatusCompleted, Privileged: privileged, Findings: []checks.Finding{}, Notes: []string{}}
+	for _, container := range containers.ParseList(output) {
+		read := containers.Read(container)
+		result.Containers = append(result.Containers, checks.ContainerResult{
+			Container: container, Inventory: &read, HostKernel: strings.TrimSpace(string(kernel)),
+		})
+	}
+	if len(result.Containers) == 0 {
+		result.Summary = "No running containers"
+		result.Notes = append(result.Notes, "Docker, Podman and crictl (containerd, CRI-O) were asked; none listed a running container.")
+	} else {
+		result.Summary = fmt.Sprintf("Found %d running containers", len(result.Containers))
+	}
+	return result
+}
+
+// EvaluateContainers checks the containers an agent read, in place in the
+// report's check results, as a scan run here would have.
+func EvaluateContainers(report map[string]any, emit func(Event)) error {
+	raw, ok := report["check_results"]
+	if !ok || raw == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	var results map[string]checks.Result
+	if err := json.Unmarshal(encoded, &results); err != nil {
+		return fmt.Errorf("read check results: %w", err)
+	}
+	result, ok := results[checks.Containers]
+	if !ok {
+		return nil
+	}
+	progress := &reporter{emit: emit}
+	progress.startPhase(checks.Containers, "Checking the containers the agent read")
+	if result.Status == checks.StatusCompleted || result.Status == checks.StatusPartial {
+		evaluateContainers(&result, progress)
+	}
+	progress.findings(result)
+	progress.endPhase(result.Status, result.Summary)
+	results[checks.Containers] = result
+	report["check_results"] = results
+	return nil
+}
+
+type ranked struct {
+	finding   checks.Finding
+	rank      int
+	exploited bool
+	fixable   bool
+}
+
+// evaluateContainers checks every container's packages against its
+// distribution's advisories and its libraries against OSV. Containers with
+// the same contents, such as replicas of one image, are checked once.
+func evaluateContainers(result *checks.Result, progress *reporter) {
+	verdicts := make(map[string]*checks.ContainerResult)
+	var all []ranked
+	vulnerableContainers, exploitedTotal := 0, 0
+	for index := range result.Containers {
+		container := &result.Containers[index]
+		inventory := container.Inventory
+		container.Inventory = nil
+		if inventory == nil {
+			container.Error = "the agent sent nothing for this container"
+			continue
+		}
+		key := fingerprint(inventory)
+		if done, seen := verdicts[key]; seen {
+			copyVerdict(container, done, inventory)
+		} else {
+			progress.info("Checking container %s (%s)", container.Name, container.Image)
+			checkContainer(container, inventory)
+			verdicts[key] = container
+		}
+		if len(container.Findings) > 0 || container.Exploited > 0 {
+			vulnerableContainers++
+		}
+		exploitedTotal += container.Exploited
+		for _, finding := range container.Findings {
+			all = append(all, ranked{finding: finding, rank: severityRank(finding.Severity), exploited: strings.Contains(finding.Detail, "Known to be exploited")})
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].exploited != all[j].exploited {
+			return all[i].exploited
+		}
+		return all[i].rank > all[j].rank
+	})
+	result.Findings = []checks.Finding{}
+	for index, item := range all {
+		if index >= 200 {
+			result.Notes = append(result.Notes, fmt.Sprintf("%d more container findings are listed under each container.", len(all)-200))
+			break
+		}
+		result.Findings = append(result.Findings, item.finding)
+	}
+	total := 0
+	for _, container := range result.Containers {
+		for _, count := range container.Severity {
+			total += count
+		}
+	}
+	result.Summary = fmt.Sprintf("%d running containers: %d vulnerabilities, %d to fix in %d containers", len(result.Containers), total, len(all), vulnerableContainers)
+	if exploitedTotal > 0 {
+		result.Summary += fmt.Sprintf(", %d known to be exploited", exploitedTotal)
+	}
+}
+
+func fingerprint(inventory *containers.Inventory) string {
+	sum := sha256.New()
+	encoded, _ := json.Marshal(struct {
+		OS, DPKG, RPM, APK string
+		Libraries          any
+	}{inventory.OSRelease, inventory.DPKGStatus, inventory.RPMQuery, inventory.APKInstalled, inventory.Libraries})
+	sum.Write(encoded)
+	return fmt.Sprintf("%x", sum.Sum(nil))
+}
+
+// copyVerdict gives a container the verdict of another with the same
+// contents, with its own name in the findings.
+func copyVerdict(container, done *checks.ContainerResult, inventory *containers.Inventory) {
+	container.OS, container.Lifecycle, container.Packages, container.Libraries = done.OS, done.Lifecycle, done.Packages, done.Libraries
+	container.Severity, container.Exploited, container.Fixable, container.Error = done.Severity, done.Exploited, done.Fixable, done.Error
+	container.Notes = append(append([]string(nil), inventory.Notes...), done.Notes...)
+	for _, finding := range done.Findings {
+		finding.Title = container.Name + strings.TrimPrefix(finding.Title, done.Name)
+		finding.Evidence = container.Image
+		container.Findings = append(container.Findings, finding)
+	}
+}
+
+func checkContainer(container *checks.ContainerResult, inventory *containers.Inventory) {
+	container.Severity = map[string]int{}
+	container.Notes = append(container.Notes, inventory.Notes...)
+	var findings []ranked
+	if inventory.OSRelease != "" && (inventory.DPKGStatus != "" || inventory.RPMQuery != "" || inventory.APKInstalled != "") {
+		kernel := container.HostKernel
+		if kernel == "" {
+			kernel = "unknown"
+		}
+		report, err := scanPackages(inventory.OSRelease, inventory.DPKGStatus, inventory.RPMQuery, inventory.APKInstalled, kernel, nil, time.Now().UTC())
+		if err != nil {
+			container.Error = "Packages not checked: " + err.Error()
+		} else {
+			container.OS, container.Packages = report.OS, report.PackageCount
+			life := report.Lifecycle
+			container.Lifecycle = &life
+			for _, f := range report.Findings {
+				severity := strings.ToUpper(f.Severity)
+				container.Severity[severity]++
+				exploited := f.Exploit != nil && f.Exploit.KEV
+				if exploited {
+					container.Exploited++
+				}
+				fixable := f.Fix == advisory.FixAvailable
+				if fixable {
+					container.Fixable++
+				}
+				if !fixable && !exploited {
+					continue
+				}
+				detail := "No fixed version yet."
+				if f.FixedVersion != "" {
+					detail = "Fixed in " + f.FixedVersion + ": update the image."
+				}
+				if exploited {
+					detail += " Known to be exploited (CISA KEV)."
+				}
+				findings = append(findings, ranked{finding: checks.Finding{
+					Rule: f.ID, Severity: severity, Detail: detail, Evidence: container.Image,
+					Title: fmt.Sprintf("%s: %s %s (%s): %s", container.Name, f.Package, f.InstalledVersion, report.OS, f.ID),
+				}, rank: severityRank(severity), exploited: exploited, fixable: fixable})
+			}
+		}
+	} else if inventory.OSRelease != "" {
+		container.Notes = append(container.Notes, "No package database was found in the container.")
+	}
+	if inventory.Libraries != nil && len(inventory.Libraries.Libraries) > 0 {
+		container.Libraries = len(inventory.Libraries.Libraries)
+		libs := checks.Result{Status: checks.StatusCompleted, Libraries: inventory.Libraries}
+		osv.Evaluate(&libs, osv.NewClient(), &http.Client{Timeout: 60 * time.Second}, time.Now().UTC())
+		if libs.Status == checks.StatusFailed {
+			container.Notes = append(container.Notes, libs.Error)
+		}
+		for _, f := range libs.Findings {
+			container.Severity[f.Severity]++
+			exploited := strings.Contains(f.Detail, "Known to be exploited")
+			if exploited {
+				container.Exploited++
+			}
+			if !strings.Contains(f.Detail, "No fixed version") {
+				container.Fixable++
+			}
+			f.Title = container.Name + ": " + f.Title
+			findings = append(findings, ranked{finding: f, rank: severityRank(f.Severity), exploited: exploited})
+		}
+	}
+	sort.SliceStable(findings, func(i, j int) bool {
+		if findings[i].exploited != findings[j].exploited {
+			return findings[i].exploited
+		}
+		return findings[i].rank > findings[j].rank
+	})
+	for index, item := range findings {
+		if index >= maxContainerFindings {
+			container.Notes = append(container.Notes, fmt.Sprintf("%d more findings weren't listed.", len(findings)-maxContainerFindings))
+			break
+		}
+		container.Findings = append(container.Findings, item.finding)
+	}
+}
+
+func severityRank(severity string) int {
+	return map[string]int{"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}[strings.ToUpper(severity)]
+}
