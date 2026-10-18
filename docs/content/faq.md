@@ -97,6 +97,10 @@ No. The [Compliance](./usage/compliance.md) view shows which of a framework's re
 
 Yes: add a [policy](./usage/policies.md) in YAML under **Settings → Policies**, for example that a monitoring agent runs or a port stays closed. Every audit tests it next to the baseline.
 
+### Does DeaconGuard check my applications' libraries?
+
+Yes, from 1.1.0: the **Application libraries** check finds npm, Python, Go, Ruby, Rust and PHP libraries and checks them against OSV. Only the server contacts OSV, and it sends only library names and versions. Every scan can also be downloaded as an SBOM (CycloneDX or SPDX). See [Application libraries and SBOM](./usage/libraries-and-sbom.md).
+
 ### Does a clean report mean my machine is secure?
 
 No. It means DeaconGuard found nothing in what it checked. Checks that couldn't run, or couldn't run fully, are marked as such and never shown as clean.

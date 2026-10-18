@@ -43,6 +43,7 @@ func ParseDPKGStatus(contents string) ([]Package, error) {
 			Name:    fields["Package"],
 			Version: fields["Version"],
 			Source:  source,
+			Arch:    fields["Architecture"],
 		})
 	}
 	if len(packages) == 0 {

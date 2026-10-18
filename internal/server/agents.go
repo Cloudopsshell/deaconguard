@@ -383,7 +383,8 @@ func (h *agentHub) result(w http.ResponseWriter, r *http.Request, host store.Hos
 	}()
 }
 
-// complete evaluates an agent's packages, if it sent them, and finishes the scan.
+// complete evaluates an agent's packages and libraries, if it sent them, and
+// finishes the scan.
 func (h *agentHub) complete(scanID string, report map[string]any, inventory *target.Inventory, failure error) {
 	h.mu.Lock()
 	active, ok := h.active[scanID]
@@ -400,6 +401,9 @@ func (h *agentHub) complete(scanID string, report map[string]any, inventory *tar
 	}()
 	if failure == nil && inventory != nil {
 		failure = scan.EvaluateInventory(report, *inventory, active.log.add)
+	}
+	if failure == nil {
+		failure = scan.EvaluateLibraries(report, active.log.add)
 	}
 	h.runner.finish(active.host, scanID, active.log, report, failure, active.started)
 }
