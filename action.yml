@@ -1,0 +1,155 @@
+name: DeaconGuard scan
+description: Check a container image, or Dockerfiles and Kubernetes manifests, for vulnerabilities and risky settings, without running anything.
+author: CloudOpsShell
+branding:
+  icon: shield
+  color: orange
+
+inputs:
+  scan:
+    description: "image: check an image (in a registry, a docker save archive, an OCI layout or a folder). config: check Dockerfiles and Kubernetes manifests."
+    default: image
+  target:
+    description: "The image (nginx:1.27, ghcr.io/acme/shop:4.2, shop.tar, oci:layout, dir:.), or for config the files and folders to check, separated by spaces."
+    required: true
+  fail-on:
+    description: "Fail the step at or above this severity: critical, high, medium or low. Empty only reports."
+    default: ""
+  ignore-unfixed:
+    description: "image: count and report only vulnerabilities an update fixes, or known to be exploited."
+    default: "false"
+  platform:
+    description: "image: the platform of a multi-platform image, such as linux/arm64. Default: the runner's."
+    default: ""
+  skip:
+    description: "config: rules to leave out, such as DG-DF-011,DG-K8S-013."
+    default: ""
+  format:
+    description: "The report: sarif, junit, json, cyclonedx or spdx (cyclonedx and spdx for images only)."
+    default: sarif
+  output:
+    description: The report's file.
+    default: deaconguard.sarif
+  upload-sarif:
+    description: "Upload a SARIF report to GitHub code scanning. The job needs permissions: security-events: write."
+    default: "false"
+  category:
+    description: The code scanning category, to tell several scans of one repository apart.
+    default: ""
+  registry:
+    description: "image: the registry the login is for, such as ghcr.io; it is sent to no other. Default: the image's."
+    default: ""
+  registry-username:
+    description: "image: a username for a private registry."
+    default: ""
+  registry-password:
+    description: "image: its token or password, from a secret."
+    default: ""
+  version:
+    description: "The DeaconGuard release to run, such as 1.4.0; by default the action's own release, or the latest. installed uses the deaconguard on the PATH."
+    default: ""
+  cache:
+    description: Keep DeaconGuard's advisory data and layer cache between runs, for a day.
+    default: "true"
+
+outputs:
+  status:
+    description: "0: nothing at or above fail-on; 4: findings at or above it."
+    value: ${{ steps.scan.outputs.status }}
+  report:
+    description: The report's file.
+    value: ${{ inputs.output }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install DeaconGuard
+      if: inputs.version != 'installed'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        version="$VERSION"
+        if [ -z "$version" ]; then
+          # A tag such as v1.4.0 is the action's own release.
+          if [[ "$ACTION_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then version="${ACTION_REF#v}"; else version=latest; fi
+        fi
+        sh "$ACTION_PATH/ci/install.sh" "$version" "$RUNNER_TEMP/deaconguard-bin"
+        echo "$RUNNER_TEMP/deaconguard-bin" >> "$GITHUB_PATH"
+
+    - name: Set DeaconGuard's data folder
+      shell: bash
+      run: |
+        echo "DEACONGUARD_HOME=$RUNNER_TEMP/deaconguard-data" >> "$GITHUB_ENV"
+        echo "DEACONGUARD_CACHE_DAY=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+    - name: Restore DeaconGuard's cache
+      if: inputs.cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/deaconguard-data/feeds
+        key: deaconguard-${{ runner.os }}-${{ runner.arch }}-${{ env.DEACONGUARD_CACHE_DAY }}
+        restore-keys: deaconguard-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        SCAN: ${{ inputs.scan }}
+        TARGET: ${{ inputs.target }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        IGNORE_UNFIXED: ${{ inputs.ignore-unfixed }}
+        PLATFORM: ${{ inputs.platform }}
+        SKIP: ${{ inputs.skip }}
+        FORMAT: ${{ inputs.format }}
+        OUTPUT: ${{ inputs.output }}
+        DEACONGUARD_REGISTRY: ${{ inputs.registry }}
+        DEACONGUARD_REGISTRY_USERNAME: ${{ inputs.registry-username }}
+        DEACONGUARD_REGISTRY_PASSWORD: ${{ inputs.registry-password }}
+      run: |
+        # Inputs reach the command as arguments, never as shell code.
+        args=()
+        case "$SCAN" in
+        image)
+          args=(image scan "$TARGET")
+          [ "$IGNORE_UNFIXED" = "true" ] && args+=(--ignore-unfixed)
+          [ -n "$PLATFORM" ] && args+=(--platform "$PLATFORM")
+          ;;
+        config)
+          read -r -a targets <<< "$TARGET"
+          args=(config scan "${targets[@]}")
+          [ -n "$SKIP" ] && args+=(--skip "$SKIP")
+          ;;
+        *)
+          echo "::error::scan is image or config, not $SCAN"
+          exit 1
+          ;;
+        esac
+        [ -n "$FAIL_ON" ] && args+=(--fail-on "$FAIL_ON")
+        args+=(--format "$FORMAT" --output "$OUTPUT")
+        status=0
+        deaconguard "${args[@]}" || status=$?
+        echo "status=$status" >> "$GITHUB_OUTPUT"
+        if [ "$status" -ne 0 ] && [ "$status" -ne 4 ]; then
+          exit "$status"
+        fi
+
+    - name: Upload to code scanning
+      if: always() && inputs.upload-sarif == 'true' && inputs.format == 'sarif' && steps.scan.outputs.status != ''
+      uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+      with:
+        sarif_file: ${{ inputs.output }}
+        category: ${{ inputs.category != '' && inputs.category || format('deaconguard-{0}', inputs.scan) }}
+
+    - name: Result
+      shell: bash
+      env:
+        STATUS: ${{ steps.scan.outputs.status }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        if [ "$STATUS" = "4" ]; then
+          echo "::error::DeaconGuard found problems at or above $FAIL_ON"
+          exit 4
+        fi

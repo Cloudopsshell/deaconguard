@@ -1,0 +1,93 @@
+# DeaconGuard for GitLab CI: check an image, or the Dockerfiles and Kubernetes
+# manifests of a project, and show the results as test reports. Nothing is
+# run; the jobs need no Docker and no privileges.
+#
+# Include it at a release, and extend its jobs:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v1.4.0/ci/gitlab/deaconguard.gitlab-ci.yml
+#
+#   deaconguard-image:
+#     extends: .deaconguard-image
+#     variables:
+#       DEACONGUARD_TARGET: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+#       DEACONGUARD_FAIL_ON: high
+#
+#   deaconguard-config:
+#     extends: .deaconguard-config
+#     variables:
+#       DEACONGUARD_FAIL_ON: high
+#
+# See https://docs.deaconguard.io/usage/ci-cd
+
+.deaconguard:
+  image: alpine:3.22
+  stage: test
+  variables:
+    # The release to run: 1.4.0, or latest. Pin it to the version you include.
+    DEACONGUARD_VERSION: latest
+    # critical, high, medium or low fails the job; empty only reports.
+    DEACONGUARD_FAIL_ON: ""
+    # More options for the command, such as --ignore-unfixed or --skip DG-DF-011.
+    DEACONGUARD_ARGS: ""
+    DEACONGUARD_HOME: $CI_PROJECT_DIR/.deaconguard
+  cache:
+    key: deaconguard-feeds
+    paths:
+      - .deaconguard/feeds
+  before_script:
+    - apk add --no-cache curl >/dev/null
+    # The installer comes from the release it installs; it checks the
+    # release's signature with cosign and its checksum before installing.
+    - |
+      version="${DEACONGUARD_VERSION#v}"
+      if [ "$version" = latest ]; then
+        latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/Cloudopsshell/deaconguard/releases/latest)"
+        version="${latest##*/tag/v}"
+      fi
+      curl -fsSL --proto '=https' "https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v$version/ci/install.sh" -o /tmp/deaconguard-install.sh
+      sh /tmp/deaconguard-install.sh "$version" /usr/local/bin
+
+# Checks the image in DEACONGUARD_TARGET: in a registry, or a docker save
+# archive, an OCI layout or a folder from an earlier job's artifacts. The
+# job's own registry login is used for $CI_REGISTRY only.
+.deaconguard-image:
+  extends: .deaconguard
+  variables:
+    DEACONGUARD_TARGET: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    DEACONGUARD_REGISTRY: $CI_REGISTRY
+    DEACONGUARD_REGISTRY_USERNAME: $CI_REGISTRY_USER
+    DEACONGUARD_REGISTRY_PASSWORD: $CI_REGISTRY_PASSWORD
+  script:
+    - status=0
+    - deaconguard image scan "$DEACONGUARD_TARGET" --format junit --output deaconguard-image.xml ${DEACONGUARD_FAIL_ON:+--fail-on "$DEACONGUARD_FAIL_ON"} $DEACONGUARD_ARGS || status=$?
+    - deaconguard image scan "$DEACONGUARD_TARGET" --format sarif --output deaconguard-image.sarif $DEACONGUARD_ARGS >/dev/null || true
+    - deaconguard image scan "$DEACONGUARD_TARGET" --format cyclonedx --output deaconguard-image.cdx.json $DEACONGUARD_ARGS >/dev/null || true
+    - exit $status
+  artifacts:
+    when: always
+    paths:
+      - deaconguard-image.sarif
+      - deaconguard-image.cdx.json
+    reports:
+      junit: deaconguard-image.xml
+      cyclonedx: deaconguard-image.cdx.json
+
+# Checks the Dockerfiles and Kubernetes manifests in DEACONGUARD_TARGET,
+# the project by default. For a Helm chart, render it in an earlier job and
+# check the output.
+.deaconguard-config:
+  extends: .deaconguard
+  variables:
+    DEACONGUARD_TARGET: "."
+  script:
+    - status=0
+    - deaconguard config scan $DEACONGUARD_TARGET --format junit --output deaconguard-config.xml ${DEACONGUARD_FAIL_ON:+--fail-on "$DEACONGUARD_FAIL_ON"} $DEACONGUARD_ARGS || status=$?
+    - deaconguard config scan $DEACONGUARD_TARGET --format sarif --output deaconguard-config.sarif $DEACONGUARD_ARGS >/dev/null || true
+    - exit $status
+  artifacts:
+    when: always
+    paths:
+      - deaconguard-config.sarif
+    reports:
+      junit: deaconguard-config.xml
