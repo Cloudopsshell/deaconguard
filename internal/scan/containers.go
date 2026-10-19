@@ -173,7 +173,16 @@ func copyVerdict(container, done *checks.ContainerResult, inventory *containers.
 }
 
 func checkContainer(container *checks.ContainerResult, inventory *containers.Inventory) {
+	evaluateContainer(container, inventory)
+}
+
+// evaluateContainer checks a container's packages and libraries, keeps the
+// findings to fix in container, and returns every vulnerability, most urgent
+// first, with the package report, if its packages could be checked.
+func evaluateContainer(container *checks.ContainerResult, inventory *containers.Inventory) ([]ranked, *scanner.Report) {
+	var packages *scanner.Report
 	container.Severity = map[string]int{}
+	container.FixableSeverity = map[string]int{}
 	container.Notes = append(container.Notes, inventory.Notes...)
 	var findings []ranked
 	if inventory.OSRelease != "" && (inventory.DPKGStatus != "" || inventory.RPMQuery != "" || inventory.APKInstalled != "") {
@@ -185,6 +194,7 @@ func checkContainer(container *checks.ContainerResult, inventory *containers.Inv
 		if err != nil {
 			container.Error = "Packages not checked: " + err.Error()
 		} else {
+			packages = &report
 			container.OS, container.Packages = report.OS, report.PackageCount
 			life := report.Lifecycle
 			container.Lifecycle = &life
@@ -198,9 +208,7 @@ func checkContainer(container *checks.ContainerResult, inventory *containers.Inv
 				fixable := f.Fix == advisory.FixAvailable
 				if fixable {
 					container.Fixable++
-				}
-				if !fixable && !exploited {
-					continue
+					container.FixableSeverity[severity]++
 				}
 				detail := "No fixed version yet."
 				if f.FixedVersion != "" {
@@ -231,11 +239,13 @@ func checkContainer(container *checks.ContainerResult, inventory *containers.Inv
 			if exploited {
 				container.Exploited++
 			}
-			if !strings.Contains(f.Detail, "No fixed version") {
+			fixable := !strings.Contains(f.Detail, "No fixed version")
+			if fixable {
 				container.Fixable++
+				container.FixableSeverity[f.Severity]++
 			}
 			f.Title = container.Name + ": " + f.Title
-			findings = append(findings, ranked{finding: f, rank: severityRank(f.Severity), exploited: exploited})
+			findings = append(findings, ranked{finding: f, rank: severityRank(f.Severity), exploited: exploited, fixable: fixable})
 		}
 	}
 	sort.SliceStable(findings, func(i, j int) bool {
@@ -244,13 +254,18 @@ func checkContainer(container *checks.ContainerResult, inventory *containers.Inv
 		}
 		return findings[i].rank > findings[j].rank
 	})
-	for index, item := range findings {
-		if index >= maxContainerFindings {
-			container.Notes = append(container.Notes, fmt.Sprintf("%d more findings weren't listed.", len(findings)-maxContainerFindings))
-			break
+	var toFix []checks.Finding
+	for _, item := range findings {
+		if item.fixable || item.exploited {
+			toFix = append(toFix, item.finding)
 		}
-		container.Findings = append(container.Findings, item.finding)
 	}
+	if len(toFix) > maxContainerFindings {
+		container.Notes = append(container.Notes, fmt.Sprintf("%d more findings weren't listed.", len(toFix)-maxContainerFindings))
+		toFix = toFix[:maxContainerFindings]
+	}
+	container.Findings = toFix
+	return findings, packages
 }
 
 func severityRank(severity string) int {
@@ -260,7 +275,43 @@ func severityRank(severity string) int {
 // EvaluateImage checks an image's packages and libraries, as a running
 // container's are checked.
 func EvaluateImage(inventory containers.Inventory) checks.ContainerResult {
+	return CheckImage(inventory).Result
+}
+
+// ImageCheck is an image's check with what pipelines need besides: every
+// vulnerability, and the package list for an SBOM.
+type ImageCheck struct {
+	Result checks.ContainerResult
+	// Vulnerabilities is every vulnerability found, fixable or not, most
+	// urgent first; Result lists only those to fix, at most 300.
+	Vulnerabilities []Vulnerability
+	// Report is the image as a scan report, for sbom.Build.
+	Report map[string]any
+}
+
+// Vulnerability is one vulnerability in an image.
+type Vulnerability struct {
+	checks.Finding
+	Fixable   bool
+	Exploited bool
+}
+
+// CheckImage checks an image's packages and libraries, as a running
+// container's are checked.
+func CheckImage(inventory containers.Inventory) ImageCheck {
 	result := checks.ContainerResult{Container: inventory.Container}
-	checkContainer(&result, &inventory)
-	return result
+	findings, packages := evaluateContainer(&result, &inventory)
+	check := ImageCheck{Result: result, Vulnerabilities: make([]Vulnerability, 0, len(findings))}
+	for _, item := range findings {
+		check.Vulnerabilities = append(check.Vulnerabilities, Vulnerability{Finding: item.finding, Fixable: item.fixable, Exploited: item.exploited})
+	}
+	report := map[string]any{"address": inventory.Name, "os": result.OS, "scanned_at": time.Now().UTC().Format(time.RFC3339)}
+	if packages != nil {
+		report["distro"], report["package_manager"], report["installed_packages"] = packages.Distro, packages.PackageManager, packages.InstalledPackages
+	}
+	if inventory.Libraries != nil {
+		report["check_results"] = map[string]any{"libraries": map[string]any{"libraries": inventory.Libraries}}
+	}
+	check.Report = report
+	return check
 }

@@ -467,10 +467,13 @@ Scanning:
   deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   deaconguard report REPORT_ID [--json]
   deaconguard sbom SCAN_ID [--format cyclonedx|spdx]   the scan's software bill of materials (CycloneDX by default)
-  deaconguard image scan IMAGE [--platform linux/amd64] [--fail-on critical|high|medium|low] [--json]
-                                       read an image from its registry, without running it, and check it;
-                                       --fail-on exits with status 4 at or above that severity; a login from
-                                       DEACONGUARD_REGISTRY_USERNAME and DEACONGUARD_REGISTRY_PASSWORD
+  deaconguard image scan IMAGE|PATH [--platform linux/amd64] [--fail-on critical|high|medium|low]
+                         [--ignore-unfixed] [--format table|json|sarif|junit|cyclonedx|spdx] [--output FILE]
+                                       read an image, without running it, and check it: from its registry
+                                       (a login from DEACONGUARD_REGISTRY_USERNAME and _PASSWORD), or a
+                                       docker save archive, an OCI layout, or a folder (docker-archive:,
+                                       oci:, dir: say which); --fail-on exits with status 4 at or above
+                                       that severity, --ignore-unfixed counts only what an update fixes
   deaconguard audit HOST_ID [--advanced] [--json]
                                        handover audit: every check, the hardening baseline,
                                        and a grade; --advanced adds the YARA antivirus scan
