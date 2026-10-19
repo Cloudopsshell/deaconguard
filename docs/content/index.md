@@ -2,10 +2,12 @@
 slug: /
 sidebar_label: Overview
 title: DeaconGuard documentation
-description: What DeaconGuard is, what it checks, and how its server and agents work together.
+description: Find what's vulnerable, misconfigured or compromised across your Linux servers, Kubernetes clusters and container images, from one dashboard you host.
 ---
 
-DeaconGuard is a Linux security scanner. It finds vulnerable packages, tampered system files, signs of compromise and risky configuration on your Linux machines, and shows the results in a self-hosted dashboard.
+**Find what's vulnerable, misconfigured or compromised**, across your Linux servers, Kubernetes clusters and container images, from one dashboard you host.
+
+On Linux machines, DeaconGuard finds vulnerable packages, tampered system files, signs of compromise and risky configuration. It checks [images in registries and pipelines](./usage/images.md) without running them, [Dockerfiles and Kubernetes manifests](./usage/config-checks.md) before they are deployed, and [running Kubernetes clusters](./usage/kubernetes.md) through their API, read-only.
 
 It checks installed packages and the running kernel against each distribution's **own security data**: Canonical's OVAL feeds for Ubuntu, the Debian Security Tracker, the OVAL feeds of Red Hat, AlmaLinux, Oracle and SUSE, the errata of Rocky Linux and Fedora, and Amazon Linux's ALAS bulletins. It also tells you when a release no longer gets security fixes. Optional checks add [system file integrity, malware and compromise indicators, security configuration, and an antivirus scan with ClamAV, or ClamAV and YARA rules](./checks.md).
 
