@@ -58,3 +58,165 @@ Progress goes to standard error, so a report on standard output can be piped.
 ## What leaves the machine
 
 Only what any image check sends: OS package checks use the [advisory data](./vulnerabilities.md) DeaconGuard downloads, and libraries are checked against OSV, which is sent their names and versions. The image itself, and its files, stay where they are. To scan without these downloads on each run, cache `$DEACONGUARD_HOME` (by default `~/.local/share/deaconguard` for a user) between jobs: it holds the advisory data and the [layer cache](./images.md#nothing-in-the-image-is-run).
+
+## GitHub Actions
+
+The DeaconGuard action installs the command (checking the release's signature and checksum), keeps the advisory data in the Actions cache for a day, runs the check, and can upload the SARIF report to code scanning, where findings show on the pull request:
+
+```yaml
+jobs:
+  deaconguard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # to upload to code scanning
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t shop:${{ github.sha }} . && docker save shop:${{ github.sha }} -o shop.tar
+
+      - name: Check the image
+        uses: Cloudopsshell/deaconguard@v1.4.0
+        with:
+          target: shop.tar
+          fail-on: high
+          ignore-unfixed: "true"
+          upload-sarif: "true"
+
+      - name: Check the Dockerfile and manifests
+        uses: Cloudopsshell/deaconguard@v1.4.0
+        with:
+          scan: config
+          target: Dockerfile deploy
+          fail-on: high
+          output: config.sarif
+          upload-sarif: "true"
+```
+
+| Input | Default | |
+| --- | --- | --- |
+| `scan` | `image` | `image`, or `config` for Dockerfiles and Kubernetes manifests |
+| `target` | | The image or path; for `config`, files and folders separated by spaces |
+| `fail-on` | | `critical`, `high`, `medium` or `low` fails the step; empty only reports |
+| `ignore-unfixed` | `false` | Images: count and report only what an update fixes |
+| `platform` | the runner's | Images: a platform of a multi-platform image |
+| `skip` | | Config: rules to leave out |
+| `format`, `output` | `sarif`, `deaconguard.sarif` | The report and its file |
+| `upload-sarif` | `false` | Upload the SARIF report to code scanning (needs `security-events: write`) |
+| `category` | `deaconguard-image` or `deaconguard-config` | The code scanning category |
+| `registry`, `registry-username`, `registry-password` | | A login for a private registry, from secrets; sent to `registry` only |
+| `version` | the action's release | A release such as `1.4.0`, `latest`, or `installed` for a `deaconguard` already on the PATH |
+| `cache` | `true` | Keep the advisory data and layer cache between runs |
+
+The `status` output is `0`, or `4` when there were findings at or above `fail-on`. Pin the action to a release, as above, or to its commit.
+
+For an image in GHCR, use the job's token:
+
+```yaml
+      - uses: Cloudopsshell/deaconguard@v1.4.0
+        with:
+          target: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          registry: ghcr.io
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}   # the job needs packages: read
+```
+
+## GitLab CI
+
+Include the template from a release, and extend its jobs. They run in `alpine:3.22`, need no Docker or privileges, show findings as test results with JUnit, keep SARIF as an artifact, and give GitLab the image's CycloneDX SBOM:
+
+```yaml
+include:
+  - remote: https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v1.4.0/ci/gitlab/deaconguard.gitlab-ci.yml
+
+deaconguard-image:
+  extends: .deaconguard-image
+  needs: [build]
+  variables:
+    DEACONGUARD_VERSION: "1.4.0"
+    DEACONGUARD_TARGET: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    DEACONGUARD_FAIL_ON: high
+    DEACONGUARD_ARGS: --ignore-unfixed
+
+deaconguard-config:
+  extends: .deaconguard-config
+  variables:
+    DEACONGUARD_VERSION: "1.4.0"
+    DEACONGUARD_FAIL_ON: high
+```
+
+The image job logs in to `$CI_REGISTRY` with the job's own token, and only there (`DEACONGUARD_REGISTRY`). `DEACONGUARD_TARGET` can also be an archive or OCI layout an earlier job left as an artifact.
+
+## Other CI systems
+
+Everywhere else, install the command with `ci/install.sh` from a release, which checks the release's signature and checksum, needs no root, and installs only the `deaconguard` binary:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v1.4.0/ci/install.sh | sh -s -- 1.4.0 "$HOME/.local/bin"
+```
+
+It needs Linux on amd64 or arm64, `curl` and `sha256sum`.
+
+### Jenkins
+
+```groovy
+pipeline {
+  agent any
+  environment { PATH = "${env.HOME}/.local/bin:${env.PATH}" }
+  stages {
+    stage('DeaconGuard') {
+      steps {
+        sh 'curl -fsSL https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v1.4.0/ci/install.sh | sh -s -- 1.4.0'
+        sh 'docker save shop:${GIT_COMMIT} -o shop.tar'
+        sh 'deaconguard image scan shop.tar --ignore-unfixed --fail-on high --format junit --output deaconguard-image.xml'
+        sh 'deaconguard config scan . --fail-on high --format junit --output deaconguard-config.xml'
+      }
+    }
+  }
+  post {
+    always { junit allowEmptyResults: true, testResults: 'deaconguard-*.xml' }
+  }
+}
+```
+
+With the Warnings Next Generation plugin, `--format sarif` and `recordIssues(tools: [sarif(pattern: 'deaconguard.sarif')])` show the findings as issues instead.
+
+### Bitbucket Pipelines
+
+Bitbucket shows JUnit reports it finds under `test-results/`:
+
+```yaml
+pipelines:
+  default:
+    - step:
+        name: DeaconGuard
+        image: alpine:3.22
+        script:
+          - apk add --no-cache curl
+          - curl -fsSL https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v1.4.0/ci/install.sh | sh -s -- 1.4.0 /usr/local/bin
+          - mkdir -p test-results
+          - deaconguard config scan . --fail-on high --format junit --output test-results/deaconguard-config.xml
+          - deaconguard image scan "$IMAGE" --ignore-unfixed --fail-on high --format junit --output test-results/deaconguard-image.xml
+```
+
+For a private image, set `DEACONGUARD_REGISTRY`, `DEACONGUARD_REGISTRY_USERNAME` and `DEACONGUARD_REGISTRY_PASSWORD` as secured repository variables.
+
+### Azure DevOps
+
+```yaml
+steps:
+  - script: curl -fsSL https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v1.4.0/ci/install.sh | sh -s -- 1.4.0 "$HOME/.local/bin"
+    displayName: Install DeaconGuard
+  - script: |
+      export PATH="$HOME/.local/bin:$PATH"
+      deaconguard image scan "$(image)" --ignore-unfixed --fail-on high --format junit --output deaconguard-image.xml
+    displayName: Check the image
+  - task: PublishTestResults@2
+    condition: always()
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: deaconguard-*.xml
+```
+
+To see SARIF in Azure DevOps, publish the `--format sarif` report as a build artifact named `CodeAnalysisLogs`, which the SARIF SAST Scans Tab extension shows.

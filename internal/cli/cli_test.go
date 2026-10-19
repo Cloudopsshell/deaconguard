@@ -129,3 +129,28 @@ func TestConfigScan(t *testing.T) {
 		t.Fatal("no path")
 	}
 }
+
+func TestEnvironmentCredentialsStayWithTheirRegistry(t *testing.T) {
+	t.Setenv("DEACONGUARD_REGISTRY_USERNAME", "gitlab-ci-token")
+	t.Setenv("DEACONGUARD_REGISTRY_PASSWORD", "job-token")
+	t.Setenv("DEACONGUARD_REGISTRY", "")
+	credentials, err := environmentCredentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login, ok := credentials("registry-1.docker.io"); !ok || login.Password != "job-token" {
+		t.Fatal("without DEACONGUARD_REGISTRY, the login goes to the image's registry")
+	}
+	t.Setenv("DEACONGUARD_REGISTRY", "https://registry.gitlab.com/")
+	credentials, _ = environmentCredentials()
+	if _, ok := credentials("registry-1.docker.io"); ok {
+		t.Fatal("the GitLab login was given to Docker Hub")
+	}
+	if login, ok := credentials("registry.gitlab.com"); !ok || login.Username != "gitlab-ci-token" {
+		t.Fatal("the login didn't reach its own registry")
+	}
+	t.Setenv("DEACONGUARD_REGISTRY", "not a host")
+	if _, err := environmentCredentials(); err == nil {
+		t.Fatal("a bad DEACONGUARD_REGISTRY was accepted")
+	}
+}
