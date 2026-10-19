@@ -494,7 +494,7 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\nSaved %s\n", local.Hostname(), config.ServerURL, config.HostID, path)
+		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\nSaved %s\n", config.Name(), config.ServerURL, config.HostID, path)
 		if os.Geteuid() == 0 {
 			fmt.Fprintln(output, "Start the agent: sudo systemctl enable --now deaconguard-agent")
 		} else {
@@ -521,7 +521,7 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 			if config, err = agent.Enroll(ctx, token, path, true); err != nil {
 				return err
 			}
-			logf("Enrolled %s with %s as host %s", local.Hostname(), config.ServerURL, config.HostID)
+			logf("Enrolled %s with %s as host %s", config.Name(), config.ServerURL, config.HostID)
 			err = agent.Run(ctx, config, path, logf)
 		}
 		return err
@@ -675,7 +675,7 @@ func loadOrEnroll(ctx context.Context, path string, diagnostics io.Writer) (agen
 					fmt.Fprintf(diagnostics, "Could not enroll with the token, so keeping the enrollment with %s: %v\n", config.ServerURL, enrollError)
 					return config, nil
 				}
-				fmt.Fprintf(diagnostics, "Enrolled %s with %s as host %s; saved %s\n", local.Hostname(), enrolled.ServerURL, enrolled.HostID, path)
+				fmt.Fprintf(diagnostics, "Enrolled %s with %s as host %s; saved %s\n", enrolled.Name(), enrolled.ServerURL, enrolled.HostID, path)
 				return enrolled, nil
 			}
 		}
@@ -695,6 +695,6 @@ func loadOrEnroll(ctx context.Context, path string, diagnostics io.Writer) (agen
 	if err != nil {
 		return agent.Config{}, err
 	}
-	fmt.Fprintf(diagnostics, "Enrolled %s with %s as host %s; saved %s\n", local.Hostname(), config.ServerURL, config.HostID, path)
+	fmt.Fprintf(diagnostics, "Enrolled %s with %s as host %s; saved %s\n", config.Name(), config.ServerURL, config.HostID, path)
 	return config, nil
 }

@@ -142,7 +142,10 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 			}
 		}
 		var result checks.Result
-		if id == checks.Containers {
+		if id == checks.Kubernetes {
+			result = checks.Result{Status: checks.StatusSkipped, Findings: []checks.Finding{}, Notes: []string{},
+				Summary: "The Kubernetes check runs on clusters: use deaconguard kube scan, or enroll the cluster with the cluster agent"}
+		} else if id == checks.Containers {
 			result = collectContainers(executor)
 			// An agent sends what it read; a scan run here checks it now.
 			if options.CollectInventory == nil && result.Status == checks.StatusCompleted {

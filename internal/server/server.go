@@ -666,6 +666,12 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r, "host.sudo", host.Address, fmt.Sprintf("allow sudo: %t", *request.AllowSudo))
 	}
+	if request.AutoScanContainers != nil && *request.AutoScanContainers {
+		if host, err := store.GetHost(r.PathValue("id")); err == nil && host.IsCluster() {
+			writeError(w, http.StatusBadRequest, errors.New("a Kubernetes cluster has no containers of its own to scan"))
+			return
+		}
+	}
 	if request.AutoScanContainers != nil {
 		if host, err = store.SetAutoScanContainers(r.PathValue("id"), *request.AutoScanContainers); err != nil {
 			writeError(w, http.StatusNotFound, err)

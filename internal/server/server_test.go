@@ -244,7 +244,8 @@ func TestChosenChecksAndSudoPrompt(t *testing.T) {
 		}, nil
 	})
 	checkList := decode[[]checks.Definition](t, request(t, s, http.MethodGet, "/api/checks", nil))
-	if len(checkList) != 9 || checkList[0].ID != checks.Packages || !checkList[0].Default || checkList[1].ID != checks.Libraries || checkList[2].ID != checks.Containers || checkList[8].ID != checks.YARA {
+	if len(checkList) != 10 || checkList[0].ID != checks.Packages || !checkList[0].Default || checkList[1].ID != checks.Libraries || checkList[2].ID != checks.Containers ||
+		checkList[8].ID != checks.Kubernetes || checkList[9].ID != checks.YARA {
 		t.Fatalf("checks = %+v", checkList)
 	}
 	host := decode[store.Host](t, request(t, s, http.MethodPost, "/api/hosts", map[string]any{"transport": "local", "allow_sudo": true}))

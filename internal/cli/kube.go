@@ -95,6 +95,9 @@ func runKube(arguments []string, output, diagnostics io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if !includeSystem {
+		report.Notes = append(report.Notes, "--include-system checks Kubernetes' own objects too")
+	}
 	if withImages {
 		report.Findings = append(report.Findings, checkClusterImages(ctx, report.Images, &report, diagnostics)...)
 	} else if len(report.Images) > 0 {
