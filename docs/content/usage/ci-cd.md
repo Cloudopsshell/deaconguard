@@ -3,7 +3,7 @@ title: Images in CI/CD pipelines
 description: Check a container image, an image archive or a project folder in a pipeline, fail the build on what matters, and publish SARIF, JUnit or SBOM reports.
 ---
 
-`deaconguard image scan` checks an image in a pipeline, before it is pushed or deployed. It reads the image as data and never runs it, so it needs no Docker daemon, no root and no DeaconGuard server. It needs DeaconGuard 1.4.0 or later.
+`deaconguard image scan` checks an image in a pipeline, before it is pushed or deployed, and [`deaconguard config scan`](./config-checks.md) checks its Dockerfile and Kubernetes manifests. It reads the image as data and never runs it, so it needs no Docker daemon, no root and no DeaconGuard server. It needs DeaconGuard 1.4.0 or later.
 
 ## What it can check
 

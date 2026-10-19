@@ -18,7 +18,7 @@ var vulnerabilities = []scan.Vulnerability{
 }
 
 func TestSARIF(t *testing.T) {
-	data, err := SARIF("nginx:1.27", vulnerabilities)
+	data, err := SARIF(ImageItems("nginx:1.27", vulnerabilities))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,14 +71,14 @@ func TestSARIF(t *testing.T) {
 	if !strings.Contains(run.Results[0].Message.Text, "nghttp2 1.52.0 (Debian 12): CVE-2023-44487 in nginx:1.27") {
 		t.Errorf("message: %s", run.Results[0].Message.Text)
 	}
-	empty, _ := SARIF("scratch", nil)
+	empty, _ := SARIF(ImageItems("scratch", nil))
 	if !strings.Contains(string(empty), `"results": []`) {
 		t.Errorf("no vulnerabilities: %s", empty)
 	}
 }
 
 func TestJUnit(t *testing.T) {
-	data, err := JUnit("nginx:1.27", vulnerabilities, func(v scan.Vulnerability) bool { return v.Severity == "HIGH" })
+	data, err := JUnit("nginx:1.27", ImageItems("nginx:1.27", vulnerabilities), func(item Item) bool { return item.Severity == "HIGH" })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +91,8 @@ func TestJUnit(t *testing.T) {
 		suite.Cases[0].Failure.Type != "HIGH" || !strings.HasPrefix(string(data), "<?xml") {
 		t.Fatalf("junit: %s", data)
 	}
-	none, _ := JUnit("scratch", nil, func(scan.Vulnerability) bool { return true })
-	if !strings.Contains(string(none), `tests="1" failures="0"`) || !strings.Contains(string(none), "No vulnerabilities found") {
+	none, _ := JUnit("scratch", nil, func(Item) bool { return true })
+	if !strings.Contains(string(none), `tests="1" failures="0"`) || !strings.Contains(string(none), "Nothing found") {
 		t.Errorf("no vulnerabilities: %s", none)
 	}
 }
