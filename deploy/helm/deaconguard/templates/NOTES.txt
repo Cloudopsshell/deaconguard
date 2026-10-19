@@ -26,3 +26,10 @@ The DeaconGuard agent runs on every node{{ if not (or .Values.agent.enrollment.e
   kubectl -n {{ .Release.Namespace }} rollout restart daemonset/{{ include "deaconguard.agentName" . }}{{ end }}.
 Each node appears on the server's Agents page, by its node name.
 {{- end }}
+{{- if .Values.cluster.enabled }}
+
+The cluster agent checks this cluster through its API, read-only{{ if not (or .Values.cluster.enrollment.existingSecret .Values.cluster.enrollment.token) }}, and waits for its token:
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "deaconguard.clusterEnrollmentSecret" . }} --from-literal={{ .Values.cluster.enrollment.secretKey }}='TOKEN'
+  kubectl -n {{ .Release.Namespace }} rollout restart statefulset/{{ include "deaconguard.clusterName" . }}{{ end }}.
+The cluster appears on the server's Hosts page as {{ .Values.cluster.name }}; scan it with the Kubernetes check.
+{{- end }}

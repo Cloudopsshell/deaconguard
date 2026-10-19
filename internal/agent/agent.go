@@ -41,6 +41,22 @@ type Config struct {
 	Pin        string `json:"pin"`
 	HostID     string `json:"host_id"`
 	Credential string `json:"credential"`
+	// Cluster is the name of the Kubernetes cluster a cluster agent checks,
+	// from inside it; empty for a machine's agent.
+	Cluster string `json:"cluster,omitempty"`
+}
+
+// ClusterName is $DEACONGUARD_AGENT_CLUSTER: when set, the agent checks the
+// Kubernetes cluster it runs in, with its pod's service account, and
+// enrolls under this name, instead of checking a machine.
+func ClusterName() string { return strings.TrimSpace(os.Getenv("DEACONGUARD_AGENT_CLUSTER")) }
+
+// Name is what the agent enrolls as: its cluster, or this machine.
+func (config Config) Name() string {
+	if config.Cluster != "" {
+		return config.Cluster
+	}
+	return local.Hostname()
 }
 
 // SystemConfigPath is where the agent service keeps its configuration.
@@ -107,21 +123,27 @@ func Enroll(ctx context.Context, tokenText, path string, replace bool) (Config, 
 	if _, err := os.Stat(path); err == nil && !replace {
 		return Config{}, fmt.Errorf("this machine is already enrolled (%s); add --force to enroll it again", path)
 	}
-	if _, err := local.New(); err != nil {
-		return Config{}, err
+	cluster := ClusterName()
+	if cluster == "" {
+		if _, err := local.New(); err != nil {
+			return Config{}, err
+		}
 	}
-	client, err := newClient(Config{ServerURL: token.ServerURL, Pin: token.Pin})
+	client, err := newClient(Config{ServerURL: token.ServerURL, Pin: token.Pin, Cluster: cluster})
 	if err != nil {
 		return Config{}, err
 	}
 	request := agentapi.EnrollRequest{
 		Secret: token.Secret, Hostname: local.Hostname(), Username: local.Username(), OS: osName(), Version: buildinfo.Version,
 	}
+	if cluster != "" {
+		request.Hostname, request.Username, request.OS, request.Kind = cluster, "kubernetes", "Kubernetes", store.KindCluster
+	}
 	var response agentapi.EnrollResponse
 	if err := client.call(ctx, http.MethodPost, "enroll", request, &response, 30*time.Second); err != nil {
 		return Config{}, fmt.Errorf("enroll with %s: %w", token.ServerURL, err)
 	}
-	config := Config{ServerURL: token.ServerURL, Pin: token.Pin, HostID: response.HostID, Credential: response.Credential}
+	config := Config{ServerURL: token.ServerURL, Pin: token.Pin, HostID: response.HostID, Credential: response.Credential, Cluster: cluster}
 	if err := saveConfig(path, config); err != nil {
 		return Config{}, fmt.Errorf("enrolled, but could not save %s: %w", path, err)
 	}
@@ -139,8 +161,10 @@ const moveRetry = time.Hour
 // the config lives, saved again when the agent moves to the server's agent
 // port. logf reports what the agent does, for the service's journal.
 func Run(ctx context.Context, config Config, path string, logf func(format string, arguments ...any)) error {
-	if _, err := local.New(); err != nil {
-		return err
+	if config.Cluster == "" {
+		if _, err := local.New(); err != nil {
+			return err
+		}
 	}
 	client, err := newClient(config)
 	if err != nil {
@@ -150,6 +174,10 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 	log.info("DeaconGuard agent %s for %s, host %s", buildinfo.Version, config.ServerURL, config.HostID)
 	machine, _ := local.New()
 	watch := newContainerWatch(machine)
+	if config.Cluster != "" {
+		// A cluster agent's pod has no containers of its own to watch.
+		watch = &containerWatch{run: func(string) ([]byte, error) { return nil, errors.New("a cluster agent") }}
+	}
 	backoff := time.Duration(0)
 	connected := false
 	var lastMove time.Time
@@ -232,12 +260,18 @@ func runJob(ctx context.Context, client *client, config Config, job agentapi.Job
 		}
 	}()
 	var inventory *target.Inventory
-	host := store.Host{ID: config.HostID, Address: local.Hostname(), Username: local.Username(), Transport: store.TransportLocal, AllowSudo: job.AllowSudo}
-	report, scanErr := scan.Run(host, job.Checks, scan.Options{
-		Progress:         events.add,
-		CollectInventory: func(collected target.Inventory) { inventory = &collected },
-		YARARules:        func() checks.YARAInput { return client.yaraRules(ctx) },
-	})
+	var report map[string]any
+	var scanErr error
+	if config.Cluster != "" {
+		report, scanErr = scanCluster(ctx, config, job, events.add)
+	} else {
+		host := store.Host{ID: config.HostID, Address: local.Hostname(), Username: local.Username(), Transport: store.TransportLocal, AllowSudo: job.AllowSudo}
+		report, scanErr = scan.Run(host, job.Checks, scan.Options{
+			Progress:         events.add,
+			CollectInventory: func(collected target.Inventory) { inventory = &collected },
+			YARARules:        func() checks.YARAInput { return client.yaraRules(ctx) },
+		})
+	}
 	stopFlushing()
 	<-flushDone
 	events.flush(ctx, client, job.ScanID)
@@ -395,9 +429,16 @@ func (c *client) exchange(ctx context.Context, method, path string, body any, li
 		request.Header.Set(agentapi.HeaderNewContainers, strconv.Itoa(c.newContainers))
 	}
 	c.mu.Unlock()
-	request.Header.Set(agentapi.HeaderHostname, local.Hostname())
-	request.Header.Set(agentapi.HeaderUsername, local.Username())
-	request.Header.Set(agentapi.HeaderOS, osName())
+	// A cluster agent is its cluster, not the pod it runs in.
+	if cluster := c.config.Cluster; cluster != "" {
+		request.Header.Set(agentapi.HeaderHostname, cluster)
+		request.Header.Set(agentapi.HeaderUsername, "kubernetes")
+		request.Header.Set(agentapi.HeaderOS, "Kubernetes")
+	} else {
+		request.Header.Set(agentapi.HeaderHostname, local.Hostname())
+		request.Header.Set(agentapi.HeaderUsername, local.Username())
+		request.Header.Set(agentapi.HeaderOS, osName())
+	}
 	if c.config.HostID != "" {
 		request.Header.Set("Authorization", "Bearer "+c.config.HostID+"."+c.config.Credential)
 	}

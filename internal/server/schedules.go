@@ -90,6 +90,13 @@ func (s *Server) runSchedule(item store.Schedule) (started, skipped int) {
 		if !item.Covers(host.ID) {
 			continue
 		}
+		// A schedule runs on clusters only its Kubernetes check, and on
+		// machines its other checks; a host with none of its checks is
+		// left out quietly.
+		selected := checks.ForHost(host.IsCluster(), item.Checks)
+		if len(selected) == 0 {
+			continue
+		}
 		reason := ""
 		tags, _ := store.HostTags(host.ID)
 		window, inWindow, _ := store.InMaintenance(tags, time.Now())
@@ -103,9 +110,9 @@ func (s *Server) runSchedule(item store.Schedule) (started, skipped int) {
 			// server's own machine is scanned with sudo. Agents run as root.
 			target := host
 			target.AllowSudo = item.RunAsRoot
-			if err := checkAgentVersion(host, item.Checks); err != nil {
+			if err := checkAgentVersion(host, selected); err != nil {
 				reason = err.Error()
-			} else if _, err := s.runner.start(target, item.Checks, true); errors.Is(err, errScanInProgress) {
+			} else if _, err := s.runner.start(target, selected, true); errors.Is(err, errScanInProgress) {
 				reason = "a scan of it is already queued or running"
 			} else if err != nil {
 				reason = err.Error()
@@ -122,8 +129,8 @@ func (s *Server) runSchedule(item store.Schedule) (started, skipped int) {
 		} else if !item.RunAsRoot {
 			serverLog(host.ID, store.LogWarning, "Schedule %q scans %s without root, as set: results show partial coverage", item.Name, host.Address)
 		}
-		store.Audit(actor, "scan.start", host.Address, strings.Join(item.Checks, ", "), "")
-		serverLog(host.ID, store.LogInfo, "Scan of %s started by schedule %q: %s", host.Address, item.Name, strings.Join(item.Checks, ", "))
+		store.Audit(actor, "scan.start", host.Address, strings.Join(selected, ", "), "")
+		serverLog(host.ID, store.LogInfo, "Scan of %s started by schedule %q: %s", host.Address, item.Name, strings.Join(selected, ", "))
 	}
 	if started == 0 && skipped == 0 {
 		serverLog("", store.LogWarning, "Schedule %q ran, but no host matches it", item.Name)

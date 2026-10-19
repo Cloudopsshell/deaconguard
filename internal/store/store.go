@@ -28,7 +28,19 @@ type Host struct {
 	// AutoScanContainers scans the running containers when its agent sees
 	// new ones (1.2.0 and later).
 	AutoScanContainers bool `json:"auto_scan_containers"`
+	// Kind is KindMachine, or KindCluster for a Kubernetes cluster enrolled
+	// with a cluster agent, which runs only the Kubernetes check.
+	Kind string `json:"kind"`
 }
+
+// Kinds of host.
+const (
+	KindMachine = "machine"
+	KindCluster = "cluster"
+)
+
+// IsCluster reports whether the host is a Kubernetes cluster.
+func (host Host) IsCluster() bool { return host.Kind == KindCluster }
 
 const (
 	// TransportLocal is the machine DeaconGuard runs on; Address holds its
@@ -236,6 +248,11 @@ func migrate(db *sql.DB) error {
 	}
 	if version < 22 {
 		if err := execInTx(db, schemaV22); err != nil {
+			return err
+		}
+	}
+	if version < 23 {
+		if err := execInTx(db, schemaV23); err != nil {
 			return err
 		}
 	}
@@ -706,6 +723,11 @@ ALTER TABLE hosts ADD COLUMN auto_scan_containers INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE hosts ADD COLUMN last_auto_scan TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 21;`
 
+// schemaV23 marks Kubernetes clusters enrolled with a cluster agent.
+const schemaV23 = `
+ALTER TABLE hosts ADD COLUMN kind TEXT NOT NULL DEFAULT 'machine';
+PRAGMA user_version = 23;`
+
 // schemaV22 adds registry images: saved registry logins, the images to check,
 // and their scans. A scan's result is the image's checked inventory as JSON.
 // A watched image is checked for a new digest every few minutes.
@@ -778,7 +800,7 @@ func ListHosts() ([]Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query("SELECT id, address, username, allow_sudo, transport, auto_scan_containers FROM hosts ORDER BY created_at, rowid")
+	rows, err := db.Query("SELECT id, address, username, allow_sudo, transport, auto_scan_containers, kind FROM hosts ORDER BY created_at, rowid")
 	if err != nil {
 		return nil, err
 	}
@@ -800,7 +822,7 @@ type rowScanner interface {
 
 func scanHost(row rowScanner) (Host, error) {
 	var host Host
-	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.AllowSudo, &host.Transport, &host.AutoScanContainers); err != nil {
+	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.AllowSudo, &host.Transport, &host.AutoScanContainers, &host.Kind); err != nil {
 		return Host{}, err
 	}
 	return host, nil
@@ -827,7 +849,7 @@ func AddLocalHost(hostname, username string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	host := Host{ID: id, Address: hostname, Username: username, Transport: TransportLocal}
+	host := Host{ID: id, Address: hostname, Username: username, Transport: TransportLocal, Kind: KindMachine}
 	if err := insertHost(db, host); err != nil {
 		return Host{}, err
 	}
@@ -845,7 +867,7 @@ func GetHost(id string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	host, err := scanHost(db.QueryRow("SELECT id, address, username, allow_sudo, transport, auto_scan_containers FROM hosts WHERE id = ?", id))
+	host, err := scanHost(db.QueryRow("SELECT id, address, username, allow_sudo, transport, auto_scan_containers, kind FROM hosts WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Host{}, fmt.Errorf("unknown host ID: %s", id)
 	}

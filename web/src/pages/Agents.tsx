@@ -510,6 +510,10 @@ function ReusableTokenCreated({ token, onDone }: { token: NewEnrollmentToken; on
         </a>{" "}
         shows. With Docker Compose, put it in the agent's <code className="font-mono">enrollment-token</code> file.
       </p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        To check the cluster itself (workloads, RBAC, namespaces, its Kubernetes version), the chart's cluster agent enrolls
+        with a token too, and the cluster appears on Hosts: set <code className="font-mono">cluster.enabled=true</code>.
+      </p>
       <details className="text-xs text-slate-500 dark:text-slate-400">
         <summary className="cursor-pointer">The token alone, or the install command for a machine</summary>
         <div className="mt-2 space-y-2">

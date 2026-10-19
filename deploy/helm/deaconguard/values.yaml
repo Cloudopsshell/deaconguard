@@ -86,3 +86,34 @@ agent:
     - operator: Exists
   affinity: {}
   priorityClassName: ""
+
+# The cluster agent checks this Kubernetes cluster through its API,
+# read-only (1.5.0 and later): workloads, RBAC, namespaces, the version and
+# the API server's settings. It appears on the server's Hosts page as a
+# cluster, scanned with the Kubernetes check, by hand or on a schedule.
+cluster:
+  enabled: false
+  # The cluster's name on the server.
+  name: kubernetes
+  # A token from the server's Agents page, in an existing secret
+  # (recommended), or in enrollment.token, which the chart puts in a secret.
+  # The cluster agent uses it once, to enroll.
+  enrollment:
+    existingSecret: ""
+    secretKey: token
+    token: ""
+  # A small volume keeps the agent's identity, so a restarted pod is the
+  # same cluster on the server.
+  persistence:
+    size: 16Mi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

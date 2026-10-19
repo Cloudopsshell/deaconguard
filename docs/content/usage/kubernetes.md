@@ -22,6 +22,12 @@ It checks:
 
 Kubernetes' own objects (`kube-system`, `kube-public`, `kube-node-lease`, and the built-in and kubeadm roles) need privileges by design and are left out; `--include-system` checks them too. Findings are accepted, as for manifests, with the `deaconguard.io/ignore` annotation on the object, or `--skip`. `--fail-on`, `--format` and `--output` work as for [pipelines](./ci-cd.md).
 
+## In the dashboard
+
+To check a cluster from the server, on a schedule and with notifications, install the **cluster agent** in it: `cluster.enabled=true` in the [Helm chart](../installation/kubernetes.md#4-the-cluster-itself). It enrolls with a token like a machine's agent and appears on **Hosts** as a Kubernetes cluster, with its own page.
+
+A cluster runs one check, **Kubernetes**: **Scan now** offers only that, and a schedule with the Kubernetes check ticked runs it on every cluster it covers (and its other checks on machines). The cluster agent reads the cluster with the pod's read-only service account and sends what it found to the server, which adds the version's support and Kubernetes' own vulnerabilities, so the agent needs to reach only the API and the server. A failed scan is [notified](./notifications.md) like a host's.
+
 ## Logging in
 
 From your machine, `deaconguard kube scan` uses your kubeconfig (`KUBECONFIG`, or `~/.kube/config`), its current context or `--context`, with any of its logins: client certificates, tokens, or an exec plugin such as `aws eks get-token`, `gke-gcloud-auth-plugin` or `kubelogin`. Inside a cluster, without a kubeconfig, it uses the pod's service account.

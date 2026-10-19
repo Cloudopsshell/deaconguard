@@ -191,7 +191,7 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 	}
 	sort.Strings(report.Images)
 	if skippedSystem > 0 {
-		report.Notes = append(report.Notes, fmt.Sprintf("%d objects of Kubernetes itself (kube-system, built-in roles) were left out; --include-system checks them", skippedSystem))
+		report.Notes = append(report.Notes, fmt.Sprintf("%d objects of Kubernetes itself (kube-system, built-in roles) were left out: its components need privileges by design", skippedSystem))
 	}
 
 	report.Findings = append(report.Findings, checkNamespaces(ctx, client, podsIn, options, &report)...)
@@ -352,6 +352,17 @@ func managedProvider(gitVersion string) string {
 		return "k3s"
 	}
 	return ""
+}
+
+// VersionFindings checks a Kubernetes version's support and known CVEs, as
+// Scan does, for a server that adds them to an agent's report.
+func VersionFindings(ctx context.Context, gitVersion string, options Options) ([]iac.Finding, []string) {
+	if options.Now.IsZero() {
+		options.Now = time.Now()
+	}
+	var report Report
+	findings := checkVersion(ctx, Version{GitVersion: gitVersion}, options, &report)
+	return findings, report.Notes
 }
 
 // checkVersion checks the Kubernetes version's support and known CVEs.

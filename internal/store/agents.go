@@ -200,6 +200,8 @@ type Agent struct {
 
 // AgentEnrollment is what an agent reports about itself when it enrolls.
 type AgentEnrollment struct {
+	// Kind is KindCluster for a cluster agent; empty is a machine.
+	Kind     string
 	Hostname string
 	Username string
 	Version  string
@@ -240,9 +242,13 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 		return Host{}, "", ErrInvalidEnrollmentToken
 	}
 	// Agents run the deeper checks as root or through passwordless sudo.
-	host := Host{ID: id, Address: enrollment.Hostname, Username: enrollment.Username, Transport: TransportAgent, AllowSudo: true}
-	if _, err := tx.Exec(`INSERT INTO hosts (id, address, username, transport, allow_sudo, created_at) VALUES (?, ?, ?, ?, 1, ?)`,
-		host.ID, host.Address, host.Username, host.Transport, now); err != nil {
+	kind := KindMachine
+	if enrollment.Kind == KindCluster {
+		kind = KindCluster
+	}
+	host := Host{ID: id, Address: enrollment.Hostname, Username: enrollment.Username, Transport: TransportAgent, AllowSudo: true, Kind: kind}
+	if _, err := tx.Exec(`INSERT INTO hosts (id, address, username, transport, allow_sudo, kind, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)`,
+		host.ID, host.Address, host.Username, host.Transport, host.Kind, now); err != nil {
 		return Host{}, "", err
 	}
 	if _, err := tx.Exec(`INSERT INTO agents (host_id, credential_hash, enrolled_at, last_seen_at, version, os, remote)
