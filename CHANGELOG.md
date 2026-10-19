@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-19
+
 ### Added
 
 - **Images in pipelines:** `deaconguard image scan` also reads a `docker save` or `podman save` archive (gzip-compressed or not), an OCI image layout (a folder or a tar, with `--platform` for several platforms), or a folder (`dir:`): an unpacked image, a chroot or a project with lock files. Archive layers are checked against their digests; links in a folder are never followed outside it. Prefixes `docker-archive:`, `oci:` and `dir:` say which; without one, DeaconGuard looks.
@@ -85,7 +87,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.2...v1.1.0
