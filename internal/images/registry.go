@@ -69,6 +69,37 @@ type manifest struct {
 	Manifests []Descriptor `json:"manifests"`
 }
 
+// isIndex reports whether the manifest lists an image per platform.
+func (m manifest) isIndex(mediaType string) bool {
+	if mediaType == "" {
+		mediaType = m.MediaType
+	}
+	return mediaType == mediaOCIIndex || mediaType == mediaDockerList || (len(m.Manifests) > 0 && len(m.Layers) == 0)
+}
+
+// choose picks platform's manifest from an index, and says which platforms
+// exist if it isn't one of them.
+func (m manifest) choose(platform, name string) (Descriptor, error) {
+	var available []string
+	for _, d := range m.Manifests {
+		if d.Platform == nil || d.Platform.OS == "unknown" {
+			continue // attestations
+		}
+		option := d.Platform.OS + "/" + d.Platform.Architecture
+		if d.Platform.Variant != "" && d.Platform.Architecture != "amd64" {
+			option += "/" + d.Platform.Variant
+		}
+		available = append(available, option)
+		if option == platform || strings.HasPrefix(option, platform+"/") {
+			return d, nil
+		}
+	}
+	if len(available) == 0 && len(m.Manifests) == 1 {
+		return m.Manifests[0], nil // a single image without a platform
+	}
+	return Descriptor{}, fmt.Errorf("%s has no %s image; it has %s", name, platform, strings.Join(available, ", "))
+}
+
 // ErrUnauthorized means the registry wants a login DeaconGuard doesn't have,
 // or refused the one it has.
 var ErrUnauthorized = errors.New("the registry refused access: add a login for it, or check the one saved")
@@ -101,25 +132,10 @@ func (c *Client) Resolve(ctx context.Context, ref Reference, platform string) (R
 	if mediaType == "" {
 		mediaType = m.MediaType
 	}
-	if mediaType == mediaOCIIndex || mediaType == mediaDockerList || (len(m.Manifests) > 0 && len(m.Layers) == 0) {
-		var available []string
-		var chosen *Descriptor
-		for index := range m.Manifests {
-			d := m.Manifests[index]
-			if d.Platform == nil || d.Platform.OS == "unknown" {
-				continue // attestations
-			}
-			name := d.Platform.OS + "/" + d.Platform.Architecture
-			if d.Platform.Variant != "" && d.Platform.Architecture != "amd64" {
-				name += "/" + d.Platform.Variant
-			}
-			available = append(available, name)
-			if chosen == nil && (name == platform || strings.HasPrefix(name, platform+"/")) {
-				chosen = &m.Manifests[index]
-			}
-		}
-		if chosen == nil {
-			return Resolved{}, fmt.Errorf("%s has no %s image; it has %s", ref, platform, strings.Join(available, ", "))
+	if m.isIndex(mediaType) {
+		chosen, err := m.choose(platform, ref.String())
+		if err != nil {
+			return Resolved{}, err
 		}
 		body, _, digest, err = c.getManifest(ctx, ref, chosen.Digest)
 		if err != nil {

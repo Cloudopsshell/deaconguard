@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -67,5 +69,34 @@ func TestVersionCommand(t *testing.T) {
 		if code := Run([]string{argument}, nil, &output, &output); code != 0 || !strings.HasPrefix(output.String(), "deaconguard ") {
 			t.Fatalf("%s: code %d, output %q", argument, code, output.String())
 		}
+	}
+}
+
+func TestImageScanOfAFolder(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
+	dir := t.TempDir()
+	run := func(arguments ...string) (string, int) {
+		var out, diagnostics strings.Builder
+		code := Run(append([]string{"image", "scan"}, arguments...), strings.NewReader(""), &out, &diagnostics)
+		return out.String() + diagnostics.String(), code
+	}
+	if out, code := run("dir:"+dir, "--format", "sarif"); code != 0 || !strings.Contains(out, `"version": "2.1.0"`) {
+		t.Fatalf("sarif: %d %s", code, out)
+	}
+	if out, code := run(dir, "--format", "junit", "--fail-on", "high"); code != 0 || !strings.Contains(out, "No vulnerabilities found") {
+		t.Fatalf("junit: %d %s", code, out)
+	}
+	report := filepath.Join(t.TempDir(), "report.json")
+	if out, code := run("dir:"+dir, "--format", "json", "--output", report); code != 0 || !strings.Contains(out, "Wrote the json report to") {
+		t.Fatalf("--output: %d %s", code, out)
+	}
+	if data, err := os.ReadFile(report); err != nil || !strings.Contains(string(data), `"vulnerabilities": []`) {
+		t.Fatalf("report file: %s %v", data, err)
+	}
+	if out, code := run("dir:"+dir, "--format", "cyclonedx"); code == 0 || !strings.Contains(out, "no package list") {
+		t.Fatalf("an SBOM of nothing: %d %s", code, out)
+	}
+	if out, code := run("dir:"+dir, "--format", "xml"); code == 0 || !strings.Contains(out, "--format is one of") {
+		t.Fatalf("an unknown format: %d %s", code, out)
 	}
 }
