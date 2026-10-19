@@ -54,6 +54,8 @@ type Server struct {
 	scheduler *scheduler
 	// notifier sends notifications once StartScheduler is called.
 	notifier *notifier
+	// images runs image scans once StartScheduler is called.
+	images *imageScanner
 	// agentHandler serves only the agent API, for a listener of its own;
 	// agentPort is that listener's port, once SetAgentPort is called.
 	agentHandler http.Handler
@@ -93,6 +95,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	s := &Server{
 		runner: newRunner(scan), ui: ui, network: network, pin: pin, limiter: newFailureLimiter(), scheduler: &scheduler{},
 		notifier:       &notifier{wake: make(chan struct{}, 1)},
+		images:         newImageScanner(),
 		localAvailable: func() error { _, err := local.New(); return err },
 	}
 	s.agents = newAgentHub(s.runner)
@@ -152,6 +155,16 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("PATCH /api/schedules/{id}", s.needs(store.RoleOperator, s.updateSchedule))
 	mux.HandleFunc("DELETE /api/schedules/{id}", s.needs(store.RoleOperator, s.deleteSchedule))
 	mux.HandleFunc("POST /api/schedules/{id}/run", s.needs(store.RoleOperator, s.runScheduleNow))
+	mux.HandleFunc("GET /api/images", s.listImages)
+	mux.HandleFunc("POST /api/images", s.needs(store.RoleOperator, s.addImage))
+	mux.HandleFunc("GET /api/images/{id}", s.imageDetail)
+	mux.HandleFunc("DELETE /api/images/{id}", s.needs(store.RoleOperator, s.deleteImage))
+	mux.HandleFunc("POST /api/images/{id}/scans", s.needs(store.RoleOperator, s.scanImage))
+	mux.HandleFunc("GET /api/image-scans/{id}", s.imageScan)
+	mux.HandleFunc("GET /api/registry-logins", s.needs(store.RoleAdmin, s.listRegistryLogins))
+	mux.HandleFunc("POST /api/registry-logins", s.needs(store.RoleAdmin, s.createRegistryLogin))
+	mux.HandleFunc("PATCH /api/registry-logins/{id}", s.needs(store.RoleAdmin, s.updateRegistryLogin))
+	mux.HandleFunc("DELETE /api/registry-logins/{id}", s.needs(store.RoleAdmin, s.deleteRegistryLogin))
 	mux.HandleFunc("GET /api/logs/download", s.needs(store.RoleOperator, s.downloadLogs))
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.needs(store.RoleOperator, s.startScan))
 	mux.HandleFunc("GET /api/scans/{id}", s.getScan)
@@ -256,11 +269,12 @@ func agentOnly(agentMux http.Handler) http.Handler {
 	})
 }
 
-// StartScheduler starts the scheduled scans, digests and notifications;
-// Close stops them.
+// StartScheduler starts the scheduled scans, digests, notifications and
+// image scans; Close stops them.
 func (s *Server) StartScheduler() {
 	s.startScheduler()
 	s.startNotifier()
+	s.startImageScanner()
 }
 
 // Close cancels questions waiting for an answer and blocks until background
@@ -268,6 +282,7 @@ func (s *Server) StartScheduler() {
 func (s *Server) Close() {
 	s.stopScheduler()
 	s.stopNotifier()
+	s.stopImageScanner()
 	s.agents.stop()
 	s.runner.close()
 }

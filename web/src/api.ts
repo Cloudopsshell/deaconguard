@@ -606,6 +606,52 @@ export interface ContainerResult {
   error?: string;
 }
 
+/** A saved login for a container registry; the secret is never sent back. */
+export interface RegistryLogin {
+  id: string;
+  /** The registry's host: registry-1.docker.io for Docker Hub. */
+  registry: string;
+  username: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RegistryLoginInput {
+  registry: string;
+  username: string;
+  /** A password or access token; empty keeps the saved one. */
+  secret: string;
+}
+
+/** One check of a registry image. Only a succeeded scan has a digest and a result. */
+export interface ImageScan {
+  id: string;
+  image_id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  error?: string;
+  digest?: string;
+  os?: string;
+  severity: SeverityCounts;
+  exploited: number;
+  fixable: number;
+  /** Only GET /api/image-scans/{id} includes it. */
+  result?: ContainerResult;
+  started_by: string;
+  started_at: string;
+  finished_at?: string;
+}
+
+/** An image in a registry that DeaconGuard checks, read as data and never run. */
+export interface RegistryImage {
+  id: string;
+  reference: string;
+  platform: string;
+  created_by: string;
+  created_at: string;
+  latest?: ImageScan;
+}
+
 /** Runs scans of its hosts on chosen days at a time of day. */
 export interface Schedule {
   id: string;
@@ -930,6 +976,16 @@ export const api = {
   updateSchedule: (id: string, input: ScheduleInput) => request<Schedule>("PATCH", `/api/schedules/${id}`, input),
   deleteSchedule: (id: string) => request<null>("DELETE", `/api/schedules/${id}`),
   runSchedule: (id: string) => request<{ started: number; skipped: number }>("POST", `/api/schedules/${id}/run`),
+  images: () => request<RegistryImage[]>("GET", "/api/images"),
+  image: (id: string) => request<{ image: RegistryImage; scans: ImageScan[] }>("GET", `/api/images/${id}`),
+  addImage: (reference: string, platform: string) => request<RegistryImage>("POST", "/api/images", { reference, platform }),
+  deleteImage: (id: string) => request<null>("DELETE", `/api/images/${id}`),
+  scanImage: (id: string) => request<ImageScan>("POST", `/api/images/${id}/scans`),
+  imageScan: (id: string) => request<ImageScan>("GET", `/api/image-scans/${id}`),
+  registryLogins: () => request<RegistryLogin[]>("GET", "/api/registry-logins"),
+  createRegistryLogin: (input: RegistryLoginInput) => request<RegistryLogin>("POST", "/api/registry-logins", input),
+  updateRegistryLogin: (id: string, input: RegistryLoginInput) => request<RegistryLogin>("PATCH", `/api/registry-logins/${id}`, input),
+  deleteRegistryLogin: (id: string) => request<null>("DELETE", `/api/registry-logins/${id}`),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   setAutoScanContainers: (hostId: string, on: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { auto_scan_containers: on }),
