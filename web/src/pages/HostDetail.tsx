@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarClock, ClipboardCheck, Container, FileText, Play, ShieldCheck, TerminalSquare, Trash2, XCircle } from "lucide-react";
+import { ArrowLeft, CalendarClock, ClipboardCheck, Container, FileText, Play, Ship, ShieldCheck, TerminalSquare, Trash2, XCircle } from "lucide-react";
 import { RunAuditDialog } from "../components/RunAuditDialog";
 import { GradeBadge } from "../lib/audit";
 import { useCan } from "../lib/role";
@@ -84,7 +84,7 @@ export function HostDetail() {
               <TagEditor key={data.tags.join(",")} hostId={data.id} tags={data.tags} canEdit={canOperate} />
             </span>
             {data.transport === "local" && <SudoToggle host={data} />}
-            {data.transport === "agent" && data.kind !== "cluster" && <ContainerScanToggle host={data} />}
+            {data.transport === "agent" && <ContainerScanToggle host={data} />}
             {data.transport === "agent" && (
               <span className="mt-1 block">
                 <AgentStatus online={agentOnline(data)} lastSeen={data.agent?.last_seen_at} />
@@ -346,14 +346,17 @@ function ContainerScanToggle({ host }: { host: Host }) {
   const canOperate = useCan("operator");
   const refresh = useRefreshAll();
   const on = host.auto_scan_containers ?? false;
+  const cluster = host.kind === "cluster";
   const update = useMutation({ mutationFn: (value: boolean) => api.setAutoScanContainers(host.id, value), onSuccess: refresh });
+  const label = cluster ? "Scan when the cluster changes" : "Scan new containers automatically";
+  const Icon = cluster ? Ship : Container;
   return (
     <span className="mt-2 flex items-center gap-2">
       <button
         type="button"
         role="switch"
         aria-checked={on}
-        aria-label="Scan new containers automatically"
+        aria-label={label}
         disabled={update.isPending || !canOperate}
         title={canOperate ? undefined : "Operators and admins can change this"}
         onClick={() => update.mutate(!on)}
@@ -364,11 +367,15 @@ function ContainerScanToggle({ host }: { host: Host }) {
       >
         <span className={cx("inline-block size-4 rounded-full bg-white shadow transition-transform", on ? "translate-x-4.5" : "translate-x-0.5")} />
       </button>
-      <Container className="size-4" aria-hidden />
+      <Icon className="size-4" aria-hidden />
       <span>
-        {on
-          ? "Scan new containers automatically: on · when containers start, the running containers are checked, at most every 10 minutes"
-          : "Scan new containers automatically: off · turn on to check containers as they start (agent 1.2.0 or later)"}
+        {cluster
+          ? on
+            ? `${label}: on · when a workload, role, namespace or network policy changes, the cluster is checked within about a minute`
+            : `${label}: off · turn on to check the cluster as it changes (cluster agent 1.5.0 or later)`
+          : on
+            ? `${label}: on · when containers start, the running containers are checked, at most every 10 minutes`
+            : `${label}: off · turn on to check containers as they start (agent 1.2.0 or later)`}
       </span>
       {update.error && <span className="text-red-600">{update.error.message}</span>}
     </span>

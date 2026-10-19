@@ -175,8 +175,16 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 	machine, _ := local.New()
 	watch := newContainerWatch(machine)
 	if config.Cluster != "" {
-		// A cluster agent's pod has no containers of its own to watch.
+		// A cluster agent's pod has no containers of its own; it counts the
+		// cluster's changes instead, which the server may scan for.
 		watch = &containerWatch{run: func(string) ([]byte, error) { return nil, errors.New("a cluster agent") }}
+		if cluster, err := connectCluster(); err == nil {
+			go cluster.Watch(ctx, func(kind, namespace, name string) { watch.giveBack(1) })
+			log.info("Watching the cluster for changes")
+		} else {
+			log.warn("Can't watch the cluster for changes: %v", err)
+		}
+		go serveAdmission(ctx, log)
 	}
 	backoff := time.Duration(0)
 	connected := false
@@ -198,7 +206,7 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 		var job agentapi.Job
 		err := client.call(ctx, http.MethodGet, "job", nil, &job, agentapi.JobWait+30*time.Second)
 		client.setNewContainers(0)
-		if err != nil {
+		if err != nil || client.takeDeferred() {
 			watch.giveBack(fresh)
 		}
 		switch {
@@ -333,6 +341,18 @@ type client struct {
 	suggestedPort string
 	// newContainers is sent with the next request for work.
 	newContainers int
+	// deferred is set when the server deferred the scan they asked for.
+	deferred bool
+}
+
+// takeDeferred reports whether the server deferred the last count of new
+// containers or cluster changes, and forgets it.
+func (c *client) takeDeferred() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	deferred := c.deferred
+	c.deferred = false
+	return deferred
 }
 
 func (c *client) setNewContainers(count int) {
@@ -450,6 +470,7 @@ func (c *client) exchange(ctx context.Context, method, path string, body any, li
 	if port := reply.Header.Get(agentapi.HeaderAgentPort); port != "" || reply.StatusCode < 300 {
 		c.mu.Lock()
 		c.suggestedPort = port
+		c.deferred = c.deferred || reply.Header.Get(agentapi.HeaderChangesDeferred) == "1"
 		c.mu.Unlock()
 	}
 	contents, err := io.ReadAll(io.LimitReader(reply.Body, limit+1))

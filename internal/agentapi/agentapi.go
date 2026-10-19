@@ -201,6 +201,13 @@ const (
 // it saw start since it last asked; the server may scan them (1.2.0 and later).
 const HeaderNewContainers = "X-DeaconGuard-New-Containers"
 
+// HeaderChangesDeferred, on the server's reply, says it didn't scan for the
+// new containers or cluster changes yet, because it scanned for them a
+// short while ago: the agent counts them again with its next request
+// (1.5.0 and later). A cluster agent uses HeaderNewContainers to count the
+// cluster's changes.
+const HeaderChangesDeferred = "X-DeaconGuard-Changes-Deferred"
+
 // Headers the agent sends with every request.
 const (
 	HeaderVersion  = "X-DeaconGuard-Agent-Version"

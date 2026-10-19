@@ -1,5 +1,24 @@
 {{- if .Values.cluster.enabled }}
 {{- $selector := dict "root" . "component" "cluster" }}
+{{- $admission := .Values.cluster.admission.enabled }}
+{{- $webhookName := printf "%s-admission" (include "deaconguard.clusterName" .) | trunc 63 | trimSuffix "-" }}
+{{- $tls := dict }}
+{{- if $admission }}
+{{- /* Keep the certificate across upgrades; make one on install. */}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $webhookName }}
+{{- if and $existing (index $existing.data "ca.crt") }}
+{{- $_ := set $tls "ca" (index $existing.data "ca.crt") }}
+{{- $_ := set $tls "crt" (index $existing.data "tls.crt") }}
+{{- $_ := set $tls "key" (index $existing.data "tls.key") }}
+{{- else }}
+{{- $service := printf "%s.%s.svc" $webhookName .Release.Namespace }}
+{{- $ca := genCA "deaconguard-admission-ca" 3650 }}
+{{- $cert := genSignedCert $service nil (list $service (printf "%s.%s" $webhookName .Release.Namespace) $webhookName) 3650 $ca }}
+{{- $_ := set $tls "ca" ($ca.Cert | b64enc) }}
+{{- $_ := set $tls "crt" ($cert.Cert | b64enc) }}
+{{- $_ := set $tls "key" ($cert.Key | b64enc) }}
+{{- end }}
+{{- end }}
 # The cluster agent: it checks this cluster through the Kubernetes API with
 # a read-only role (list and get; no secrets), and reports to the server.
 apiVersion: v1
@@ -20,19 +39,19 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [pods, namespaces, nodes]
-    verbs: [get, list]
+    verbs: [get, list, watch]
   - apiGroups: [apps]
     resources: [deployments, statefulsets, daemonsets, replicasets]
-    verbs: [get, list]
+    verbs: [get, list, watch]
   - apiGroups: [batch]
     resources: [jobs, cronjobs]
-    verbs: [get, list]
+    verbs: [get, list, watch]
   - apiGroups: [networking.k8s.io]
     resources: [networkpolicies]
-    verbs: [get, list]
+    verbs: [get, list, watch]
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [roles, rolebindings, clusterroles, clusterrolebindings]
-    verbs: [get, list]
+    verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -68,10 +87,14 @@ spec:
       labels:
         {{- include "deaconguard.labels" . | nindent 8 }}
         app.kubernetes.io/component: cluster
-      {{- with .Values.cluster.podAnnotations }}
       annotations:
+        {{- with .Values.cluster.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
+        {{- if $admission }}
+        # A new certificate restarts the pod, which serves it.
+        checksum/admission-tls: {{ $tls.crt | sha256sum }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "deaconguard.clusterName" . }}
       securityContext:
@@ -97,6 +120,19 @@ spec:
               value: /var/lib/deaconguard-agent/agent.json
             - name: DEACONGUARD_ENROLL_TOKEN_FILE
               value: /run/secrets/deaconguard-enrollment/{{ .Values.cluster.enrollment.secretKey }}
+            {{- if $admission }}
+            - name: DEACONGUARD_ADMISSION_LISTEN
+              value: ":8443"
+            - name: DEACONGUARD_ADMISSION_CERT
+              value: /run/secrets/deaconguard-admission/tls.crt
+            - name: DEACONGUARD_ADMISSION_KEY
+              value: /run/secrets/deaconguard-admission/tls.key
+            - name: DEACONGUARD_ADMISSION_SEVERITY
+              value: {{ .Values.cluster.admission.severity | quote }}
+          ports:
+            - name: admission
+              containerPort: 8443
+            {{- end }}
           {{- with .Values.cluster.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -112,7 +148,17 @@ spec:
             - name: enrollment
               mountPath: /run/secrets/deaconguard-enrollment
               readOnly: true
+            {{- if $admission }}
+            - name: admission-tls
+              mountPath: /run/secrets/deaconguard-admission
+              readOnly: true
+            {{- end }}
       volumes:
+        {{- if $admission }}
+        - name: admission-tls
+          secret:
+            secretName: {{ $webhookName }}
+        {{- end }}
         - name: enrollment
           secret:
             secretName: {{ include "deaconguard.clusterEnrollmentSecret" . }}
@@ -141,4 +187,79 @@ spec:
         resources:
           requests:
             storage: {{ .Values.cluster.persistence.size }}
+{{- if $admission }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $webhookName }}
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cluster
+type: kubernetes.io/tls
+data:
+  ca.crt: {{ $tls.ca }}
+  tls.crt: {{ $tls.crt }}
+  tls.key: {{ $tls.key }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $webhookName }}
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cluster
+spec:
+  selector:
+    {{- include "deaconguard.selector" $selector | nindent 4 }}
+  ports:
+    - name: admission
+      port: 443
+      targetPort: admission
+---
+# Warn mode: the webhook always allows; kubectl prints its warnings. If the
+# pod is down, requests go through (failurePolicy: Ignore).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ $webhookName }}
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cluster
+webhooks:
+  - name: warn.deaconguard.io
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Ignore
+    timeoutSeconds: 5
+    clientConfig:
+      caBundle: {{ $tls.ca }}
+      service:
+        name: {{ $webhookName }}
+        namespace: {{ .Release.Namespace }}
+        path: /validate
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, {{ .Release.Namespace | quote }}]
+    rules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets, replicasets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs, cronjobs]
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [roles, rolebindings, clusterroles, clusterrolebindings]
+        scope: "*"
+{{- end }}
 {{- end }}

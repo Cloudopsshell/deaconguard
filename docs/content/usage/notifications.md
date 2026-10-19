@@ -32,6 +32,7 @@ For Jira and ServiceNow, choose the events that need someone to act, such as kno
 | New critical vulnerabilities | A host has new critical vulnerabilities an update fixes, or an image new critical ones a rebuild fixes. | Warning |
 | Malware | A scan finds malware or signs of compromise. | Critical |
 | Changed system files | System files differ from what their packages installed. | Critical |
+| New cluster findings | A [Kubernetes cluster](./kubernetes.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a privileged workload. | Critical, or Warning for high only |
 | Failed scans | A scan of a host or an image fails, so its results are out of date. | Warning |
 | Audits | An [audit](./audits.md) finishes, with its grade and what holds it back. | Warning for D and F |
 | Agents offline | An agent stops checking in for 2 minutes. | Warning |
@@ -78,7 +79,7 @@ DeaconGuard POSTs `application/json`:
 }
 ```
 
-`event` is `exploited`, `critical`, `malware`, `integrity`, `scan_failed`, `audit`, `agent_offline`, `digest` or `test`; `level` is `critical`, `warning` or `info`. Each request carries `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp` (Unix seconds).
+`event` is `exploited`, `critical`, `malware`, `integrity`, `cluster`, `scan_failed`, `audit`, `agent_offline`, `digest` or `test`; `level` is `critical`, `warning` or `info`. Each request carries `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp` (Unix seconds).
 
 ### Checking the signature
 

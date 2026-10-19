@@ -240,7 +240,7 @@ export interface TrendPoint {
 }
 
 export type ChannelKind = "email" | "slack" | "teams" | "webhook" | "syslog" | "splunk" | "jira" | "servicenow";
-export type NotificationEvent = "exploited" | "critical" | "malware" | "integrity" | "scan_failed" | "audit" | "agent_offline" | "digest";
+export type NotificationEvent = "exploited" | "critical" | "malware" | "integrity" | "cluster" | "scan_failed" | "audit" | "agent_offline" | "digest";
 
 /** A channel's settings. Saved secrets come back as "set" (password, secret) or the address's host (url); send them empty to keep them. */
 export interface ChannelConfig {

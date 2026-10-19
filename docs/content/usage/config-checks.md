@@ -65,27 +65,27 @@ Only the last stage becomes the image, so the user and health check are checked 
 
 ### Kubernetes
 
-Pods and the workloads that run them (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob, ReplicationController, and Lists of them), and RBAC roles and bindings. A running cluster gets more checks, such as namespaces without network policies and the Kubernetes version: see [Kubernetes clusters](./kubernetes.md). A privileged container gets `DG-K8S-001` rather than the capability and privilege-escalation findings it implies.
+Pods and the workloads that run them (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob, ReplicationController, and Lists of them), and RBAC roles and bindings. A running cluster gets more checks, such as namespaces without network policies and the Kubernetes version: see [Kubernetes clusters](./kubernetes.md). A privileged container gets `DG-K8S-001` rather than the capability and privilege-escalation findings it implies. Rules that match a DISA Kubernetes STIG rule name it; see [Kubernetes clusters](./kubernetes.md#rules-for-clusters).
 
-| Rule | Severity | Finding | Source |
-| --- | --- | --- | --- |
-| `DG-K8S-001` | Critical | A container is privileged (Kubernetes Pod Security Standards | baseline) |
-| `DG-K8S-002` | High | The pod shares the node's network, process or IPC namespace (Kubernetes Pod Security Standards | baseline) |
-| `DG-K8S-003` | High | The pod mounts a folder of the node (hostPath) (Kubernetes Pod Security Standards | baseline) |
-| `DG-K8S-004` | High | A container adds a dangerous Linux capability (Kubernetes Pod Security Standards | baseline) |
-| `DG-K8S-005` | Medium | A container uses a port on the node (hostPort) (Kubernetes Pod Security Standards | baseline) |
-| `DG-K8S-006` | High | A container turns off seccomp, AppArmor or /proc masking (Kubernetes Pod Security Standards | baseline) |
-| `DG-K8S-007` | Medium | A container may gain more privileges than its process has (Kubernetes Pod Security Standards | restricted) |
-| `DG-K8S-008` | Medium | A container may run as root (Kubernetes Pod Security Standards | restricted) |
-| `DG-K8S-009` | High | A container runs as root (runAsUser: 0) (Kubernetes Pod Security Standards | restricted) |
-| `DG-K8S-010` | Low | A container keeps Linux capabilities it doesn't drop (Kubernetes Pod Security Standards | restricted) |
-| `DG-K8S-011` | Low | No seccomp profile is set (Kubernetes Pod Security Standards | restricted) |
-| `DG-K8S-012` | Low | A container's root file system is writable | NSA/CISA Hardening Guide |
-| `DG-K8S-013` | Low | A container has no memory limit | NSA/CISA Hardening Guide |
-| `DG-K8S-014` | Medium | A container image isn't pinned to a version | NSA/CISA Hardening Guide |
-| `DG-K8S-015` | High | A secret is written into the manifest | NSA/CISA Hardening Guide |
-| `DG-K8S-016` | Low | The pod gets a service account token it may not need | NSA/CISA Hardening Guide |
-| `DG-K8S-020` | High | A binding grants cluster-admin | RBAC good practices |
-| `DG-K8S-021` | High | A role grants every action on every resource | RBAC good practices |
-| `DG-K8S-022` | Medium | A role can read secrets | RBAC good practices |
-| `DG-K8S-023` | High | A role can escalate privileges | RBAC good practices |
+| Rule | Severity | Finding | Source | DISA STIG |
+| --- | --- | --- | --- | --- |
+| `DG-K8S-001` | Critical | A container is privileged | Pod Security Standards (baseline) |  |
+| `DG-K8S-002` | High | The pod shares the node's network, process or IPC namespace | Pod Security Standards (baseline) |  |
+| `DG-K8S-003` | High | The pod mounts a folder of the node (hostPath) | Pod Security Standards (baseline) |  |
+| `DG-K8S-004` | High | A container adds a dangerous Linux capability | Pod Security Standards (baseline) |  |
+| `DG-K8S-005` | Medium | A container uses a port on the node (hostPort) | Pod Security Standards (baseline) | V-242414 |
+| `DG-K8S-006` | High | A container turns off seccomp, AppArmor or /proc masking | Pod Security Standards (baseline) |  |
+| `DG-K8S-007` | Medium | A container may gain more privileges than its process has | Pod Security Standards (restricted) |  |
+| `DG-K8S-008` | Medium | A container may run as root | Pod Security Standards (restricted) |  |
+| `DG-K8S-009` | High | A container runs as root (runAsUser: 0) | Pod Security Standards (restricted) |  |
+| `DG-K8S-010` | Low | A container keeps Linux capabilities it doesn't drop | Pod Security Standards (restricted) |  |
+| `DG-K8S-011` | Low | No seccomp profile is set | Pod Security Standards (restricted) |  |
+| `DG-K8S-012` | Low | A container's root file system is writable | NSA/CISA Hardening Guide |  |
+| `DG-K8S-013` | Low | A container has no memory limit | NSA/CISA Hardening Guide |  |
+| `DG-K8S-014` | Medium | A container image isn't pinned to a version | NSA/CISA Hardening Guide |  |
+| `DG-K8S-015` | High | A secret is written into the manifest | NSA/CISA Hardening Guide | V-274883 |
+| `DG-K8S-016` | Low | The pod gets a service account token it may not need | NSA/CISA Hardening Guide |  |
+| `DG-K8S-020` | High | A binding grants cluster-admin | RBAC good practices |  |
+| `DG-K8S-021` | High | A role grants every action on every resource | RBAC good practices |  |
+| `DG-K8S-022` | Medium | A role can read secrets | RBAC good practices | V-274884 |
+| `DG-K8S-023` | High | A role can escalate privileges | RBAC good practices |  |

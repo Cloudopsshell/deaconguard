@@ -666,18 +666,16 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r, "host.sudo", host.Address, fmt.Sprintf("allow sudo: %t", *request.AllowSudo))
 	}
-	if request.AutoScanContainers != nil && *request.AutoScanContainers {
-		if host, err := store.GetHost(r.PathValue("id")); err == nil && host.IsCluster() {
-			writeError(w, http.StatusBadRequest, errors.New("a Kubernetes cluster has no containers of its own to scan"))
-			return
-		}
-	}
 	if request.AutoScanContainers != nil {
 		if host, err = store.SetAutoScanContainers(r.PathValue("id"), *request.AutoScanContainers); err != nil {
 			writeError(w, http.StatusNotFound, err)
 			return
 		}
-		s.audit(r, "host.containers", host.Address, fmt.Sprintf("scan new containers automatically: %t", *request.AutoScanContainers))
+		what := "scan new containers automatically"
+		if host.IsCluster() {
+			what = "scan the cluster when it changes"
+		}
+		s.audit(r, "host.containers", host.Address, fmt.Sprintf("%s: %t", what, *request.AutoScanContainers))
 	}
 	writeJSON(w, http.StatusOK, host)
 }
