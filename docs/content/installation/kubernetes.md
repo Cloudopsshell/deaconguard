@@ -70,7 +70,7 @@ Each node appears on the **Agents** page within a minute, named after the node, 
 
 ### 4. The cluster itself
 
-The agents check the nodes. To check the cluster too (its workloads, RBAC, namespaces, Kubernetes version and API server; see [Kubernetes clusters](../usage/kubernetes.md)), turn on the cluster agent. It runs as one unprivileged pod with a read-only ClusterRole that can't read secrets, and enrolls with a token like the agents (DeaconGuard 1.5.0 and later):
+The agents check the nodes. To check the cluster too (its workloads, RBAC, namespaces, Kubernetes version and API server; see [Kubernetes clusters](../usage/kubernetes.md)), turn on the cluster agent. It runs as one unprivileged pod with a read-only ClusterRole (get, list and watch) that can't read secrets, and enrolls with a token like the agents (DeaconGuard 1.5.0 and later):
 
 ```bash
 kubectl -n deaconguard-agent create secret generic deaconguard-cluster-enrollment --from-literal=token='deaconguard1.…'
@@ -110,6 +110,7 @@ The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs
 | `cluster.enrollment.existingSecret`, `.secretKey`, `.token` | `""`, `token`, `""` | Its enrollment token, as for the agents |
 | `cluster.persistence.size`, `.storageClass` | `16Mi`, the default class | The volume that keeps its identity |
 | `cluster.resources` | 20m CPU, 64 MiB requested; 256 MiB limit | |
+| `cluster.admission.enabled`, `.severity` | `false`, `medium` | [Warnings as workloads are applied](../usage/kubernetes.md#warnings-as-workloads-are-applied): a validating webhook in warn mode, with a certificate the chart makes |
 | `server.nodeSelector`, `.tolerations`, `.affinity`, `.podAnnotations`, and the same for `agent` and `cluster` | | Scheduling and annotations |
 
 ## With Kustomize

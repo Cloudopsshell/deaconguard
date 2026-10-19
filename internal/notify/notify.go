@@ -52,12 +52,13 @@ const (
 	EventScanFailed   = "scan_failed"   // a scan failed
 	EventAudit        = "audit"         // an audit finished
 	EventAgentOffline = "agent_offline" // an agent stopped checking in
+	EventCluster      = "cluster"       // a Kubernetes cluster has new critical or high findings
 	EventDigest       = "digest"        // the daily or weekly summary
 	EventTest         = "test"          // Send test
 )
 
 // Events lists the events channels subscribe to, in the dashboard's order.
-var Events = []string{EventExploited, EventCritical, EventMalware, EventIntegrity, EventScanFailed, EventAudit, EventAgentOffline, EventDigest}
+var Events = []string{EventExploited, EventCritical, EventMalware, EventIntegrity, EventCluster, EventScanFailed, EventAudit, EventAgentOffline, EventDigest}
 
 // Levels say how urgent a message is.
 const (

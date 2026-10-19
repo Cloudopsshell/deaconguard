@@ -27,6 +27,8 @@ type Finding struct {
 	Detail string `json:"detail"`
 	File   string `json:"file"`
 	Line   int    `json:"line"`
+	// STIG are the DISA STIG rules the finding fails, such as V-242390.
+	STIG []string `json:"stig,omitempty"`
 }
 
 // Result is what a scan found, and in which files.
@@ -46,11 +48,16 @@ type Rule struct {
 	// (restricted)", "NSA/CISA Kubernetes Hardening Guide", "Docker build
 	// best practices".
 	Source string `json:"source"`
+	// STIG are the DISA Kubernetes STIG rules it checks, such as V-242390.
+	STIG []string `json:"stig,omitempty"`
 }
 
 // Rules lists every rule.
 func Rules() []Rule {
 	all := append(append([]Rule{}, dockerfileRules...), kubernetesRules...)
+	for index := range all {
+		all[index].STIG = kubernetesSTIG[all[index].ID]
+	}
 	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
 	return all
 }
@@ -58,6 +65,7 @@ func Rules() []Rule {
 func ruleByID(id string) Rule {
 	for _, rule := range append(dockerfileRules, kubernetesRules...) {
 		if rule.ID == id {
+			rule.STIG = kubernetesSTIG[id]
 			return rule
 		}
 	}
@@ -218,5 +226,13 @@ func dockerignoreNear(dockerfile string) bool {
 
 func finding(id, file string, line int, title, detail string) Finding {
 	rule := ruleByID(id)
-	return Finding{Rule: id, Severity: rule.Severity, Title: title, Detail: detail, File: file, Line: line}
+	if len(rule.STIG) > 0 {
+		detail += " " + STIGNote(rule.STIG)
+	}
+	return Finding{Rule: id, Severity: rule.Severity, Title: title, Detail: detail, File: file, Line: line, STIG: rule.STIG}
+}
+
+// STIGNote names the DISA Kubernetes STIG rules a finding fails, for its detail.
+func STIGNote(ids []string) string {
+	return "DISA Kubernetes STIG: " + strings.Join(ids, ", ") + "."
 }

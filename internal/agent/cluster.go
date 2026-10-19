@@ -2,9 +2,14 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
+	"net/http"
+	"os"
 	"time"
 
+	"deaconguard/internal/admission"
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/kube"
@@ -31,4 +36,39 @@ func scanCluster(ctx context.Context, config Config, job agentapi.Job, emit func
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	return scan.RunCluster(ctx, client, config.Cluster, config.HostID, emit)
+}
+
+// serveAdmission runs the admission webhook in warn mode when
+// $DEACONGUARD_ADMISSION_LISTEN names an address, such as :8443, with the
+// certificate and key in $DEACONGUARD_ADMISSION_CERT and _KEY, which the
+// Helm chart makes. It stops with ctx.
+func serveAdmission(ctx context.Context, log *agentLog) {
+	address := os.Getenv("DEACONGUARD_ADMISSION_LISTEN")
+	if address == "" {
+		return
+	}
+	pair, err := tls.LoadX509KeyPair(os.Getenv("DEACONGUARD_ADMISSION_CERT"), os.Getenv("DEACONGUARD_ADMISSION_KEY"))
+	if err != nil {
+		log.warn("The admission webhook can't start: %v", err)
+		return
+	}
+	mux := http.NewServeMux()
+	mux.Handle("POST /validate", admission.Handler(os.Getenv("DEACONGUARD_ADMISSION_SEVERITY"), func(format string, arguments ...any) {
+		log.info(format, arguments...)
+	}))
+	server := &http.Server{
+		Addr: address, Handler: mux,
+		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12},
+		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second,
+	}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(shutdown)
+	}()
+	log.info("Admission webhook (warn mode) on %s", address)
+	if err := server.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.warn("The admission webhook stopped: %v", err)
+	}
 }
