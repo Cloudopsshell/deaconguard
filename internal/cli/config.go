@@ -96,27 +96,60 @@ func runConfig(arguments []string, input io.Reader, output, diagnostics io.Write
 	if err != nil {
 		return err
 	}
-	kept := result.Findings[:0]
-	for _, f := range result.Findings {
+	result.Findings = skipRules(result.Findings, skip)
+	return writeFindings(findingsReport{
+		findings: result.Findings, notes: result.Notes, document: result, suite: strings.Join(paths, " "),
+		summary:  fmt.Sprintf("Checked %d %s", len(result.Files), pluralWord(len(result.Files), "file", "files")),
+		withLine: true,
+	}, format, outputFile, failOn, output, diagnostics)
+}
+
+// skipRules leaves out the findings of the rules in skip.
+func skipRules(findings []iac.Finding, skip map[string]bool) []iac.Finding {
+	kept := make([]iac.Finding, 0, len(findings))
+	for _, f := range findings {
 		if !skip[f.Rule] {
 			kept = append(kept, f)
 		}
 	}
-	result.Findings = kept
-	items := make([]ciout.Item, 0, len(result.Findings))
-	for _, f := range result.Findings {
+	return kept
+}
+
+// findingsReport is what config and kube scans found, to write.
+type findingsReport struct {
+	findings []iac.Finding
+	notes    []string
+	// document is written for --format json; suite names the JUnit suite;
+	// summary starts the table, such as "Checked 3 files".
+	document any
+	suite    string
+	summary  string
+	// withLine shows file:line; cluster objects have no lines.
+	withLine bool
+}
+
+// writeFindings writes findings as a table or a report, and returns
+// errFindings when one is at or above failOn.
+func writeFindings(r findingsReport, format, outputFile, failOn string, output, diagnostics io.Writer) error {
+	items := make([]ciout.Item, 0, len(r.findings))
+	for _, f := range r.findings {
+		help := "https://docs.deaconguard.io/usage/config-checks#rules"
+		if !strings.HasPrefix(f.Rule, "DG-") {
+			help = "https://osv.dev/vulnerability/" + f.Rule
+		}
 		items = append(items, ciout.Item{Rule: f.Rule, Severity: f.Severity, Title: f.Title, Detail: f.Detail,
-			HelpURI: "https://docs.deaconguard.io/usage/config-checks#rules", URI: f.File, Line: f.Line, Group: f.File})
+			HelpURI: help, URI: f.File, Line: f.Line, Group: f.File})
 	}
 	var report []byte
+	var err error
 	switch format {
 	case "json":
-		report, err = json.MarshalIndent(result, "", "  ")
+		report, err = json.MarshalIndent(r.document, "", "  ")
 		report = append(report, '\n')
 	case "sarif":
 		report, err = ciout.SARIF(items)
 	case "junit":
-		report, err = ciout.JUnit(strings.Join(paths, " "), items, func(item ciout.Item) bool {
+		report, err = ciout.JUnit(r.suite, items, func(item ciout.Item) bool {
 			return failOn == "" || severityAtOrAbove(item.Severity, failOn)
 		})
 	}
@@ -125,21 +158,21 @@ func runConfig(arguments []string, input io.Reader, output, diagnostics io.Write
 	}
 	switch {
 	case format == "table":
-		showConfig(result, output)
+		showFindings(r, output)
 	case outputFile == "":
 		output.Write(report)
 	default:
 		if err := os.WriteFile(outputFile, report, 0o644); err != nil {
 			return err
 		}
-		showConfig(result, output)
+		showFindings(r, output)
 		fmt.Fprintf(output, "Wrote the %s report to %s\n", format, outputFile)
 	}
-	for _, note := range result.Notes {
+	for _, note := range r.notes {
 		fmt.Fprintf(diagnostics, "Note: %s\n", note)
 	}
 	if failOn != "" {
-		for _, f := range result.Findings {
+		for _, f := range r.findings {
 			if severityAtOrAbove(f.Severity, failOn) {
 				return errFindings
 			}
@@ -148,25 +181,28 @@ func runConfig(arguments []string, input io.Reader, output, diagnostics io.Write
 	return nil
 }
 
-func showConfig(result iac.Result, output io.Writer) {
+func showFindings(r findingsReport, output io.Writer) {
 	counts := map[string]int{}
-	for _, f := range result.Findings {
+	for _, f := range r.findings {
 		counts[f.Severity]++
 	}
 	var parts []string
-	for _, severity := range []string{"CRITICAL", "HIGH", "MEDIUM", "LOW"} {
+	for _, severity := range []string{"CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"} {
 		if counts[severity] > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", counts[severity], strings.ToLower(severity)))
 		}
 	}
-	fmt.Fprintf(output, "Checked %d %s: %d %s", len(result.Files), pluralWord(len(result.Files), "file", "files"),
-		len(result.Findings), pluralWord(len(result.Findings), "finding", "findings"))
+	fmt.Fprintf(output, "%s: %d %s", r.summary, len(r.findings), pluralWord(len(r.findings), "finding", "findings"))
 	if len(parts) > 0 {
 		fmt.Fprintf(output, " (%s)", strings.Join(parts, ", "))
 	}
 	fmt.Fprintln(output)
-	for _, f := range result.Findings {
-		fmt.Fprintf(output, "  %-8s %s:%d %s [%s]\n           %s\n", f.Severity, f.File, f.Line, f.Title, f.Rule, f.Detail)
+	for _, f := range r.findings {
+		if r.withLine {
+			fmt.Fprintf(output, "  %-8s %s:%d %s [%s]\n           %s\n", f.Severity, f.File, f.Line, f.Title, f.Rule, f.Detail)
+		} else {
+			fmt.Fprintf(output, "  %-8s %s [%s]\n           %s\n", f.Severity, f.Title, f.Rule, f.Detail)
+		}
 	}
 }
 

@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Kubernetes clusters:** `deaconguard kube scan` checks a running cluster through the Kubernetes API, read-only (list and get, no secrets). It covers workloads and RBAC with the manifest rules; namespaces with pods but no NetworkPolicy or no enforced Pod Security Standard; the Kubernetes version past its end of life or behind its latest patch (from endoflife.date); Kubernetes' own CVEs (from OSV, sending only the version); and, where the API server runs as a pod (kubeadm), its authorization, anonymous access, audit log, encryption of secrets and profiling. `--images` reads each running image from its registry and reports those a newer build fixes. Kubernetes' own objects are left out unless `--include-system`. It logs in with the kubeconfig (certificates, tokens, exec plugins such as EKS, GKE and AKS logins) or, in a pod, its service account. A read-only ClusterRole, without secrets, is in the docs.
+
 ## [1.4.0] - 2026-10-19
 
 ### Added

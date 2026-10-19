@@ -65,7 +65,7 @@ Only the last stage becomes the image, so the user and health check are checked 
 
 ### Kubernetes
 
-Pods and the workloads that run them (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob, ReplicationController, and Lists of them), and RBAC roles and bindings. A privileged container gets `DG-K8S-001` rather than the capability and privilege-escalation findings it implies.
+Pods and the workloads that run them (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob, ReplicationController, and Lists of them), and RBAC roles and bindings. A running cluster gets more checks, such as namespaces without network policies and the Kubernetes version: see [Kubernetes clusters](./kubernetes.md). A privileged container gets `DG-K8S-001` rather than the capability and privilege-escalation findings it implies.
 
 | Rule | Severity | Finding | Source |
 | --- | --- | --- | --- |
