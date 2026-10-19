@@ -33,6 +33,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- .Values.agent.enrollment.existingSecret | default (printf "%s-enrollment" (include "deaconguard.fullname" .)) -}}
 {{- end -}}
 
+{{- define "deaconguard.clusterEnrollmentSecret" -}}
+{{- .Values.cluster.enrollment.existingSecret | default (printf "%s-cluster-enrollment" (include "deaconguard.fullname" .)) -}}
+{{- end -}}
+
+{{- define "deaconguard.clusterName" -}}
+{{- printf "%s-cluster" (include "deaconguard.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- /* The agent DaemonSet: the release's name when it already ends in "agent". */ -}}
 {{- define "deaconguard.agentName" -}}
 {{- $name := include "deaconguard.fullname" . -}}

@@ -121,6 +121,9 @@ type EnrollRequest struct {
 	Username string `json:"username"`
 	OS       string `json:"os"`
 	Version  string `json:"version"`
+	// Kind is "cluster" for a cluster agent, which checks the Kubernetes
+	// cluster it runs in rather than a machine (1.5.0 and later).
+	Kind string `json:"kind,omitempty"`
 }
 
 // EnrollResponse gives the agent its identity. Credential authenticates every
@@ -219,7 +222,7 @@ func SupportsYARA(version string) bool {
 
 // checkSince is the agent version (major, minor) that added each check that
 // older agents don't have.
-var checkSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}, "containers": {1, 2}}
+var checkSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}, "containers": {1, 2}, "kubernetes": {1, 5}}
 
 // SupportsCheck reports whether an agent of version runs check. Builds
 // without a release version, such as "dev", are assumed to.
@@ -243,7 +246,8 @@ func ErrAgentTooOld(address, version, check string) error {
 	if version == "" {
 		version = "an unknown version"
 	}
-	names := map[string]string{"hardening": "the hardening audit", "libraries": "the application library check", "containers": "the running container check"}
+	names := map[string]string{"hardening": "the hardening audit", "libraries": "the application library check", "containers": "the running container check",
+		"kubernetes": "the Kubernetes check"}
 	name := names[check]
 	if name == "" {
 		name = "the " + check + " check"

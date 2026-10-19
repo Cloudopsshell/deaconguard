@@ -13,6 +13,9 @@ export function agentOnline(host: HostSummary): boolean {
 export function connectionLabel(host: HostSummary): string {
   if (host.transport === "local") return `This machine · scans run locally as ${host.username}`;
   const agent = host.agent;
+  if (host.kind === "cluster") {
+    return `Kubernetes cluster · DeaconGuard cluster agent, read-only${agent?.version ? ` · agent ${agent.version}` : ""}${agent?.remote ? ` · from ${agent.remote}` : ""}`;
+  }
   return `DeaconGuard agent · runs as ${host.username}${agent?.version ? ` · agent ${agent.version}` : ""}${agent?.remote ? ` · from ${agent.remote}` : ""}`;
 }
 

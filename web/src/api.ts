@@ -8,7 +8,7 @@ export type ScanStatus =
   | "failed"
   | "needs_sudo";
 
-export type CheckId = "packages" | "libraries" | "containers" | "integrity" | "malware" | "config" | "hardening" | "antivirus" | "yara";
+export type CheckId = "packages" | "libraries" | "containers" | "integrity" | "malware" | "config" | "hardening" | "antivirus" | "yara" | "kubernetes";
 export type CheckStatus = "completed" | "partial" | "skipped" | "failed";
 
 export interface SeverityCounts {
@@ -29,6 +29,19 @@ export interface Host {
   transport: "local" | "agent";
   /** Scan the running containers when the agent sees new ones (1.2.0 and later). */
   auto_scan_containers?: boolean;
+  /** "cluster" is a Kubernetes cluster enrolled with the cluster agent; it runs only the Kubernetes check (1.5.0 and later). */
+  kind?: "machine" | "cluster";
+}
+
+/** What the Kubernetes check read of a cluster. */
+export interface ClusterInfo {
+  name: string;
+  version: string;
+  nodes: number;
+  architecture?: string;
+  namespaces: number;
+  workloads: number;
+  images?: string[];
 }
 
 export interface AgentInfo {

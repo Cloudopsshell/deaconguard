@@ -68,6 +68,20 @@ helm install deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard \
 
 Each node appears on the **Agents** page within a minute, named after the node, and the token's row counts them. Scan or [audit](../usage/audits.md) them like any other host.
 
+### 4. The cluster itself
+
+The agents check the nodes. To check the cluster too (its workloads, RBAC, namespaces, Kubernetes version and API server; see [Kubernetes clusters](../usage/kubernetes.md)), turn on the cluster agent. It runs as one unprivileged pod with a read-only ClusterRole that can't read secrets, and enrolls with a token like the agents (DeaconGuard 1.5.0 and later):
+
+```bash
+kubectl -n deaconguard-agent create secret generic deaconguard-cluster-enrollment --from-literal=token='deaconguard1.…'
+helm upgrade deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard \
+  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard-agent --reuse-values \
+  --set cluster.enabled=true --set cluster.name=production \
+  --set cluster.enrollment.existingSecret=deaconguard-cluster-enrollment
+```
+
+The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs the Kubernetes check only: from **Scan now**, or on a [schedule](../usage/dashboard.md#schedules) with the Kubernetes check ticked. It keeps its identity on a small volume (16 MiB), so the cluster needs a default storage class, or `cluster.persistence.storageClass`.
+
 ### Values
 
 | Value | Default | Use |
@@ -91,7 +105,12 @@ Each node appears on the **Agents** page within a minute, named after the node, 
 | `agent.resources` | 50m CPU, 128 MiB requested; 2.5 GiB limit | ClamAV, when the node has it, runs inside this limit and needs about 1.5 GB |
 | `agent.tolerations` | every taint | Which nodes get an agent; with `agent.nodeSelector` and `agent.affinity` |
 | `agent.priorityClassName` | `""` | |
-| `server.nodeSelector`, `.tolerations`, `.affinity`, `.podAnnotations`, and the same for `agent` | | Scheduling and annotations |
+| `cluster.enabled` | `false` | Install the cluster agent, which checks the cluster through its API |
+| `cluster.name` | `kubernetes` | The cluster's name on the server |
+| `cluster.enrollment.existingSecret`, `.secretKey`, `.token` | `""`, `token`, `""` | Its enrollment token, as for the agents |
+| `cluster.persistence.size`, `.storageClass` | `16Mi`, the default class | The volume that keeps its identity |
+| `cluster.resources` | 20m CPU, 64 MiB requested; 256 MiB limit | |
+| `server.nodeSelector`, `.tolerations`, `.affinity`, `.podAnnotations`, and the same for `agent` and `cluster` | | Scheduling and annotations |
 
 ## With Kustomize
 

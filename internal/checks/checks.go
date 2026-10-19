@@ -21,6 +21,9 @@ const (
 	Antivirus = "antivirus"
 	// YARA is the advanced antivirus scan. It always runs with Antivirus.
 	YARA = "yara"
+	// Kubernetes checks a cluster through its API; only a cluster agent,
+	// enrolled from inside the cluster, runs it, and it runs alone.
+	Kubernetes = "kubernetes"
 )
 
 const (
@@ -79,6 +82,10 @@ var definitions = []Definition{
 		ID: Antivirus, Name: "Antivirus scan", Sudo: "recommended",
 		Description: "Scans temporary, home, and application directories for malware. Basic runs ClamAV, which the install script sets up; Advanced adds YARA rules.",
 		Warning:     "ClamAV loads its signatures on the host, using about 1 GB of memory, and can take several minutes.",
+	},
+	{
+		ID: Kubernetes, Name: "Kubernetes cluster", Sudo: "none",
+		Description: "Checks a Kubernetes cluster through its API, read-only: workloads, RBAC, namespaces without network policies or Pod Security Standards, the Kubernetes version and its CVEs, and the API server's settings. Runs on clusters enrolled with the cluster agent.",
 	},
 	{
 		ID: YARA, Name: "Advanced antivirus scan (YARA)", Sudo: "recommended",
@@ -145,6 +152,32 @@ type Result struct {
 	Libraries *libraries.Result `json:"libraries,omitempty"`
 	// Containers are the running containers, set by the container check.
 	Containers []ContainerResult `json:"containers,omitempty"`
+	// Cluster describes the cluster the Kubernetes check read.
+	Cluster *Cluster `json:"cluster,omitempty"`
+}
+
+// Cluster is what the Kubernetes check read of a cluster.
+type Cluster struct {
+	Name         string   `json:"name"`
+	Version      string   `json:"version"`
+	Nodes        int      `json:"nodes"`
+	Architecture string   `json:"architecture,omitempty"`
+	Namespaces   int      `json:"namespaces"`
+	Workloads    int      `json:"workloads"`
+	Images       []string `json:"images,omitempty"`
+}
+
+// ForHost leaves out the checks a kind of host doesn't run: a cluster runs
+// only the Kubernetes check, and a machine every check but it. It returns
+// nil when nothing is left.
+func ForHost(cluster bool, ids []string) []string {
+	var kept []string
+	for _, id := range ids {
+		if (id == Kubernetes) == cluster {
+			kept = append(kept, id)
+		}
+	}
+	return kept
 }
 
 func (result *Result) add(finding Finding) {

@@ -210,8 +210,12 @@ func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, errors.New("the agent reported an invalid hostname"))
 			return
 		}
+		if request.Kind != "" && request.Kind != store.KindCluster {
+			writeError(w, http.StatusBadRequest, errors.New("the agent reported an unknown kind"))
+			return
+		}
 		host, credential, err := store.EnrollAgent(request.Secret, store.AgentEnrollment{
-			Hostname: request.Hostname, Username: limitText(request.Username, 64), Version: limitText(request.Version, 64),
+			Kind: request.Kind, Hostname: request.Hostname, Username: limitText(request.Username, 64), Version: limitText(request.Version, 64),
 			OS: limitText(request.OS, 128), Remote: remote,
 		})
 		if errors.Is(err, store.ErrInvalidEnrollmentToken) {
@@ -235,7 +239,7 @@ func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {
 // when admins turned that on and its agent can run one.
 func (h *agentHub) auditNewMachine(host store.Host, version string) {
 	on, err := store.AuditOnEnroll()
-	if err != nil || !on {
+	if err != nil || !on || host.IsCluster() {
 		return
 	}
 	if !agentapi.SupportsCheck(version, checks.Hardening) {
@@ -438,6 +442,9 @@ func (h *agentHub) complete(scanID string, report map[string]any, inventory *tar
 	if failure == nil {
 		failure = scan.EvaluateContainers(report, active.log.add)
 	}
+	if failure == nil {
+		failure = scan.EvaluateKubernetes(report, active.log.add)
+	}
 	h.runner.finish(active.host, scanID, active.log, report, failure, active.started)
 }
 
@@ -604,6 +611,13 @@ func (h *agentHub) yaraRules(w http.ResponseWriter, r *http.Request, host store.
 
 // checkAgentVersion refuses checks an agent host's agent cannot run.
 func checkAgentVersion(host store.Host, selected []string) error {
+	// A cluster runs only the Kubernetes check, and a machine every other.
+	if kept := checks.ForHost(host.IsCluster(), selected); len(kept) != len(selected) {
+		if host.IsCluster() {
+			return fmt.Errorf("%s is a Kubernetes cluster: it runs only the Kubernetes check", host.Address)
+		}
+		return fmt.Errorf("the Kubernetes check runs on clusters, enrolled with the cluster agent; %s is a machine", host.Address)
+	}
 	if host.Transport != store.TransportAgent {
 		return nil
 	}

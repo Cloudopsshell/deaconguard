@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Play, ShieldCheck } from "lucide-react";
 import { api, type CheckDefinition, type CheckId, type Host } from "../api";
-import { checkMeta, rememberChecks, rememberedChecks } from "../lib/checks";
+import { checkMeta, checksFor, rememberChecks, rememberedChecks } from "../lib/checks";
 import { useRefreshAll, useStartScan } from "../lib/hooks";
 import { Button, Dialog, ErrorMessage, Loading, cx } from "./ui";
 
@@ -30,14 +30,19 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
   const startScan = useStartScan();
   const saveSudo = useMutation({ mutationFn: (allow: boolean) => api.setAllowSudo(host.id, allow), onSuccess: refresh });
 
-  const chosen = selected ?? definitions.data?.filter((check) => check.default).map((check) => check.id) ?? [];
+  const cluster = host.kind === "cluster";
+  // A cluster runs only the Kubernetes check; a machine every other.
+  const runnable = checksFor(host, definitions.data?.map((check) => check.id) ?? []);
+  const chosen = cluster
+    ? runnable
+    : checksFor(host, selected ?? definitions.data?.filter((check) => check.default).map((check) => check.id) ?? []);
   const chosenDefinitions = definitions.data?.filter((check) => chosen.includes(check.id)) ?? [];
   const wantsSudo = chosenDefinitions.some((check) => check.sudo === "recommended");
 
   // The advanced scan is a level of the antivirus check, not a check of its own:
   // it always runs with ClamAV, and goes when the antivirus check is unticked.
   const advanced = definitions.data?.find((check) => check.id === "yara");
-  const listed = definitions.data?.filter((check) => check.id !== "yara") ?? [];
+  const listed = definitions.data?.filter((check) => check.id !== "yara" && runnable.includes(check.id)) ?? [];
 
   function toggle(id: CheckId) {
     setSelected(
@@ -53,8 +58,8 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
   }
 
   async function start() {
-    if (allowSudo !== host.allow_sudo) await saveSudo.mutateAsync(allowSudo);
-    rememberChecks(chosen);
+    if (!cluster && allowSudo !== host.allow_sudo) await saveSudo.mutateAsync(allowSudo);
+    if (!cluster) rememberChecks(chosen);
     await startScan.mutateAsync({ hostId: host.id, checks: chosen });
     onClose();
   }
