@@ -51,6 +51,8 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runImage(arguments[1:], input, output, diagnostics)
 	case "config":
 		err = runConfig(arguments[1:], input, output, diagnostics)
+	case "kube":
+		err = runKube(arguments[1:], output, diagnostics)
 	case "serve":
 		err = runServe(arguments[1:], output)
 	case "record-stop":
@@ -481,6 +483,11 @@ Scanning:
                                        - reads helm template or kubectl kustomize output); exits with
                                        status 4 at or above --fail-on
   deaconguard config rules             list the rules
+  deaconguard kube scan [--kubeconfig FILE] [--context NAME] [--include-system] [--images]
+                         [--fail-on SEVERITY] [--skip RULE,...] [--format table|json|sarif|junit] [--output FILE]
+                                       check a Kubernetes cluster through its API, read-only: workloads,
+                                       RBAC, namespaces, the version and its CVEs, the API server's
+                                       settings, and with --images the images that run
   deaconguard audit HOST_ID [--advanced] [--json]
                                        handover audit: every check, the hardening baseline,
                                        and a grade; --advanced adds the YARA antivirus scan

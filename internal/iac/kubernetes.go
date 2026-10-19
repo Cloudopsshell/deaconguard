@@ -39,6 +39,28 @@ var kubernetesRules = []Rule{
 	{ID: "DG-K8S-021", Severity: "HIGH", Title: "A role grants every action on every resource", Source: rbacSource},
 	{ID: "DG-K8S-022", Severity: "MEDIUM", Title: "A role can read secrets", Source: rbacSource},
 	{ID: "DG-K8S-023", Severity: "HIGH", Title: "A role can escalate privileges", Source: rbacSource},
+	// Live clusters only (deaconguard kube scan).
+	{ID: "DG-K8S-030", Severity: "MEDIUM", Title: "A namespace has no NetworkPolicy: its pods accept traffic from anywhere", Source: nsaGuide},
+	{ID: "DG-K8S-031", Severity: "LOW", Title: "A namespace doesn't enforce a Pod Security Standard", Source: pssBaseline},
+	{ID: "DG-K8S-032", Severity: "HIGH", Title: "The Kubernetes version gets no more security fixes", Source: kubeReleases},
+	{ID: "DG-K8S-033", Severity: "LOW", Title: "The Kubernetes version is behind its latest patch release", Source: kubeReleases},
+	{ID: "DG-K8S-040", Severity: "CRITICAL", Title: "The API server allows every request (AlwaysAllow)", Source: nsaGuide},
+	{ID: "DG-K8S-041", Severity: "MEDIUM", Title: "The API server accepts anonymous requests", Source: nsaGuide},
+	{ID: "DG-K8S-042", Severity: "MEDIUM", Title: "The API server keeps no audit log", Source: nsaGuide},
+	{ID: "DG-K8S-043", Severity: "MEDIUM", Title: "Secrets aren't encrypted at rest", Source: nsaGuide},
+	{ID: "DG-K8S-044", Severity: "LOW", Title: "The API server's profiling endpoint is on", Source: nsaGuide},
+	{ID: "DG-K8S-050", Severity: "HIGH", Title: "A running image has vulnerabilities a newer build fixes", Source: nsaGuide},
+}
+
+const kubeReleases = "Kubernetes release support (kubernetes.io/releases)"
+
+// CheckObject checks one Kubernetes object, such as one read from a live
+// cluster; file says where it came from.
+func CheckObject(file string, object *yaml.Node) []Finding { return checkObject(file, object) }
+
+// NewFinding makes a finding of a rule, for checks outside this package.
+func NewFinding(id, file string, line int, title, detail string) Finding {
+	return finding(id, file, line, title, detail)
 }
 
 // allowedCapabilities are the capabilities the baseline standard allows a
@@ -170,6 +192,9 @@ func checkObject(file string, object *yaml.Node) []Finding {
 		name = text(get(object, "metadata", "generateName")) + "*"
 	}
 	label := kind + " " + name
+	if namespace := text(get(object, "metadata", "namespace")); namespace != "" {
+		label = kind + " " + namespace + "/" + name
+	}
 	findings := objectFindings(file, label, kind, object)
 	// The deaconguard.io/ignore annotation accepts findings for the object,
 	// on the object or its pod template: "DG-K8S-002, DG-K8S-003".
