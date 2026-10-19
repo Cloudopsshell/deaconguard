@@ -83,7 +83,7 @@ func TestImageScanOfAFolder(t *testing.T) {
 	if out, code := run("dir:"+dir, "--format", "sarif"); code != 0 || !strings.Contains(out, `"version": "2.1.0"`) {
 		t.Fatalf("sarif: %d %s", code, out)
 	}
-	if out, code := run(dir, "--format", "junit", "--fail-on", "high"); code != 0 || !strings.Contains(out, "No vulnerabilities found") {
+	if out, code := run(dir, "--format", "junit", "--fail-on", "high"); code != 0 || !strings.Contains(out, "Nothing found") {
 		t.Fatalf("junit: %d %s", code, out)
 	}
 	report := filepath.Join(t.TempDir(), "report.json")
@@ -98,5 +98,34 @@ func TestImageScanOfAFolder(t *testing.T) {
 	}
 	if out, code := run("dir:"+dir, "--format", "xml"); code == 0 || !strings.Contains(out, "--format is one of") {
 		t.Fatalf("an unknown format: %d %s", code, out)
+	}
+}
+
+func TestConfigScan(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine:3.22\nUSER 1000\nHEALTHCHECK CMD true\n"), 0o644)
+	run := func(stdin string, arguments ...string) (string, int) {
+		var out, diagnostics strings.Builder
+		code := Run(append([]string{"config"}, arguments...), strings.NewReader(stdin), &out, &diagnostics)
+		return out.String() + diagnostics.String(), code
+	}
+	if out, code := run("", "scan", dir, "--fail-on", "low"); code != 0 || !strings.Contains(out, "Checked 1 file: 0 findings") {
+		t.Fatalf("a clean Dockerfile: %d %s", code, out)
+	}
+	pod := "apiVersion: v1\nkind: Pod\nmetadata: {name: p}\nspec:\n  containers:\n    - name: c\n      image: x:1\n      securityContext: {privileged: true}\n"
+	if out, code := run(pod, "scan", "-", "--fail-on", "critical"); code != 4 || !strings.Contains(out, "-:8 Pod p: container c is privileged [DG-K8S-001]") {
+		t.Fatalf("a privileged pod: %d %s", code, out)
+	}
+	if out, code := run(pod, "scan", "-", "--format", "sarif"); code != 0 || !strings.Contains(out, `"startLine": 8`) || !strings.Contains(out, `"uri": "-"`) {
+		t.Fatalf("sarif: %d %s", code, out)
+	}
+	if out, code := run("", "rules"); code != 0 || !strings.Contains(out, "DG-K8S-001") || !strings.Contains(out, "Pod Security Standards") {
+		t.Fatalf("rules: %d %s", code, out)
+	}
+	if out, code := run(pod, "scan", "-", "--fail-on", "critical", "--skip", "dg-k8s-001"); code != 0 || strings.Contains(out, "DG-K8S-001") {
+		t.Fatalf("--skip: %d %s", code, out)
+	}
+	if _, code := run("", "scan"); code == 0 {
+		t.Fatal("no path")
 	}
 }

@@ -49,6 +49,8 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runSBOM(arguments[1:], output)
 	case "image":
 		err = runImage(arguments[1:], input, output, diagnostics)
+	case "config":
+		err = runConfig(arguments[1:], input, output, diagnostics)
 	case "serve":
 		err = runServe(arguments[1:], output)
 	case "record-stop":
@@ -474,6 +476,11 @@ Scanning:
                                        docker save archive, an OCI layout, or a folder (docker-archive:,
                                        oci:, dir: say which); --fail-on exits with status 4 at or above
                                        that severity, --ignore-unfixed counts only what an update fixes
+  deaconguard config scan PATH... [--fail-on SEVERITY] [--skip RULE,...] [--format table|json|sarif|junit] [--output FILE]
+                                       check Dockerfiles and Kubernetes manifests (folders are walked;
+                                       - reads helm template or kubectl kustomize output); exits with
+                                       status 4 at or above --fail-on
+  deaconguard config rules             list the rules
   deaconguard audit HOST_ID [--advanced] [--json]
                                        handover audit: every check, the hardening baseline,
                                        and a grade; --advanced adds the YARA antivirus scan

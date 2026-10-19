@@ -148,10 +148,10 @@ func runImage(arguments []string, input io.Reader, output, diagnostics io.Writer
 		err = encoder.Encode(map[string]any{"image": result.Image, "digest": resolved.Digest, "platform": platform, "result": result, "vulnerabilities": vulnerabilityList(listed)})
 		report = []byte(out.String())
 	case "sarif":
-		report, err = ciout.SARIF(result.Image, listed)
+		report, err = ciout.SARIF(ciout.ImageItems(result.Image, listed))
 	case "junit":
-		report, err = ciout.JUnit(result.Image, listed, func(v scan.Vulnerability) bool {
-			return failOn == "" || severityAtOrAbove(v.Severity, failOn)
+		report, err = ciout.JUnit(result.Image, ciout.ImageItems(result.Image, listed), func(item ciout.Item) bool {
+			return failOn == "" || severityAtOrAbove(item.Severity, failOn)
 		})
 	case sbom.CycloneDX, sbom.SPDX:
 		report, _, err = sbom.Build(check.Report, format)
