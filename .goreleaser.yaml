@@ -61,7 +61,7 @@ kos:
     creation_time: "{{ .CommitTimestamp }}"
     labels:
       org.opencontainers.image.title: DeaconGuard
-      org.opencontainers.image.description: Linux security scanner, server and agent
+      org.opencontainers.image.description: "Find what's vulnerable, misconfigured or compromised across Linux servers, Kubernetes clusters and container images: server and agent"
       org.opencontainers.image.source: https://github.com/Cloudopsshell/deaconguard
       org.opencontainers.image.url: https://deaconguard.io
       org.opencontainers.image.version: "{{ .Version }}"
@@ -88,10 +88,12 @@ nfpms:
     homepage: https://github.com/Cloudopsshell/deaconguard
     maintainer: CloudOpsShell <opensource@cloudopsshell.com>
     description: >-
-      Linux security scanner: package vulnerabilities from official
-      distribution advisories, file integrity, malware indicators, security
-      configuration, and ClamAV. One binary is the server, with an HTTPS
-      dashboard, and the agent that enrolls with it using an enrollment token.
+      Find what's vulnerable, misconfigured or compromised across Linux
+      servers, Kubernetes clusters and container images: package
+      vulnerabilities from official distribution advisories, file integrity,
+      malware indicators, security configuration, ClamAV, registry images and
+      Kubernetes checks. One binary is the server, with an HTTPS dashboard,
+      and the agent that enrolls with it using an enrollment token.
     license: MIT
     formats:
       - deb
@@ -139,7 +141,7 @@ nfpms:
       lintian_overrides:
         - statically-linked-binary
     rpm:
-      summary: Linux security scanner with server and agent
+      summary: Security scanner for Linux servers, Kubernetes clusters and container images
 
 checksum:
   name_template: checksums.txt
