@@ -128,6 +128,7 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 	}
 
 	podsIn := map[string]int{}
+	dashboardFound := false
 	images := map[string]bool{}
 	var apiServers []object
 	skippedSystem := 0
@@ -184,6 +185,9 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 				report.Workloads++
 			}
 			report.Findings = append(report.Findings, iac.CheckObject(source(ns, k.kind, meta.Metadata.Name), root)...)
+			if workloadKinds[k.kind] {
+				report.Findings = append(report.Findings, workloadPlacement(k.kind, meta, source(ns, k.kind, meta.Metadata.Name), &dashboardFound)...)
+			}
 		}
 	}
 	for image := range images {
@@ -210,6 +214,28 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 
 func rank(severity string) int {
 	return map[string]int{"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}[strings.ToUpper(severity)]
+}
+
+var workloadKinds = map[string]bool{"Pod": true, "Deployment": true, "StatefulSet": true, "DaemonSet": true, "ReplicaSet": true, "Job": true, "CronJob": true}
+
+// workloadPlacement checks where a workload runs: in the default namespace,
+// or as the Kubernetes dashboard (reported once).
+func workloadPlacement(kind string, meta object, file string, dashboardFound *bool) []iac.Finding {
+	var findings []iac.Finding
+	name, namespace := meta.Metadata.Name, meta.Metadata.Namespace
+	if namespace == "default" {
+		findings = append(findings, iac.NewFinding("DG-K8S-034", file, 1, fmt.Sprintf("%s default/%s runs in the default namespace", kind, name),
+			"Give each application a namespace of its own, so roles, network policies, quotas and Pod Security Standards can apply to it alone."))
+	}
+	labels := meta.Metadata.Labels
+	dashboard := labels["k8s-app"] == "kubernetes-dashboard" || strings.HasPrefix(labels["app.kubernetes.io/name"], "kubernetes-dashboard") ||
+		strings.HasPrefix(name, "kubernetes-dashboard")
+	if dashboard && !*dashboardFound && kind != "Pod" {
+		*dashboardFound = true
+		findings = append(findings, iac.NewFinding("DG-K8S-045", file, 1, fmt.Sprintf("The Kubernetes dashboard is installed (%s %s/%s)", kind, namespace, name),
+			"The dashboard is a web interface to the cluster: a weak or leaked login gives an attacker control. Remove it, or keep it unexposed and reached only through kubectl port-forward with a token of least privilege."))
+	}
+	return findings
 }
 
 // setField sets key in a mapping node to a string, replacing any value.
@@ -406,7 +432,8 @@ func checkVersion(ctx context.Context, version Version, options Options, report 
 		}
 		for _, v := range vulnerabilities {
 			findings = append(findings, iac.Finding{Rule: v.Rule, Severity: strings.ToUpper(v.Severity), File: file, Line: 1,
-				Title: "Kubernetes " + plain + ": " + strings.TrimPrefix(v.Title, "k8s.io/kubernetes "+plain+" (Go): "), Detail: v.Detail})
+				Title:  "Kubernetes " + plain + ": " + strings.TrimPrefix(v.Title, "k8s.io/kubernetes "+plain+" (Go): "),
+				Detail: v.Detail + " " + iac.STIGNote(iac.KubernetesVulnerabilitySTIG), STIG: iac.KubernetesVulnerabilitySTIG})
 		}
 		if provider != "" && len(vulnerabilities) > 0 {
 			report.Notes = append(report.Notes, provider+" builds may carry fixes for Kubernetes vulnerabilities before upstream versions do; check the provider's security bulletins for those listed")

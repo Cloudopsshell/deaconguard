@@ -117,3 +117,11 @@ cluster:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  # An admission webhook in warn mode (1.5.0 and later): kubectl shows
+  # warnings for risky workloads and roles as they are applied; nothing is
+  # ever blocked. The chart makes its certificate. Kubernetes' own
+  # namespaces and this release's are left out.
+  admission:
+    enabled: false
+    # The least severity that warns: critical, high, medium or low.
+    severity: medium

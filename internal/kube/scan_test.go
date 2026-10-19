@@ -47,6 +47,10 @@ func fakeAPI(t *testing.T) *httptest.Server {
 			{"metadata": map[string]any{"name": "web", "namespace": "shop"}, "spec": map[string]any{"template": map[string]any{"spec": map[string]any{
 				"hostNetwork": true, "containers": []any{map[string]any{"name": "web", "image": "nginx:1.27"}}}}}},
 		},
+		"/apis/apps/v1/statefulsets": {
+			{"metadata": map[string]any{"name": "dashboard", "namespace": "default", "labels": map[string]any{"k8s-app": "kubernetes-dashboard"}},
+				"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"containers": []any{}}}}},
+		},
 		"/apis/apps/v1/replicasets": {
 			{"metadata": map[string]any{"name": "web-abc", "namespace": "shop", "ownerReferences": []any{map[string]any{"kind": "Deployment"}}},
 				"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"hostNetwork": true}}}},
@@ -155,6 +159,18 @@ func TestScanReadsTheCluster(t *testing.T) {
 	for _, want := range []string{"DG-K8S-001", "DG-K8S-002", "DG-K8S-020", "DG-K8S-030", "DG-K8S-031", "DG-K8S-032", "DG-K8S-033", "DG-K8S-043", "DG-K8S-044", "GHSA-test"} {
 		if !slices.Contains(ids, want) {
 			t.Errorf("no %s in %v", want, ids)
+		}
+	}
+	stig := map[string]string{}
+	for _, f := range report.Findings {
+		stig[f.Rule] = strings.Join(f.STIG, ",")
+		if len(f.STIG) > 0 && !strings.Contains(f.Detail, "DISA Kubernetes STIG: "+strings.Join(f.STIG, ", ")) {
+			t.Errorf("the detail doesn't name the STIG: %+v", f)
+		}
+	}
+	for rule, ids := range map[string]string{"DG-K8S-034": "V-242383", "DG-K8S-045": "V-242395", "DG-K8S-043": "V-274882", "GHSA-test": "V-242443", "DG-K8S-001": ""} {
+		if stig[rule] != ids {
+			t.Errorf("%s has STIG %q; want %q", rule, stig[rule], ids)
 		}
 	}
 	for _, unwanted := range []string{"DG-K8S-040", "DG-K8S-041", "DG-K8S-042"} {

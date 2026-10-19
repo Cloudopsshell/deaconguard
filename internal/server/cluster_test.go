@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -51,9 +52,6 @@ func TestClustersRunOnlyTheKubernetesCheck(t *testing.T) {
 		!strings.Contains(refused.Body.String(), "runs on clusters") {
 		t.Fatalf("kubernetes on a machine: %d %s", refused.Code, refused.Body.String())
 	}
-	if refused := do(t, s, call{method: http.MethodPatch, path: "/api/hosts/" + clusterID, cookie: cookie, body: map[string]any{"auto_scan_containers": true}}); refused.Code != http.StatusBadRequest {
-		t.Fatalf("container auto-scan on a cluster: %d", refused.Code)
-	}
 
 	queued := do(t, s, call{method: http.MethodPost, path: "/api/hosts/" + clusterID + "/scans", cookie: cookie, body: map[string]any{"checks": []string{"kubernetes"}}})
 	if queued.Code != http.StatusAccepted {
@@ -98,5 +96,79 @@ func TestClustersRunOnlyTheKubernetesCheck(t *testing.T) {
 	machineScan, _, _ := store.UnfinishedScan(machineID)
 	if strings.Join(clusterScan.Checks, ",") != "kubernetes" || strings.Join(machineScan.Checks, ",") != "packages" {
 		t.Fatalf("schedule: cluster %v, machine %v", clusterScan.Checks, machineScan.Checks)
+	}
+}
+
+func TestClusterChangesAreScanned(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	clusterID, bearer := enrollTestCluster(t, s, cookie, "prod-eu")
+	poll := func() *httptest.ResponseRecorder {
+		return do(t, s, call{method: http.MethodGet, path: "/agent/v1/job", bearer: bearer,
+			headers: map[string]string{agentapi.HeaderVersion: "1.5.0", agentapi.HeaderNewContainers: "3"}})
+	}
+	// Each poll finds a scan someone started, so none waits for work.
+	manual := func() {
+		t.Helper()
+		if queued := do(t, s, call{method: http.MethodPost, path: "/api/hosts/" + clusterID + "/scans", cookie: cookie,
+			body: map[string]any{"checks": []string{"kubernetes"}}}); queued.Code != http.StatusAccepted {
+			t.Fatalf("queue: %d %s", queued.Code, queued.Body.String())
+		}
+	}
+	// Off: changes are ignored, and not deferred.
+	manual()
+	response := poll()
+	if response.Header().Get(agentapi.HeaderChangesDeferred) != "" {
+		t.Fatal("deferred while off")
+	}
+	store.FailScan(decode[agentapi.Job](t, response).ScanID, "test")
+	if on := do(t, s, call{method: http.MethodPatch, path: "/api/hosts/" + clusterID, cookie: cookie, body: map[string]any{"auto_scan_containers": true}}); on.Code != http.StatusOK {
+		t.Fatalf("turn on: %d %s", on.Code, on.Body.String())
+	}
+	job := decode[agentapi.Job](t, poll())
+	if strings.Join(job.Checks, ",") != "kubernetes" {
+		t.Fatalf("job after changes: %+v", job)
+	}
+	store.FailScan(job.ScanID, "test")
+	// Within a minute of that scan, more changes are deferred for later.
+	manual()
+	if response := poll(); response.Header().Get(agentapi.HeaderChangesDeferred) != "1" {
+		t.Fatalf("changes right after a scan weren't deferred: %v", response.Header())
+	}
+}
+
+func TestNewClusterFindingsAreNotified(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	scan.ClusterVersionChecks = func(context.Context, string) ([]iac.Finding, []string) { return nil, nil }
+	t.Cleanup(func() { scan.ClusterVersionChecks = nil })
+	h := newHook(t)
+	channel := addChannel(t, s, cookie, map[string]any{"name": "k8s", "kind": "webhook", "config": map[string]any{"url": h.server.URL}, "events": []string{"cluster"}})
+	clusterID, bearer := enrollTestCluster(t, s, cookie, "prod-eu")
+	scanWith := func(findings ...map[string]any) {
+		t.Helper()
+		do(t, s, call{method: http.MethodPost, path: "/api/hosts/" + clusterID + "/scans", cookie: cookie, body: map[string]any{"checks": []string{"kubernetes"}}})
+		version := map[string]string{agentapi.HeaderVersion: "1.5.0"}
+		job := decode[agentapi.Job](t, do(t, s, call{method: http.MethodGet, path: "/agent/v1/job", bearer: bearer, headers: version}))
+		result := map[string]any{"report": map[string]any{"os": "Kubernetes v1.31.6", "checks_run": []string{"kubernetes"},
+			"check_results": map[string]any{"kubernetes": map[string]any{"status": "completed", "notes": []string{}, "findings": findings,
+				"cluster": map[string]any{"name": "prod-eu", "version": "v1.31.6"}}}}}
+		do(t, s, call{method: http.MethodPost, path: "/agent/v1/scans/" + job.ScanID + "/result", body: result, bearer: bearer, headers: version})
+		s.runner.wait()
+		time.Sleep(10 * time.Millisecond) // scans started within one second sort by their IDs
+	}
+	privileged := map[string]any{"rule": "DG-K8S-001", "severity": "CRITICAL", "title": "Deployment shop/web: container web is privileged", "detail": "", "evidence": ""}
+	admin := map[string]any{"rule": "DG-K8S-020", "severity": "HIGH", "title": "ClusterRoleBinding ci-admin: grants cluster-admin", "detail": "", "evidence": ""}
+	low := map[string]any{"rule": "DG-K8S-013", "severity": "LOW", "title": "Deployment shop/web: container web has no memory limit", "detail": "", "evidence": ""}
+	scanWith(privileged, low)
+	scanWith(privileged, admin, low)
+	scanWith(privileged, admin, low)
+	deliveries, err := store.Deliveries(channel.ID, 10)
+	if err != nil || len(deliveries) != 2 {
+		t.Fatalf("deliveries: %+v %v", deliveries, err)
+	}
+	titles := deliveries[0].Title + " | " + deliveries[1].Title
+	if strings.Count(titles, "prod-eu: 1 new critical or high finding") != 2 {
+		t.Fatalf("titles: %s", titles)
 	}
 }

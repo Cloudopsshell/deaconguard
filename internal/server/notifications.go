@@ -226,6 +226,9 @@ func (s *Server) scanFinished(host store.Host, scanID string, failure error) {
 	if slices.Contains(record.Checks, store.CheckPackages) {
 		s.newVulnerabilities(host, record, scanLink)
 	}
+	if slices.Contains(record.Checks, checks.Kubernetes) {
+		s.newClusterFindings(host, record, scanLink)
+	}
 	counts, err := store.ScanCheckCounts(scanID)
 	if err != nil {
 		serverLog(host.ID, store.LogError, "Could not read the results of the scan of %s for notifications: %v", host.Address, err)
@@ -289,6 +292,88 @@ func (s *Server) newVulnerabilities(host store.Host, record store.Scan, scanLink
 			Lines: []string{listCVEs(added), "Installing the updates fixes them."},
 			Link:  scanLink, HostID: host.ID, Host: host.Address, ScanID: record.ID, Data: map[string]any{"cves": added}})
 	}
+}
+
+// clusterFindings are a scan's critical and high Kubernetes findings, by rule
+// and title, which name the object.
+func clusterFindings(scanID string) (map[string]checks.Finding, bool) {
+	report, err := store.GetFullReport(scanID)
+	if err != nil {
+		return nil, false
+	}
+	encoded, _ := json.Marshal(report["check_results"])
+	var results map[string]checks.Result
+	if json.Unmarshal(encoded, &results) != nil {
+		return nil, false
+	}
+	result, ok := results[checks.Kubernetes]
+	if !ok || result.Status == checks.StatusFailed {
+		return nil, false
+	}
+	found := map[string]checks.Finding{}
+	for _, f := range result.Findings {
+		if severity := strings.ToUpper(f.Severity); severity == "CRITICAL" || severity == "HIGH" {
+			found[f.Rule+"\x00"+f.Title] = f
+		}
+	}
+	return found, true
+}
+
+// newClusterFindings notifies about a cluster's critical and high findings
+// its previous Kubernetes scan didn't have, such as a privileged workload
+// deployed since.
+func (s *Server) newClusterFindings(host store.Host, record store.Scan, scanLink string) {
+	current, ok := clusterFindings(record.ID)
+	if !ok {
+		return
+	}
+	previous := map[string]checks.Finding{}
+	if scans, err := store.ListScans(host.ID, 50); err == nil {
+		for _, earlier := range scans {
+			if earlier.ID == record.ID || earlier.Status != store.ScanSucceeded || !slices.Contains(earlier.Checks, checks.Kubernetes) ||
+				earlier.StartedAt > record.StartedAt {
+				continue
+			}
+			if found, ok := clusterFindings(earlier.ID); ok {
+				previous = found
+				break
+			}
+		}
+	}
+	var added []checks.Finding
+	critical := false
+	for key, f := range current {
+		if _, seen := previous[key]; !seen {
+			added = append(added, f)
+			critical = critical || strings.EqualFold(f.Severity, "CRITICAL")
+		}
+	}
+	if len(added) == 0 {
+		return
+	}
+	sort.Slice(added, func(i, j int) bool {
+		if added[i].Severity != added[j].Severity {
+			return strings.EqualFold(added[i].Severity, "CRITICAL")
+		}
+		return added[i].Title < added[j].Title
+	})
+	level := notify.LevelWarning
+	if critical {
+		level = notify.LevelCritical
+	}
+	var lines, rules []string
+	for index, f := range added {
+		rules = append(rules, f.Rule)
+		if index < 10 {
+			lines = append(lines, strings.ToUpper(f.Severity)+": "+f.Title)
+		}
+	}
+	if len(added) > 10 {
+		lines = append(lines, fmt.Sprintf("… and %d more", len(added)-10))
+	}
+	s.emit(notify.Message{Event: notify.EventCluster, Level: level,
+		Title: fmt.Sprintf("%s: %s", host.Address, plural(len(added), "new critical or high finding", "new critical or high findings")),
+		Lines: lines, Link: scanLink, HostID: host.ID, Host: host.Address, ScanID: record.ID, Data: map[string]any{"rules": rules}})
 }
 
 func (s *Server) auditFinished(host store.Host, record store.Scan) {
