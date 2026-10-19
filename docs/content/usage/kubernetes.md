@@ -1,0 +1,107 @@
+---
+title: Kubernetes clusters
+description: Check a running Kubernetes cluster through its API, read-only - workloads, RBAC, namespaces, network policies, the version and its CVEs, the API server's settings and running images.
+---
+
+`deaconguard kube scan` checks a running cluster through the Kubernetes API, read-only: it lists objects and changes nothing. It needs DeaconGuard 1.5.0 or later.
+
+```bash
+deaconguard kube scan                          # the kubeconfig's current context
+deaconguard kube scan --context prod --images --fail-on high
+deaconguard kube scan --format sarif --output cluster.sarif
+```
+
+It checks:
+
+- **Workloads**: Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, and pods and ReplicaSets that no controller owns, with the same rules as [manifests](./config-checks.md#kubernetes): privileged containers, host namespaces and folders, capabilities, running as root, secrets in environment variables, and the rest. A Deployment's pods are checked once, through it.
+- **RBAC**: cluster-admin bindings, wildcard roles, roles that read secrets or escalate.
+- **Namespaces**: with pods but no NetworkPolicy, or no enforced Pod Security Standard.
+- **The Kubernetes version**: past its end of life, behind its latest patch, and Kubernetes' own vulnerabilities from OSV (only the version is sent). The release dates come from endoflife.date.
+- **The API server's settings**, where it runs as a pod, as kubeadm sets it up: authorization, anonymous requests, audit logging, encryption of secrets, profiling. Managed and embedded control planes (EKS, GKE, AKS, k3s) don't show them, and the scan says so.
+- **Running images**, with `--images`: each image pods use is read from its registry, as [image scans](./images.md) do, and reported when a newer build fixes vulnerabilities. At most 100 images; registry logins come from `DEACONGUARD_REGISTRY_USERNAME` and `_PASSWORD`.
+
+Kubernetes' own objects (`kube-system`, `kube-public`, `kube-node-lease`, and the built-in and kubeadm roles) need privileges by design and are left out; `--include-system` checks them too. Findings are accepted, as for manifests, with the `deaconguard.io/ignore` annotation on the object, or `--skip`. `--fail-on`, `--format` and `--output` work as for [pipelines](./ci-cd.md).
+
+## Logging in
+
+From your machine, `deaconguard kube scan` uses your kubeconfig (`KUBECONFIG`, or `~/.kube/config`), its current context or `--context`, with any of its logins: client certificates, tokens, or an exec plugin such as `aws eks get-token`, `gke-gcloud-auth-plugin` or `kubelogin`. Inside a cluster, without a kubeconfig, it uses the pod's service account.
+
+It only needs to read. This ClusterRole is enough, and has no access to secrets:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: deaconguard-cluster-scan
+rules:
+  - apiGroups: [""]
+    resources: [pods, namespaces, nodes]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [get, list]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, list]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings, clusterroles, clusterrolebindings]
+    verbs: [get, list]
+```
+
+What the account may not list is left out, and the scan says so.
+
+## In the cluster
+
+To scan from inside the cluster, for example every night, bind the role above to a service account and run the DeaconGuard image as a CronJob:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: deaconguard-cluster-scan
+  namespace: deaconguard
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          serviceAccountName: deaconguard-cluster-scan
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: scan
+              image: ghcr.io/cloudopsshell/deaconguard:1.5.0
+              args: [kube, scan, --format, json]
+              env:
+                - {name: DEACONGUARD_HOME, value: /tmp/deaconguard}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              volumeMounts: [{name: tmp, mountPath: /tmp}]
+          volumes: [{name: tmp, emptyDir: {}}]
+```
+
+## Rules for clusters
+
+These rules need a live cluster; the [manifest rules](./config-checks.md#kubernetes) apply to its workloads and roles too.
+
+| Rule | Severity | Finding | Source |
+| --- | --- | --- | --- |
+| `DG-K8S-030` | Medium | A namespace has no NetworkPolicy: its pods accept traffic from anywhere | NSA/CISA Hardening Guide |
+| `DG-K8S-031` | Low | A namespace doesn't enforce a Pod Security Standard (Kubernetes Pod Security Standards | baseline) |
+| `DG-K8S-032` | High | The Kubernetes version gets no more security fixes (Kubernetes release support | kubernetes.io/releases) |
+| `DG-K8S-033` | Low | The Kubernetes version is behind its latest patch release (Kubernetes release support | kubernetes.io/releases) |
+| `DG-K8S-040` | Critical | The API server allows every request (AlwaysAllow) | NSA/CISA Hardening Guide |
+| `DG-K8S-041` | Medium | The API server accepts anonymous requests | NSA/CISA Hardening Guide |
+| `DG-K8S-042` | Medium | The API server keeps no audit log | NSA/CISA Hardening Guide |
+| `DG-K8S-043` | Medium | Secrets aren't encrypted at rest | NSA/CISA Hardening Guide |
+| `DG-K8S-044` | Low | The API server's profiling endpoint is on | NSA/CISA Hardening Guide |
+| `DG-K8S-050` | High | A running image has vulnerabilities a newer build fixes | NSA/CISA Hardening Guide |
