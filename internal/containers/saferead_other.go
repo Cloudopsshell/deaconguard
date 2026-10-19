@@ -13,14 +13,8 @@ var errNotLinux = errors.New("containers can only be read on Linux")
 
 type root struct{ dev uint64 }
 
-type entry struct {
-	name         string
-	isDir, isReg bool
-	size         int64
-	dev          uint64
-}
-
 func openRoot(string) (*root, error)                         { return nil, errNotLinux }
 func (r *root) close()                                       {}
-func (r *root) readFile(string, int64) ([]byte, bool, error) { return nil, false, errNotLinux }
-func (r *root) readDir(string) ([]entry, error)              { return nil, errNotLinux }
+func (r *root) Device() uint64                               { return 0 }
+func (r *root) ReadFile(string, int64) ([]byte, bool, error) { return nil, false, errNotLinux }
+func (r *root) ReadDir(string) ([]Entry, error)              { return nil, errNotLinux }

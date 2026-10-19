@@ -20,7 +20,7 @@ Agents listen on nothing.
 | `/usr/bin/deaconguard` | The binary (package install); `/usr/local/bin/deaconguard` for an archive install |
 | `/var/lib/deaconguard/deaconguard.db` | Server database |
 | `/var/lib/deaconguard/tls/` | Server certificate and key |
-| `/var/lib/deaconguard/feeds/` | Cached advisory data, and in `osv/` the OSV records for [application libraries](../usage/libraries-and-sbom.md), kept for a day |
+| `/var/lib/deaconguard/feeds/` | Cached advisory data, and in `osv/` the OSV records for [application libraries](../usage/libraries-and-sbom.md), kept for a day, and in `layers/` what was read from [image](../usage/images.md) layers, at most 2 GB |
 | `/etc/deaconguard/agent.json` | Agent's server address, certificate pin and credential; root only |
 | `/usr/lib/systemd/system/deaconguard-server.service` | Server service |
 | `/usr/lib/systemd/system/deaconguard-agent.service` | Agent service |

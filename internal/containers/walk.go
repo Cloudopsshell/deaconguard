@@ -27,7 +27,7 @@ var skipped = map[string]bool{
 // walkLibraries finds the application libraries in a container, with the
 // same files and limits as the host's library check, on the container's own
 // file system only (volumes mounted into it are left out, like find -xdev).
-func walkLibraries(r *root) libraries.Result {
+func walkLibraries(r FS) libraries.Result {
 	var records bytes.Buffer
 	files, dirs, total := 0, 0, 0
 	deadline := time.Now().Add(walkTimeout)
@@ -42,33 +42,33 @@ func walkLibraries(r *root) libraries.Result {
 			stopped = "the container has too many files to walk; some libraries may be missing"
 			return
 		}
-		entries, err := r.readDir(dir)
+		entries, err := r.ReadDir(dir)
 		if err != nil {
 			return
 		}
 		for _, e := range entries {
-			path := strings.TrimSuffix(dir, "/") + "/" + e.name
-			if e.dev != r.dev {
+			path := strings.TrimSuffix(dir, "/") + "/" + e.Name
+			if e.Dev != r.Device() {
 				continue
 			}
-			if e.isDir {
+			if e.IsDir {
 				// A project's node_modules is listed by its lock file; only the
 				// global lib/node_modules (packages installed with npm -g) is walked.
-				if skipped[path] || e.name == ".git" || (e.name == "node_modules" && !strings.HasSuffix(dir, "/lib")) ||
-					strings.Contains(dir, "/node_modules/") && e.name == "node_modules" {
+				if skipped[path] || e.Name == ".git" || (e.Name == "node_modules" && !strings.HasSuffix(dir, "/lib")) ||
+					strings.Contains(dir, "/node_modules/") && e.Name == "node_modules" {
 					continue
 				}
 				walk(path)
 				continue
 			}
-			if !e.isReg || e.size > libraries.MaxFileBytes || !wanted(path, e.name) {
+			if !e.IsReg || e.Size > libraries.MaxFileBytes || !wanted(path, e.Name) {
 				continue
 			}
 			if files >= libraries.MaxFiles || total > libraries.MaxOutputBytes {
 				stopped = "more than 5,000 package-manager files; the rest weren't read"
 				return
 			}
-			data, _, err := r.readFile(path, libraries.MaxFileBytes)
+			data, _, err := r.ReadFile(path, libraries.MaxFileBytes)
 			if err != nil {
 				continue
 			}
@@ -112,4 +112,30 @@ func wanted(path, name string) bool {
 		return segments == 1 || (segments == 2 && strings.HasPrefix(rest, "@"))
 	}
 	return false
+}
+
+// LibraryFile reports whether a file at an absolute path in a container or
+// image is one the library check reads, by the same rules as the walk:
+// not under a skipped directory, a .git folder, or a project's node_modules.
+func LibraryFile(path string) bool {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	dir := ""
+	for _, part := range parts[:len(parts)-1] {
+		next := dir + "/" + part
+		if skipped[next] || part == ".git" || (part == "node_modules" && !strings.HasSuffix(dir, "/lib")) ||
+			(part == "node_modules" && strings.Contains(dir, "/node_modules/")) {
+			return false
+		}
+		dir = next
+	}
+	return wanted(path, parts[len(parts)-1])
+}
+
+// PackageFiles are the files ReadFS reads for the OS packages, besides
+// distroless images' /var/lib/dpkg/status.d/*.
+var PackageFiles = []string{
+	"/etc/os-release", "/usr/lib/os-release",
+	"/var/lib/dpkg/status", "/lib/apk/db/installed",
+	"/var/lib/rpm/rpmdb.sqlite", "/usr/lib/sysimage/rpm/rpmdb.sqlite",
+	"/var/lib/rpm/Packages", "/usr/lib/sysimage/rpm/Packages.db",
 }

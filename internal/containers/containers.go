@@ -112,7 +112,13 @@ func Read(container Container) Inventory {
 		return result
 	}
 	defer r.close()
+	return ReadFS(r, container)
+}
 
+// ReadFS reads the OS packages and libraries from a container's or an
+// image's files.
+func ReadFS(r FS, container Container) Inventory {
+	result := Inventory{Container: container}
 	result.OSRelease = readFirst(r, &result, 16<<10, "/etc/os-release", "/usr/lib/os-release")
 	if result.OSRelease == "" {
 		result.Notes = append(result.Notes, "No /etc/os-release: a distroless or scratch image, or one DeaconGuard can't identify; its libraries are still checked")
@@ -128,7 +134,7 @@ func Read(container Container) Inventory {
 		}
 	case exists(r, "/var/lib/rpm/rpmdb.sqlite") || exists(r, "/usr/lib/sysimage/rpm/rpmdb.sqlite"):
 		for _, file := range []string{"/usr/lib/sysimage/rpm/rpmdb.sqlite", "/var/lib/rpm/rpmdb.sqlite"} {
-			data, truncated, err := r.readFile(file, maxRPMDBBytes)
+			data, truncated, err := r.ReadFile(file, maxRPMDBBytes)
 			if err != nil {
 				continue
 			}
@@ -151,17 +157,17 @@ func Read(container Container) Inventory {
 	return result
 }
 
-func exists(r *root, path string) bool {
-	if _, _, err := r.readFile(path, 0); err == nil {
+func exists(r FS, path string) bool {
+	if _, _, err := r.ReadFile(path, 0); err == nil {
 		return true
 	}
-	_, err := r.readDir(path)
+	_, err := r.ReadDir(path)
 	return err == nil
 }
 
 // readFirst returns the first of files that can be read; a note says why
 // one couldn't, unless it doesn't exist.
-func readFirst(r *root, result *Inventory, limit int64, files ...string) string {
+func readFirst(r FS, result *Inventory, limit int64, files ...string) string {
 	var refused []string
 	defer func() {
 		// Only worth saying when nothing could be read: /etc/os-release, for
@@ -171,7 +177,7 @@ func readFirst(r *root, result *Inventory, limit int64, files ...string) string 
 		}
 	}()
 	for _, file := range files {
-		data, truncated, err := r.readFile(file, limit)
+		data, truncated, err := r.ReadFile(file, limit)
 		if err != nil {
 			if errors.Is(err, ErrSymlink) {
 				refused = append(refused, err.Error())
@@ -188,16 +194,16 @@ func readFirst(r *root, result *Inventory, limit int64, files ...string) string 
 
 // readDPKG reads the dpkg database, from status, or from distroless images'
 // status.d, one file per package.
-func readDPKG(r *root, result *Inventory) string {
+func readDPKG(r FS, result *Inventory) string {
 	var contents strings.Builder
 	if data := readFirst(r, result, maxPackageBytes, "/var/lib/dpkg/status"); data != "" {
 		contents.WriteString(data)
-	} else if entries, err := r.readDir("/var/lib/dpkg/status.d"); err == nil {
+	} else if entries, err := r.ReadDir("/var/lib/dpkg/status.d"); err == nil {
 		for _, e := range entries {
-			if !e.isReg || strings.HasSuffix(e.name, ".md5sums") {
+			if !e.IsReg || strings.HasSuffix(e.Name, ".md5sums") {
 				continue
 			}
-			data, _, err := r.readFile("/var/lib/dpkg/status.d/"+e.name, 1<<20)
+			data, _, err := r.ReadFile("/var/lib/dpkg/status.d/"+e.Name, 1<<20)
 			if err == nil {
 				contents.Write(bytes.TrimSpace(data))
 				// distroless omits the Status field: these packages are installed.
