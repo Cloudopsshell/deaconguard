@@ -50,7 +50,32 @@ var kubernetesRules = []Rule{
 	{ID: "DG-K8S-043", Severity: "MEDIUM", Title: "Secrets aren't encrypted at rest", Source: nsaGuide},
 	{ID: "DG-K8S-044", Severity: "LOW", Title: "The API server's profiling endpoint is on", Source: nsaGuide},
 	{ID: "DG-K8S-050", Severity: "HIGH", Title: "A running image has vulnerabilities a newer build fixes", Source: nsaGuide},
+	{ID: "DG-K8S-034", Severity: "MEDIUM", Title: "Workloads run in the default namespace", Source: stigSource},
+	{ID: "DG-K8S-045", Severity: "MEDIUM", Title: "The Kubernetes dashboard is installed", Source: stigSource},
 }
+
+const stigSource = "DISA Kubernetes STIG"
+
+// kubernetesSTIG maps rules to the DISA Kubernetes STIG (V2R6, April 2026)
+// rules they check. Only rules that check the same thing are mapped.
+var kubernetesSTIG = map[string][]string{
+	"DG-K8S-005": {"V-242414"}, // non-privileged host ports for user pods
+	"DG-K8S-015": {"V-274883"}, // sensitive information stored in Secrets
+	"DG-K8S-022": {"V-274884"}, // Secret access on a need-to-know basis
+	"DG-K8S-031": {"V-242437"}, // a pod security policy set
+	"DG-K8S-032": {"V-242443"}, // the latest updates
+	"DG-K8S-033": {"V-242443"},
+	"DG-K8S-034": {"V-242383"},             // user-managed resources in dedicated namespaces
+	"DG-K8S-040": {"V-242382"},             // Node,RBAC authorization mode
+	"DG-K8S-041": {"V-242390"},             // anonymous authentication disabled
+	"DG-K8S-042": {"V-242402", "V-242461"}, // audit log path; audit logs enabled
+	"DG-K8S-043": {"V-274882"},             // Secrets encrypted at rest
+	"DG-K8S-045": {"V-242395"},             // the dashboard not enabled
+}
+
+// KubernetesVulnerabilitySTIG is the STIG rule Kubernetes' own known
+// vulnerabilities fail: the latest updates (V-242443).
+var KubernetesVulnerabilitySTIG = []string{"V-242443"}
 
 const kubeReleases = "Kubernetes release support (kubernetes.io/releases)"
 

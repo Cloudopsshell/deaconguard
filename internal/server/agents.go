@@ -261,28 +261,41 @@ func (h *agentHub) auditNewMachine(host store.Host, version string) {
 
 // autoScanInterval is the least time between two automatic container scans
 // of one host, so a machine that starts containers all the time isn't
-// scanned all the time.
-const autoScanInterval = 10 * time.Minute
+// scanned all the time; clusterScanInterval is the same for a cluster's
+// changes, which are checked within about a minute.
+const (
+	autoScanInterval    = 10 * time.Minute
+	clusterScanInterval = time.Minute
+)
 
 // scanNewContainers queues a scan of a host's running containers when its
-// agent saw new ones and the host has that turned on. A scan already queued
-// or running covers them.
-func (h *agentHub) scanNewContainers(host store.Host, version string, count int) {
-	if !host.AutoScanContainers || !agentapi.SupportsCheck(version, checks.Containers) {
-		return
+// agent saw new ones, or of a cluster when its cluster agent saw changes,
+// and the host has that turned on. A scan already queued or running covers
+// them. It reports whether the scan was deferred because the last one was
+// recent, so the agent counts the changes again later.
+func (h *agentHub) scanNewContainers(host store.Host, version string, count int) (deferred bool) {
+	check, interval, what := checks.Containers, autoScanInterval, fmt.Sprintf("%d new running containers", count)
+	if host.IsCluster() {
+		check, interval, what = checks.Kubernetes, clusterScanInterval, plural(count, "change in the cluster", "changes in the cluster")
 	}
-	if taken, err := store.TakeAutoScan(host.ID, time.Now(), autoScanInterval); err != nil || !taken {
-		return
+	if !host.AutoScanContainers || !agentapi.SupportsCheck(version, check) {
+		return false
 	}
-	if _, err := h.runner.start(host, []string{checks.Containers}, true); err != nil {
+	if taken, err := store.TakeAutoScan(host.ID, time.Now(), interval); err != nil || !taken {
+		return err == nil
+	}
+	if _, err := h.runner.start(host, []string{check}, true); err != nil {
 		if !errors.Is(err, errScanInProgress) {
-			serverLog(host.ID, store.LogError, "Could not scan the new containers on %s: %v", host.Address, err)
+			serverLog(host.ID, store.LogError, "Could not scan %s for %s: %v", host.Address, what, err)
+			return false
 		}
-		return
+		// The scan already running may have started before the changes.
+		return true
 	}
-	store.Audit("server", "scan.start", host.Address, fmt.Sprintf("%d new running containers", count), "")
-	serverLog(host.ID, store.LogInfo, "Scan of the running containers on %s queued: its agent saw %d new", host.Address, count)
+	store.Audit("server", "scan.start", host.Address, what, "")
+	serverLog(host.ID, store.LogInfo, "Scan of %s queued: its agent saw %s", host.Address, what)
 	h.wake(host.ID)
+	return false
 }
 
 // job hands the agent its next queued scan, waiting up to JobWait for one.
@@ -294,7 +307,9 @@ func (h *agentHub) job(w http.ResponseWriter, r *http.Request, host store.Host) 
 	h.presence.checkIn(host)
 	defer h.presence.checkIn(host)
 	if count, err := strconv.Atoi(r.Header.Get(agentapi.HeaderNewContainers)); err == nil && count > 0 {
-		h.scanNewContainers(host, r.Header.Get(agentapi.HeaderVersion), count)
+		if h.scanNewContainers(host, r.Header.Get(agentapi.HeaderVersion), count) {
+			w.Header().Set(agentapi.HeaderChangesDeferred, "1")
+		}
 	}
 	deadline := time.NewTimer(agentapi.JobWait)
 	defer deadline.Stop()

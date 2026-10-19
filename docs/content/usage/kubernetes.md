@@ -26,7 +26,24 @@ Kubernetes' own objects (`kube-system`, `kube-public`, `kube-node-lease`, and th
 
 To check a cluster from the server, on a schedule and with notifications, install the **cluster agent** in it: `cluster.enabled=true` in the [Helm chart](../installation/kubernetes.md#4-the-cluster-itself). It enrolls with a token like a machine's agent and appears on **Hosts** as a Kubernetes cluster, with its own page.
 
-A cluster runs one check, **Kubernetes**: **Scan now** offers only that, and a schedule with the Kubernetes check ticked runs it on every cluster it covers (and its other checks on machines). The cluster agent reads the cluster with the pod's read-only service account and sends what it found to the server, which adds the version's support and Kubernetes' own vulnerabilities, so the agent needs to reach only the API and the server. A failed scan is [notified](./notifications.md) like a host's.
+A cluster runs one check, **Kubernetes**: **Scan now** offers only that, and a schedule with the Kubernetes check ticked runs it on every cluster it covers (and its other checks on machines). The cluster agent reads the cluster with the pod's read-only service account and sends what it found to the server, which adds the version's support and Kubernetes' own vulnerabilities, so the agent needs to reach only the API and the server. New critical and high findings, such as a privileged workload deployed since the last scan, are [notified](./notifications.md) as **New cluster findings**; a failed scan as for any host.
+
+### Scan when the cluster changes
+
+On the cluster's page, **Scan when the cluster changes** has the cluster checked within about a minute of a change: the cluster agent watches workloads, roles, namespaces and network policies through the API (the `watch` permission, which the chart's role has), and counts only what a scan would see. A Deployment's rollout or a pod restarting isn't a change; a new spec, a new role binding or a pod no controller owns is. Changes within a minute of the last such scan wait for the next one, so a busy cluster is scanned at most once a minute.
+
+### Warnings as workloads are applied
+
+With `cluster.admission.enabled=true`, the cluster agent is also a validating admission webhook in **warn** mode. Each workload and role created or changed is checked with the same rules, and the client shows what it found; the object is always allowed:
+
+```text
+$ kubectl apply -f debug.yaml
+Warning: DeaconGuard DG-K8S-001 critical: Deployment shop/debug-tools: container tools is privileged
+Warning: DeaconGuard DG-K8S-002 high: Deployment shop/debug-tools: hostNetwork: true
+deployment.apps/debug-tools created
+```
+
+`cluster.admission.severity` (`medium` by default) sets the least severity that warns, and the `deaconguard.io/ignore` annotation is honoured. Kubernetes' own namespaces and the release's are left out. The chart makes the webhook's certificate and keeps it across upgrades; if the agent's pod is down, requests go through (`failurePolicy: Ignore`), so the webhook never stands in the way of a deployment. The pod then listens on port 8443, for the API server only.
 
 ## Logging in
 
@@ -99,15 +116,19 @@ spec:
 
 These rules need a live cluster; the [manifest rules](./config-checks.md#kubernetes) apply to its workloads and roles too.
 
-| Rule | Severity | Finding | Source |
-| --- | --- | --- | --- |
-| `DG-K8S-030` | Medium | A namespace has no NetworkPolicy: its pods accept traffic from anywhere | NSA/CISA Hardening Guide |
-| `DG-K8S-031` | Low | A namespace doesn't enforce a Pod Security Standard (Kubernetes Pod Security Standards | baseline) |
-| `DG-K8S-032` | High | The Kubernetes version gets no more security fixes (Kubernetes release support | kubernetes.io/releases) |
-| `DG-K8S-033` | Low | The Kubernetes version is behind its latest patch release (Kubernetes release support | kubernetes.io/releases) |
-| `DG-K8S-040` | Critical | The API server allows every request (AlwaysAllow) | NSA/CISA Hardening Guide |
-| `DG-K8S-041` | Medium | The API server accepts anonymous requests | NSA/CISA Hardening Guide |
-| `DG-K8S-042` | Medium | The API server keeps no audit log | NSA/CISA Hardening Guide |
-| `DG-K8S-043` | Medium | Secrets aren't encrypted at rest | NSA/CISA Hardening Guide |
-| `DG-K8S-044` | Low | The API server's profiling endpoint is on | NSA/CISA Hardening Guide |
-| `DG-K8S-050` | High | A running image has vulnerabilities a newer build fixes | NSA/CISA Hardening Guide |
+**DISA Kubernetes STIG:** where a rule checks the same thing as a rule of the DISA Kubernetes STIG (V2R6, April 2026), its findings name the STIG rule, such as `DISA Kubernetes STIG: V-242390`, in their detail and in JSON and SARIF reports. Kubernetes' own vulnerabilities and an unsupported version map to V-242443. Many STIG rules check node files and flags DeaconGuard doesn't read through the API, so a clean scan is not a STIG assessment.
+
+| Rule | Severity | Finding | Source | DISA STIG |
+| --- | --- | --- | --- | --- |
+| `DG-K8S-030` | Medium | A namespace has no NetworkPolicy: its pods accept traffic from anywhere | NSA/CISA Hardening Guide |  |
+| `DG-K8S-031` | Low | A namespace doesn't enforce a Pod Security Standard | Pod Security Standards (baseline) | V-242437 |
+| `DG-K8S-032` | High | The Kubernetes version gets no more security fixes | release support (kubernetes.io/releases) | V-242443 |
+| `DG-K8S-033` | Low | The Kubernetes version is behind its latest patch release | release support (kubernetes.io/releases) | V-242443 |
+| `DG-K8S-034` | Medium | Workloads run in the default namespace | DISA STIG | V-242383 |
+| `DG-K8S-040` | Critical | The API server allows every request (AlwaysAllow) | NSA/CISA Hardening Guide | V-242382 |
+| `DG-K8S-041` | Medium | The API server accepts anonymous requests | NSA/CISA Hardening Guide | V-242390 |
+| `DG-K8S-042` | Medium | The API server keeps no audit log | NSA/CISA Hardening Guide | V-242402, V-242461 |
+| `DG-K8S-043` | Medium | Secrets aren't encrypted at rest | NSA/CISA Hardening Guide | V-274882 |
+| `DG-K8S-044` | Low | The API server's profiling endpoint is on | NSA/CISA Hardening Guide |  |
+| `DG-K8S-045` | Medium | The Kubernetes dashboard is installed | DISA STIG | V-242395 |
+| `DG-K8S-050` | High | A running image has vulnerabilities a newer build fixes | NSA/CISA Hardening Guide |  |
