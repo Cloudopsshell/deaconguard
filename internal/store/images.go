@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 )
 
 // RegistryLogin is a saved login for one container registry. Secret is a
@@ -13,7 +14,11 @@ type RegistryLogin struct {
 	ID string `json:"id"`
 	// Registry is the registry's host, with its port if it has one, as
 	// images.RegistryHost names it: "registry-1.docker.io" for Docker Hub.
-	Registry  string `json:"registry"`
+	Registry string `json:"registry"`
+	// Kind is LoginBasic, a username and a password or token, or LoginECR,
+	// an AWS access key ID and secret key that DeaconGuard exchanges for
+	// Amazon ECR's 12-hour registry password.
+	Kind      string `json:"kind"`
 	Username  string `json:"username"`
 	Secret    string `json:"-"`
 	CreatedBy string `json:"created_by"`
@@ -21,15 +26,29 @@ type RegistryLogin struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+// Kinds of registry login.
+const (
+	LoginBasic = "basic"
+	LoginECR   = "ecr"
+)
+
 // Image is an image in a registry that DeaconGuard checks, by reference and
 // platform. Latest is its most recent scan, if it has one.
 type Image struct {
-	ID        string     `json:"id"`
-	Reference string     `json:"reference"`
-	Platform  string     `json:"platform"`
-	CreatedBy string     `json:"created_by"`
-	CreatedAt string     `json:"created_at"`
-	Latest    *ImageScan `json:"latest,omitempty"`
+	ID        string `json:"id"`
+	Reference string `json:"reference"`
+	Platform  string `json:"platform"`
+	// Watch has the server check the tag for a new build every few minutes,
+	// and scan the image again when it changes, and once a day for new
+	// advisories. TagDigest is what the tag pointed to when last seen;
+	// WatchError why the last check failed.
+	Watch      bool       `json:"watch"`
+	TagDigest  string     `json:"tag_digest,omitempty"`
+	CheckedAt  string     `json:"checked_at,omitempty"`
+	WatchError string     `json:"watch_error,omitempty"`
+	CreatedBy  string     `json:"created_by"`
+	CreatedAt  string     `json:"created_at"`
+	Latest     *ImageScan `json:"latest,omitempty"`
 }
 
 // ImageScan is one check of an image. Only a succeeded scan has a digest and
@@ -62,11 +81,11 @@ var (
 	ErrImageScanInProgress   = errors.New("a scan of this image is already queued or running")
 )
 
-const registryLoginColumns = "id, registry, username, secret, created_by, created_at, updated_at"
+const registryLoginColumns = "id, registry, kind, username, secret, created_by, created_at, updated_at"
 
 func scanRegistryLogin(row rowScanner) (RegistryLogin, error) {
 	var login RegistryLogin
-	err := row.Scan(&login.ID, &login.Registry, &login.Username, &login.Secret, &login.CreatedBy, &login.CreatedAt, &login.UpdatedAt)
+	err := row.Scan(&login.ID, &login.Registry, &login.Kind, &login.Username, &login.Secret, &login.CreatedBy, &login.CreatedAt, &login.UpdatedAt)
 	return login, err
 }
 
@@ -131,12 +150,12 @@ func SaveRegistryLogin(login RegistryLogin) (RegistryLogin, error) {
 		if login.ID, err = newID(); err != nil {
 			return RegistryLogin{}, err
 		}
-		_, err = db.Exec("INSERT INTO registry_logins ("+registryLoginColumns+") VALUES (?, ?, ?, ?, ?, ?, ?)",
-			login.ID, login.Registry, login.Username, login.Secret, login.CreatedBy, now, now)
+		_, err = db.Exec("INSERT INTO registry_logins ("+registryLoginColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			login.ID, login.Registry, login.Kind, login.Username, login.Secret, login.CreatedBy, now, now)
 	} else {
 		var result sql.Result
-		result, err = db.Exec(`UPDATE registry_logins SET registry = ?, username = ?, secret = CASE WHEN ? = '' THEN secret ELSE ? END,
-			updated_at = ? WHERE id = ?`, login.Registry, login.Username, login.Secret, login.Secret, now, login.ID)
+		result, err = db.Exec(`UPDATE registry_logins SET registry = ?, kind = ?, username = ?, secret = CASE WHEN ? = '' THEN secret ELSE ? END,
+			updated_at = ? WHERE id = ?`, login.Registry, login.Kind, login.Username, login.Secret, login.Secret, now, login.ID)
 		if err == nil {
 			if changed, _ := result.RowsAffected(); changed == 0 {
 				return RegistryLogin{}, ErrRegistryLoginNotFound
@@ -166,11 +185,12 @@ func DeleteRegistryLogin(id string) (RegistryLogin, error) {
 	return login, err
 }
 
-const imageColumns = "id, reference, platform, created_by, created_at"
+const imageColumns = "id, reference, platform, watch, tag_digest, checked_at, watch_error, created_by, created_at"
 
 func scanImage(row rowScanner) (Image, error) {
 	var image Image
-	err := row.Scan(&image.ID, &image.Reference, &image.Platform, &image.CreatedBy, &image.CreatedAt)
+	err := row.Scan(&image.ID, &image.Reference, &image.Platform, &image.Watch, &image.TagDigest, &image.CheckedAt, &image.WatchError,
+		&image.CreatedBy, &image.CreatedAt)
 	return image, err
 }
 
@@ -222,8 +242,8 @@ func GetImage(id string) (Image, error) {
 	return image, err
 }
 
-// AddImage adds an image to check.
-func AddImage(reference, platform, createdBy string) (Image, error) {
+// AddImage adds an image to check, watched or not.
+func AddImage(reference, platform string, watch bool, createdBy string) (Image, error) {
 	db, err := database()
 	if err != nil {
 		return Image{}, err
@@ -232,7 +252,8 @@ func AddImage(reference, platform, createdBy string) (Image, error) {
 	if err != nil {
 		return Image{}, err
 	}
-	_, err = db.Exec("INSERT INTO images ("+imageColumns+") VALUES (?, ?, ?, ?, ?)", id, reference, platform, createdBy, nowText())
+	_, err = db.Exec("INSERT INTO images (id, reference, platform, watch, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+		id, reference, platform, watch, createdBy, nowText())
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return Image{}, ErrImageExists
@@ -240,6 +261,34 @@ func AddImage(reference, platform, createdBy string) (Image, error) {
 		return Image{}, err
 	}
 	return GetImage(id)
+}
+
+// SetImageWatch turns watching an image on or off.
+func SetImageWatch(id string, watch bool) (Image, error) {
+	db, err := database()
+	if err != nil {
+		return Image{}, err
+	}
+	result, err := db.Exec("UPDATE images SET watch = ?, watch_error = '' WHERE id = ?", watch, id)
+	if err != nil {
+		return Image{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return Image{}, ErrImageNotFound
+	}
+	return GetImage(id)
+}
+
+// ImageChecked records a watch check: the digest the tag points to, or why
+// the check failed (the digest seen before stays).
+func ImageChecked(id, tagDigest, failure string, at time.Time) error {
+	db, err := database()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("UPDATE images SET tag_digest = CASE WHEN ? = '' THEN tag_digest ELSE ? END, watch_error = ?, checked_at = ? WHERE id = ?",
+		tagDigest, tagDigest, failure, at.UTC().Format(time.RFC3339), id)
+	return err
 }
 
 // DeleteImage removes an image and its scans, and returns it.
@@ -311,6 +360,27 @@ func ImageScans(imageID string) ([]ImageScan, error) {
 	return scans, rows.Err()
 }
 
+// PreviousImageResult returns the image's last succeeded scan before the
+// scan with ID current, with its result.
+func PreviousImageResult(imageID, current string) (ImageScan, bool, error) {
+	scans, err := ImageScans(imageID)
+	if err != nil {
+		return ImageScan{}, false, err
+	}
+	for index, scan := range scans {
+		if scan.ID != current {
+			continue
+		}
+		for _, older := range scans[index+1:] {
+			if older.Status == ScanSucceeded {
+				full, err := GetImageScan(older.ID)
+				return full, err == nil, err
+			}
+		}
+	}
+	return ImageScan{}, false, nil
+}
+
 // GetImageScan returns one scan with its result.
 func GetImageScan(id string) (ImageScan, error) {
 	db, err := database()
@@ -375,9 +445,9 @@ func NextImageScan() (ImageScan, bool, error) {
 	}
 }
 
-// FinishImageScan saves a succeeded scan's result, and keeps only the image's
-// newest scans.
-func FinishImageScan(scan ImageScan) error {
+// FinishImageScan saves a succeeded scan's result and the digest the image's
+// tag pointed to, and keeps only the image's newest scans.
+func FinishImageScan(scan ImageScan, tagDigest string) error {
 	db, err := database()
 	if err != nil {
 		return err
@@ -388,6 +458,11 @@ func FinishImageScan(scan ImageScan) error {
 		scan.Severity.Unknown, scan.Exploited, scan.Fixable, string(scan.Result), nowText(), scan.ID)
 	if err != nil {
 		return err
+	}
+	if tagDigest != "" {
+		if _, err := db.Exec("UPDATE images SET tag_digest = ? WHERE id = ?", tagDigest, scan.ImageID); err != nil {
+			return err
+		}
 	}
 	return pruneImageScans(db, scan.ImageID)
 }

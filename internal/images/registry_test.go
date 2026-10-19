@@ -51,6 +51,9 @@ type fakeRegistry struct {
 	types     map[string]string
 	token     string
 	logins    int
+	// heads counts HEAD requests; noDigest leaves out Docker-Content-Digest.
+	heads    int
+	noDigest bool
 }
 
 func newFakeRegistry(t *testing.T, layers [][]byte) (*fakeRegistry, *httptest.Server) {
@@ -89,7 +92,13 @@ func newFakeRegistry(t *testing.T, layers [][]byte) (*fakeRegistry, *httptest.Se
 		}
 		if ref, ok := strings.CutPrefix(req.URL.Path, "/v2/acme/shop/manifests/"); ok {
 			if body, found := r.manifests[ref]; found {
+				if req.Method == http.MethodHead {
+					r.heads++
+				}
 				w.Header().Set("Content-Type", r.types[ref])
+				if !r.noDigest {
+					w.Header().Set("Docker-Content-Digest", digestOf(body))
+				}
 				w.Write(body)
 				return
 			}
@@ -158,6 +167,39 @@ func TestReadImage(t *testing.T) {
 
 	if _, _, err := Read(context.Background(), client, ref, "linux/s390x", nil); err == nil || !strings.Contains(err.Error(), "linux/arm64/v8, linux/amd64") {
 		t.Errorf("unknown platform: %v", err)
+	}
+}
+
+func TestTagDigestFollowsTheTag(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
+	registry, server := newFakeRegistry(t, [][]byte{layer(t, tarFile{name: "etc/os-release", body: "ID=alpine\n"})})
+	defer server.Close()
+	client, ref := testClient(server, "robot", "pw")
+	_, resolved, err := Read(context.Background(), client, ref, "linux/amd64", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.TagDigest != digestOf(registry.manifests["1.0"]) || resolved.TagDigest == resolved.Digest {
+		t.Fatalf("tag digest %s, platform digest %s", resolved.TagDigest, resolved.Digest)
+	}
+	digest, err := client.TagDigest(context.Background(), ref)
+	if err != nil || digest != resolved.TagDigest || registry.heads != 1 {
+		t.Fatalf("TagDigest = %s, %v after %d HEAD requests", digest, err, registry.heads)
+	}
+	// The tag moves to a new build.
+	registry.manifests["1.0"] = append(registry.manifests["1.0"], ' ')
+	if moved, _ := client.TagDigest(context.Background(), ref); moved == digest || moved != digestOf(registry.manifests["1.0"]) {
+		t.Fatalf("after the tag moved: %s", moved)
+	}
+	// Without Docker-Content-Digest, the manifest itself says.
+	registry.noDigest = true
+	if read, err := client.TagDigest(context.Background(), ref); err != nil || read != digestOf(registry.manifests["1.0"]) {
+		t.Fatalf("without the header: %s, %v", read, err)
+	}
+	pinned := ref
+	pinned.Digest = "sha256:" + strings.Repeat("b", 64)
+	if same, _ := client.TagDigest(context.Background(), pinned); same != pinned.Digest {
+		t.Fatalf("a pinned digest: %s", same)
 	}
 }
 
