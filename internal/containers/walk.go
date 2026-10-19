@@ -24,6 +24,16 @@ var skipped = map[string]bool{
 	"/usr/lib": true, "/usr/lib32": true, "/usr/lib64": true, "/usr/libexec": true, "/usr/share": true,
 }
 
+// SkippedDir reports whether the library walk leaves out the directory name
+// in dir: kernel and device file systems, the distribution's own library
+// folders, .git, and a project's node_modules, which its lock file lists.
+// Only the global lib/node_modules (packages installed with npm -g) is walked.
+func SkippedDir(dir, name string) bool {
+	path := strings.TrimSuffix(dir, "/") + "/" + name
+	return skipped[path] || name == ".git" || (name == "node_modules" && !strings.HasSuffix(dir, "/lib")) ||
+		strings.Contains(dir, "/node_modules/") && name == "node_modules"
+}
+
 // walkLibraries finds the application libraries in a container, with the
 // same files and limits as the host's library check, on the container's own
 // file system only (volumes mounted into it are left out, like find -xdev).
@@ -52,10 +62,7 @@ func walkLibraries(r FS) libraries.Result {
 				continue
 			}
 			if e.IsDir {
-				// A project's node_modules is listed by its lock file; only the
-				// global lib/node_modules (packages installed with npm -g) is walked.
-				if skipped[path] || e.Name == ".git" || (e.Name == "node_modules" && !strings.HasSuffix(dir, "/lib")) ||
-					strings.Contains(dir, "/node_modules/") && e.Name == "node_modules" {
+				if SkippedDir(dir, e.Name) {
 					continue
 				}
 				walk(path)
