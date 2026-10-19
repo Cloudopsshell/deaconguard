@@ -16,7 +16,7 @@ name: deaconguard
 
 services:
   server:
-    image: ghcr.io/cloudopsshell/deaconguard:1.3.0
+    image: ghcr.io/cloudopsshell/deaconguard:1.4.0
     command: [serve, --listen, "0.0.0.0:8443", --agent-listen, "0.0.0.0:8444"]
     environment:
       # The image's own user owns /home/nonroot, so a new volume there is
@@ -48,7 +48,7 @@ services:
   # view for that.
   agent:
     profiles: [agent]
-    image: ghcr.io/cloudopsshell/deaconguard:1.3.0
+    image: ghcr.io/cloudopsshell/deaconguard:1.4.0
     command: [agent, run]
     user: "0"
     network_mode: host
