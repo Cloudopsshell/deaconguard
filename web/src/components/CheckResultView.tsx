@@ -22,7 +22,7 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
           </div>
           <div className="flex flex-wrap gap-2">
             <span className={cx("rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", status.className)}>{status.label}</span>
-            {result.status !== "skipped" && (
+            {result.status !== "skipped" && check !== "kubernetes" && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-slate-500/20 ring-inset dark:bg-slate-800 dark:text-slate-300">
                 {result.privileged ? "Ran with sudo" : "Ran without sudo"}
               </span>

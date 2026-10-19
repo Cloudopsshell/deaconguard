@@ -1,9 +1,15 @@
 import type { ComponentType } from "react";
-import { Boxes, Bug, Container, FileCheck2, Radar, ScanSearch, ShieldCheck, Skull, SlidersHorizontal } from "lucide-react";
+import { Boxes, Bug, Container, FileCheck2, Radar, ScanSearch, Ship, ShieldCheck, Skull, SlidersHorizontal } from "lucide-react";
 import type { CheckId, CheckStatus, SeverityCounts } from "../api";
 import { severityOrder } from "./format";
 
-export const checkOrder: CheckId[] = ["packages", "libraries", "containers", "integrity", "malware", "config", "antivirus", "yara"];
+export const checkOrder: CheckId[] = ["packages", "libraries", "containers", "integrity", "malware", "config", "antivirus", "yara", "kubernetes"];
+
+/** The checks a host runs: a Kubernetes cluster only the Kubernetes check, a machine every other. */
+export function checksFor(host: { kind?: string } | undefined, ids: CheckId[] = checkOrder): CheckId[] {
+  const cluster = host?.kind === "cluster";
+  return ids.filter((id) => (id === "kubernetes") === cluster);
+}
 
 export const checkMeta: Record<CheckId, { label: string; short: string; icon: ComponentType<{ className?: string }> }> = {
   packages: { label: "Vulnerabilities", short: "CVEs", icon: Bug },
@@ -15,6 +21,7 @@ export const checkMeta: Record<CheckId, { label: string; short: string; icon: Co
   hardening: { label: "Hardening", short: "Hardening", icon: ShieldCheck },
   antivirus: { label: "Antivirus", short: "ClamAV", icon: ScanSearch },
   yara: { label: "Advanced antivirus", short: "YARA", icon: Radar },
+  kubernetes: { label: "Kubernetes", short: "K8s", icon: Ship },
 };
 
 export const checkStatusStyle: Record<CheckStatus, { label: string; className: string }> = {

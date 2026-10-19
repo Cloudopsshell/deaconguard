@@ -188,7 +188,7 @@ func TestScanReadsTheCluster(t *testing.T) {
 		t.Errorf("images = %v", report.Images)
 	}
 	notes := strings.Join(report.Notes, "\n")
-	if !strings.Contains(notes, "CronJobs weren't checked") || !strings.Contains(notes, "--include-system") {
+	if !strings.Contains(notes, "CronJobs weren't checked") || !strings.Contains(notes, "were left out") {
 		t.Errorf("notes = %s", notes)
 	}
 

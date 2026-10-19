@@ -24,7 +24,7 @@ import {
   Th,
   cx,
 } from "../components/ui";
-import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
+import { checkBadgeText, checkMeta, checksFor, topSeverity } from "../lib/checks";
 import { PackageCountsInline, packageBadge } from "../lib/fixes";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
@@ -84,7 +84,7 @@ export function HostDetail() {
               <TagEditor key={data.tags.join(",")} hostId={data.id} tags={data.tags} canEdit={canOperate} />
             </span>
             {data.transport === "local" && <SudoToggle host={data} />}
-            {data.transport === "agent" && <ContainerScanToggle host={data} />}
+            {data.transport === "agent" && data.kind !== "cluster" && <ContainerScanToggle host={data} />}
             {data.transport === "agent" && (
               <span className="mt-1 block">
                 <AgentStatus online={agentOnline(data)} lastSeen={data.agent?.last_seen_at} />
@@ -119,7 +119,7 @@ export function HostDetail() {
                 <Trash2 className="size-4" /> Remove
               </Button>
             )}
-            {canOperate && (
+            {canOperate && data.kind !== "cluster" && (
               <Button variant="secondary" disabled={running} onClick={() => setAuditing(true)}>
                 <ClipboardCheck className="size-4" /> Run audit
               </Button>
@@ -379,13 +379,14 @@ function ContainerScanToggle({ host }: { host: Host }) {
 function Results({ host, onRun }: { host: HostDetailData; onRun: (check: CheckId) => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get("tab") as CheckId | null;
-  const active: CheckId = requested && checkOrder.includes(requested) ? requested : "packages";
+  const tabs = checksFor(host);
+  const active: CheckId = requested && tabs.includes(requested) ? requested : tabs[0];
   const checks = host.checks ?? {};
 
   return (
     <section>
       <div className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800" role="tablist">
-        {checkOrder.map((check) => {
+        {tabs.map((check) => {
           const Icon = checkMeta[check].icon;
           const summary = checks[check];
           const packages = check === "packages" && summary ? packageBadge(summary) : undefined;

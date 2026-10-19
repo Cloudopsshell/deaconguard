@@ -15,7 +15,7 @@ const everyDay = [0, 1, 2, 3, 4, 5, 6];
 const weekdays = [1, 2, 3, 4, 5];
 
 /** The checks a schedule can run; the advanced antivirus scan is a level of the antivirus check. */
-const scheduleChecks: CheckId[] = ["packages", "integrity", "malware", "config", "antivirus"];
+const scheduleChecks: CheckId[] = ["packages", "integrity", "malware", "config", "antivirus", "kubernetes"];
 
 /**
  * The editable fields of a schedule. The server refuses unknown fields, so
@@ -316,9 +316,13 @@ function ScheduleDialog({ schedule, onClose }: { schedule: Schedule | null; onCl
                   className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
                 />
                 {checkMeta[check].label}
+                {check === "kubernetes" && <span className="text-xs text-slate-500 dark:text-slate-400">(clusters)</span>}
               </label>
             ))}
           </div>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            Each host runs the checks that apply to it: Kubernetes clusters the Kubernetes check, machines the others.
+          </p>
           {input.checks.includes("antivirus") && (
             <label className="mt-2 ml-6 flex items-center gap-2 text-sm">
               <input

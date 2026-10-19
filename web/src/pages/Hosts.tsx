@@ -193,7 +193,7 @@ function HostRow({ host }: { host: HostSummary }) {
             )}
             <CoverageNotes scan={host.last_report} />
           </div>
-        ) : (
+        ) : host.kind === "cluster" ? null : (
           <span className="text-sm text-slate-500 dark:text-slate-400">No vulnerability results</span>
         )}
         <CheckChips host={host} />
