@@ -20,6 +20,26 @@ The server reads the image itself, one at a time, so the machine running DeaconG
 
 Operators add, scan and remove images; viewers see the results. Removing an image deletes its results in DeaconGuard, never anything in the registry.
 
+## Watch for new builds
+
+A **watched** image is checked again without anyone pressing **Scan now**. Watching is on for new images, and **Stop watching** on the image's page turns it off.
+
+- **New builds:** every 15 minutes, the server asks the registry which build the tag points to, with a `HEAD` request for the manifest: nothing is downloaded, and Docker Hub doesn't count it against its pull limits. When the tag has moved to a new build, the image is scanned again.
+- **New vulnerabilities:** once a day, the image is scanned again for advisories published since. Unchanged layers come from the cache, so this takes a second or two.
+
+The scan history says what started each scan: a person, `watch: new build pushed`, or `watch: daily rescan`. When the check fails, for example because the registry is rate-limiting or the login stopped working, the image says why, and the server log records it once.
+
+New known exploited and critical vulnerabilities in an image, and failed scans, are sent to the [notification](./notifications.md) channels subscribed to those events, as for hosts.
+
+**Scan on push from CI:** to scan an image the moment a pipeline pushes it, call the API with an operator's [API token](../reference/api.md#api-tokens) after the push:
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $DEACONGUARD_TOKEN" \
+  https://deaconguard.example.com/api/images/IMAGE_ID/scans
+```
+
+The image's ID is in its page's address.
+
 ## Nothing in the image is run
 
 DeaconGuard reads an image the standard way, through the registry API that `docker pull` uses, as data:
@@ -38,7 +58,17 @@ Any registry that implements the standard registry API works: Docker Hub, GitHub
 
 For a private image, DeaconGuard needs a login for its registry: a username and a token or password with **pull** access. Prefer a read-only token where the registry offers one.
 
-**In the dashboard**, an admin saves it under **Images**, **Registry logins**: the registry's host (`docker.io`, `ghcr.io`, `registry.example.com:5000`), the username and the token. It is used for every image in that registry. The server stores it in its database and never shows it again; to change it, edit the login and type a new one, or leave it empty to keep the saved one. The audit log records who added, changed or deleted each login, without the token.
+**In the dashboard**, an admin saves it under **Images**, **Registry logins**: the registry's host (`docker.io`, `ghcr.io`, `registry.example.com:5000`), the username and the token. It is used for every image in that registry. The server stores it in its database and never shows it again; to change it, edit the login and type a new one, or leave it empty to keep the saved one. A saved token is never sent to another registry: changing a login's registry needs the token again. The audit log records who added, changed or deleted each login, without the token.
+
+What to save for the cloud registries:
+
+| Registry | Host | Login |
+| --- | --- | --- |
+| Amazon ECR | `123456789012.dkr.ecr.eu-north-1.amazonaws.com` | Choose **An AWS access key**, and give an access key ID and secret access key of an IAM user with only the `AmazonEC2ContainerRegistryReadOnly` policy. ECR's registry passwords last 12 hours, so DeaconGuard keeps the key and gets a new password from the ECR API when it needs one. |
+| Google Artifact Registry | `europe-north1-docker.pkg.dev` | Username `_json_key`, and as the password the JSON key of a service account with the **Artifact Registry Reader** role. |
+| Azure Container Registry | `myregistry.azurecr.io` | A [repository-scoped token](https://learn.microsoft.com/azure/container-registry/container-registry-repository-scoped-permissions) with `content/read`, or a service principal's application ID and secret with the **AcrPull** role. |
+| GitHub (GHCR) | `ghcr.io` | Your GitHub username and a personal access token (classic) with only `read:packages`. |
+| Docker Hub | `docker.io` | Your username and a personal access token with **Read-only** access. A login also raises Docker Hub's pull limits. |
 
 **On the command line**, give it in the environment:
 
