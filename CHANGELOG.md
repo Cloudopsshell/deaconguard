@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-19
+
 ### Added
 
 - **Images in registries:** `deaconguard image scan IMAGE` reads an image from its registry (Docker Hub, GHCR, Quay, Harbor, GitLab, Artifact Registry, ACR, ECR or any registry API v2), without pulling it into Docker or running it, and checks its packages and libraries as a running container is checked. Layers are read as they download, checked against their digests, and what was read is cached by digest (at most 2 GB), so shared base layers are read once. `--platform` picks a platform of a multi-platform image, `--fail-on` exits with status 4 at or above a severity, for pipelines, and `--json` prints everything. A login for private images comes from `DEACONGUARD_REGISTRY_USERNAME` and `DEACONGUARD_REGISTRY_PASSWORD`.
@@ -72,7 +74,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.0.1...v1.0.2
