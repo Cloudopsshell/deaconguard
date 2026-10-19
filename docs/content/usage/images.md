@@ -92,9 +92,9 @@ Vulnerabilities: 734 (142 low, 592 unknown); 258 fixed by a newer image, 1 known
   LOW  nginx 1.27.5-1~bookworm (Debian 12 (bookworm)): CVE-2023-44487 · Fixed in …: update the image. Known to be exploited (CISA KEV).
 ```
 
-It lists each vulnerability with a fix or known to be exploited, most urgent first. `--json` prints it all as JSON.
+It lists each vulnerability with a fix or known to be exploited, most urgent first. `--format json` prints it all as JSON.
 
-**In a pipeline:** `--fail-on high` (or `critical`, `medium`, `low`) exits with status **4** when the image has a vulnerability at or above that severity, so a build can stop before the image is pushed or deployed.
+**In a pipeline:** `--fail-on high` (or `critical`, `medium`, `low`) exits with status **4** when the image has a vulnerability at or above that severity, so a build can stop before the image is pushed or deployed. The same command checks `docker save` archives, OCI layouts and folders, and writes SARIF, JUnit and SBOM reports: see [Images in CI/CD pipelines](./ci-cd.md).
 
 ## Limits
 

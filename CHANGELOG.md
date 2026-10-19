@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Images in pipelines:** `deaconguard image scan` also reads a `docker save` or `podman save` archive (gzip-compressed or not), an OCI image layout (a folder or a tar, with `--platform` for several platforms), or a folder (`dir:`): an unpacked image, a chroot or a project with lock files. Archive layers are checked against their digests; links in a folder are never followed outside it. Prefixes `docker-archive:`, `oci:` and `dir:` say which; without one, DeaconGuard looks.
+- **Reports for CI:** `--format sarif` (SARIF 2.1.0 for GitHub code scanning and others, with `security-severity`), `--format junit` (a test case per vulnerability; those at or above `--fail-on` fail), `--format cyclonedx` and `--format spdx` (the image's SBOM), and `--format json`, which now lists every vulnerability with `fixable` and `known_exploited`. `--output FILE` writes the report to a file and keeps the summary in the log.
+- **`--ignore-unfixed`:** `--fail-on` counts, and reports list, only vulnerabilities an update fixes or that are known to be exploited.
+
 ## [1.3.0] - 2026-10-19
 
 ### Added

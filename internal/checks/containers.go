@@ -28,6 +28,8 @@ type ContainerResult struct {
 	Exploited int            `json:"exploited"`
 	// Fixable counts the vulnerabilities an update in the image fixes.
 	Fixable int `json:"fixable"`
+	// FixableSeverity counts them by severity.
+	FixableSeverity map[string]int `json:"fixable_severity,omitempty"`
 	// Findings are the container's vulnerabilities that have a fix or are
 	// known to be exploited, most urgent first, at most 300.
 	Findings []Finding `json:"findings,omitempty"`
