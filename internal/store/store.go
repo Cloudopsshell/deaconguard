@@ -234,6 +234,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 22 {
+		if err := execInTx(db, schemaV22); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -700,6 +705,48 @@ const schemaV21 = `
 ALTER TABLE hosts ADD COLUMN auto_scan_containers INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE hosts ADD COLUMN last_auto_scan TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 21;`
+
+// schemaV22 adds registry images: saved registry logins, the images to check,
+// and their scans. A scan's result is the image's checked inventory as JSON.
+const schemaV22 = `
+CREATE TABLE registry_logins (
+	id TEXT PRIMARY KEY,
+	registry TEXT NOT NULL UNIQUE,
+	username TEXT NOT NULL,
+	secret TEXT NOT NULL,
+	created_by TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE images (
+	id TEXT PRIMARY KEY,
+	reference TEXT NOT NULL,
+	platform TEXT NOT NULL,
+	created_by TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	UNIQUE (reference, platform)
+);
+CREATE TABLE image_scans (
+	id TEXT PRIMARY KEY,
+	image_id TEXT NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+	status TEXT NOT NULL,
+	error TEXT NOT NULL DEFAULT '',
+	digest TEXT NOT NULL DEFAULT '',
+	os TEXT NOT NULL DEFAULT '',
+	critical INTEGER NOT NULL DEFAULT 0,
+	high INTEGER NOT NULL DEFAULT 0,
+	medium INTEGER NOT NULL DEFAULT 0,
+	low INTEGER NOT NULL DEFAULT 0,
+	unknown INTEGER NOT NULL DEFAULT 0,
+	exploited INTEGER NOT NULL DEFAULT 0,
+	fixable INTEGER NOT NULL DEFAULT 0,
+	result TEXT NOT NULL DEFAULT '',
+	started_by TEXT NOT NULL,
+	started_at TEXT NOT NULL,
+	finished_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX image_scans_by_image ON image_scans(image_id, started_at);
+PRAGMA user_version = 22;`
 
 // backfillV8 sets the fix state and per-scan fix summaries of findings saved
 // before schema 8.

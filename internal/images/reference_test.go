@@ -30,3 +30,22 @@ func TestParseReference(t *testing.T) {
 }
 
 const sixtyFour = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+func TestRegistryHost(t *testing.T) {
+	for input, want := range map[string]string{
+		"docker.io":                            dockerHub,
+		"https://GHCR.io/":                     "ghcr.io",
+		"registry.example.com:5000":            "registry.example.com:5000",
+		" quay.io ":                            "quay.io",
+		"123.dkr.ecr.eu-north-1.amazonaws.com": "123.dkr.ecr.eu-north-1.amazonaws.com",
+	} {
+		if got, err := RegistryHost(input); err != nil || got != want {
+			t.Errorf("RegistryHost(%q) = %q, %v; want %q", input, got, err, want)
+		}
+	}
+	for _, input := range []string{"", "ghcr.io/acme", "../etc", "a b"} {
+		if _, err := RegistryHost(input); err == nil {
+			t.Errorf("RegistryHost(%q) accepted", input)
+		}
+	}
+}

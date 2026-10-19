@@ -11,6 +11,7 @@ upgrade notes.
 ### Added
 
 - **Images in registries:** `deaconguard image scan IMAGE` reads an image from its registry (Docker Hub, GHCR, Quay, Harbor, GitLab, Artifact Registry, ACR, ECR or any registry API v2), without pulling it into Docker or running it, and checks its packages and libraries as a running container is checked. Layers are read as they download, checked against their digests, and what was read is cached by digest (at most 2 GB), so shared base layers are read once. `--platform` picks a platform of a multi-platform image, `--fail-on` exits with status 4 at or above a severity, for pipelines, and `--json` prints everything. A login for private images comes from `DEACONGUARD_REGISTRY_USERNAME` and `DEACONGUARD_REGISTRY_PASSWORD`.
+- **Images page:** the dashboard checks registry images too. Operators add an image by name and platform and press **Scan now**; the server reads it, one image at a time, and keeps its last 20 scans with their digests and results. Admins save **registry logins** for private registries; the token is stored on the server and never shown again. The API has `/api/images`, `/api/image-scans/{id}` and `/api/registry-logins`. The database moves to schema 22.
 
 ## [1.2.0] - 2026-10-18
 

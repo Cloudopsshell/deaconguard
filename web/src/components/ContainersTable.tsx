@@ -94,40 +94,47 @@ function ContainerRows({ container, total, isOpen, toggle }: { container: Contai
       {isOpen && (
         <tr>
           <td colSpan={4} className="bg-slate-50 px-5 py-4 dark:bg-slate-900/60">
-            <div className="space-y-3">
-              {container.error && <ErrorMessage error={container.error} />}
-              {(container.notes ?? []).map((note) => (
-                <p key={note} className="flex gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <Info className="mt-0.5 size-4 shrink-0 text-slate-400" aria-hidden /> {note}
-                </p>
-              ))}
-              {(container.findings ?? []).length === 0 ? (
-                <p className="text-sm text-slate-600 dark:text-slate-300">Nothing in this container has a fix or is known to be exploited.</p>
-              ) : (
-                <ul className="divide-y divide-slate-200 rounded-lg bg-white ring-1 ring-slate-200 dark:divide-slate-800 dark:bg-slate-900 dark:ring-slate-800">
-                  {[...(container.findings ?? [])]
-                    .sort(
-                      (a, b) =>
-                        Number(b.detail.includes("Known to be exploited")) - Number(a.detail.includes("Known to be exploited")) ||
-                        severityOrder.indexOf(normalizeSeverity(a.severity)) - severityOrder.indexOf(normalizeSeverity(b.severity)),
-                    )
-                    .map((finding) => (
-                      <li key={finding.rule + finding.title} className="flex gap-3 px-4 py-2.5">
-                        <SeverityBadge severity={finding.severity} />
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium break-words">{finding.title.replace(`${container.name}: `, "")}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            <span className="font-mono">{finding.rule}</span> · {finding.detail}
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </div>
+            <ContainerFindings container={container} />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+/** What to fix in a container's or an image's packages and libraries: notes, then findings, exploited and most severe first. */
+export function ContainerFindings({ container, emptyText = "Nothing in this container has a fix or is known to be exploited." }: { container: ContainerResult; emptyText?: string }) {
+  return (
+    <div className="space-y-3">
+      {container.error && <ErrorMessage error={container.error} />}
+      {(container.notes ?? []).map((note) => (
+        <p key={note} className="flex gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <Info className="mt-0.5 size-4 shrink-0 text-slate-400" aria-hidden /> {note}
+        </p>
+      ))}
+      {(container.findings ?? []).length === 0 ? (
+        <p className="text-sm text-slate-600 dark:text-slate-300">{emptyText}</p>
+      ) : (
+        <ul className="divide-y divide-slate-200 rounded-lg bg-white ring-1 ring-slate-200 dark:divide-slate-800 dark:bg-slate-900 dark:ring-slate-800">
+          {[...(container.findings ?? [])]
+            .sort(
+              (a, b) =>
+                Number(b.detail.includes("Known to be exploited")) - Number(a.detail.includes("Known to be exploited")) ||
+                severityOrder.indexOf(normalizeSeverity(a.severity)) - severityOrder.indexOf(normalizeSeverity(b.severity)),
+            )
+            .map((finding) => (
+              <li key={finding.rule + finding.title} className="flex gap-3 px-4 py-2.5">
+                <SeverityBadge severity={finding.severity} />
+                <div className="min-w-0">
+                  <div className="text-sm font-medium break-words">{finding.title.replace(`${container.name}: `, "")}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    <span className="font-mono">{finding.rule}</span> · {finding.detail}
+                  </div>
+                </div>
+              </li>
+            ))}
+        </ul>
+      )}
+    </div>
   );
 }
