@@ -1,4 +1,4 @@
-// Package ciout writes an image check for CI systems: SARIF 2.1.0, which
+// Package ciout writes check results for CI systems: SARIF 2.1.0, which
 // GitHub code scanning, GitLab and Azure DevOps read, and JUnit XML, which
 // GitLab, Jenkins, Bitbucket and Azure DevOps show as test results.
 package ciout
@@ -16,6 +16,24 @@ import (
 	"deaconguard/internal/scan"
 )
 
+// Item is one result: a vulnerability, or a finding in a file.
+type Item struct {
+	Rule     string
+	Severity string
+	// Title says what and where, in one line; Detail what to do.
+	Title  string
+	Detail string
+	// Help is the rule's longer description, HelpURI where to read more.
+	Help    string
+	HelpURI string
+	// URI is the file or image, relative; Line its line, from 1.
+	URI  string
+	Line int
+	// Group is the JUnit class name: the image or file.
+	Group      string
+	Properties map[string]any
+}
+
 // securitySeverity is the score GitHub sorts and filters alerts by.
 var securitySeverity = map[string]string{"CRITICAL": "9.5", "HIGH": "8.0", "MEDIUM": "5.5", "LOW": "2.0"}
 
@@ -29,22 +47,8 @@ func level(severity string) string {
 	return "note"
 }
 
-// title is a finding's title without the image name in front.
-func title(image string, v scan.Vulnerability) string {
-	return strings.TrimPrefix(v.Title, image+": ")
-}
-
-// helpURI links a vulnerability's ID; OSV knows CVEs and GHSAs alike.
-func helpURI(id string) string { return "https://osv.dev/vulnerability/" + id }
-
-// artifact is the image as a SARIF location: a relative path, since a
-// colon would read as a URI scheme.
-func artifact(image string) string {
-	return strings.NewReplacer(":", "-", "@", "-", " ", "-").Replace(strings.TrimLeft(image, "/"))
-}
-
-// SARIF writes the vulnerabilities as one SARIF 2.1.0 run.
-func SARIF(image string, vulnerabilities []scan.Vulnerability) ([]byte, error) {
+// SARIF writes items as one SARIF 2.1.0 run, with a rule per rule ID.
+func SARIF(items []Item) ([]byte, error) {
 	type message struct {
 		Text string `json:"text"`
 	}
@@ -53,7 +57,7 @@ func SARIF(image string, vulnerabilities []scan.Vulnerability) ([]byte, error) {
 		Name                 string         `json:"name"`
 		ShortDescription     message        `json:"shortDescription"`
 		FullDescription      message        `json:"fullDescription"`
-		HelpURI              string         `json:"helpUri"`
+		HelpURI              string         `json:"helpUri,omitempty"`
 		Help                 message        `json:"help"`
 		DefaultConfiguration map[string]any `json:"defaultConfiguration"`
 		Properties           map[string]any `json:"properties"`
@@ -61,36 +65,48 @@ func SARIF(image string, vulnerabilities []scan.Vulnerability) ([]byte, error) {
 	rules := []rule{}
 	results := []map[string]any{}
 	index := map[string]int{}
-	for _, v := range vulnerabilities {
-		severity := strings.ToUpper(v.Severity)
-		if _, seen := index[v.Rule]; !seen {
-			properties := map[string]any{"tags": []string{"security", "vulnerability", strings.ToLower(severity)}}
+	for _, item := range items {
+		severity := strings.ToUpper(item.Severity)
+		if _, seen := index[item.Rule]; !seen {
+			properties := map[string]any{"tags": []string{"security", strings.ToLower(severity)}}
 			if score, ok := securitySeverity[severity]; ok {
 				properties["security-severity"] = score
 			}
-			index[v.Rule] = len(rules)
+			help := item.Help
+			if help == "" {
+				help = item.Detail
+			}
+			index[item.Rule] = len(rules)
 			rules = append(rules, rule{
-				ID: v.Rule, Name: v.Rule,
-				ShortDescription:     message{Text: v.Rule},
-				FullDescription:      message{Text: title(image, v)},
-				HelpURI:              helpURI(v.Rule),
-				Help:                 message{Text: v.Detail},
+				ID: item.Rule, Name: item.Rule,
+				ShortDescription:     message{Text: item.Rule},
+				FullDescription:      message{Text: item.Title},
+				HelpURI:              item.HelpURI,
+				Help:                 message{Text: help},
 				DefaultConfiguration: map[string]any{"level": level(severity)},
 				Properties:           properties,
 			})
 		}
-		fingerprint := sha256.Sum256([]byte(image + "\x00" + v.Rule + "\x00" + title(image, v)))
+		line := item.Line
+		if line < 1 {
+			line = 1
+		}
+		fingerprint := sha256.Sum256([]byte(item.URI + "\x00" + item.Rule + "\x00" + item.Title))
+		properties := map[string]any{"severity": severity}
+		for key, value := range item.Properties {
+			properties[key] = value
+		}
 		results = append(results, map[string]any{
-			"ruleId":    v.Rule,
-			"ruleIndex": index[v.Rule],
+			"ruleId":    item.Rule,
+			"ruleIndex": index[item.Rule],
 			"level":     level(severity),
-			"message":   message{Text: fmt.Sprintf("%s in %s. %s", title(image, v), image, v.Detail)},
+			"message":   message{Text: strings.TrimSpace(item.Title + ". " + item.Detail)},
 			"locations": []map[string]any{{"physicalLocation": map[string]any{
-				"artifactLocation": map[string]string{"uri": artifact(image)},
-				"region":           map[string]int{"startLine": 1},
+				"artifactLocation": map[string]string{"uri": item.URI},
+				"region":           map[string]int{"startLine": line},
 			}}},
 			"partialFingerprints": map[string]string{"deaconguard/v1": hex.EncodeToString(fingerprint[:16])},
-			"properties":          map[string]any{"fixable": v.Fixable, "knownExploited": v.Exploited, "severity": severity},
+			"properties":          properties,
 		})
 	}
 	document := map[string]any{
@@ -138,25 +154,26 @@ type junitSuites struct {
 	Suites   []junitSuite `xml:"testsuite"`
 }
 
-// JUnit writes the vulnerabilities as test cases of one suite: those that
-// failing selects, such as those at or above --fail-on, fail; the others
-// pass, so the report lists them too. With none, one passing case says so.
-func JUnit(image string, vulnerabilities []scan.Vulnerability, failing func(scan.Vulnerability) bool) ([]byte, error) {
-	suite := junitSuite{Name: "DeaconGuard: " + image}
-	for _, v := range vulnerabilities {
-		c := junitCase{Name: title(image, v), ClassName: image}
-		if failing(v) {
-			text := v.Detail
-			if !strings.Contains(text, helpURI(v.Rule)) {
-				text += "\n" + helpURI(v.Rule)
+// JUnit writes items as test cases of one suite: those that failing
+// selects, such as those at or above --fail-on, fail; the others pass, so
+// the report lists them too. With none, one passing case says so.
+func JUnit(suiteName string, items []Item, failing func(Item) bool) ([]byte, error) {
+	suite := junitSuite{Name: "DeaconGuard: " + suiteName}
+	for _, item := range items {
+		c := junitCase{Name: item.Title, ClassName: item.Group}
+		if failing(item) {
+			text := item.Detail
+			if item.HelpURI != "" && !strings.Contains(text, item.HelpURI) {
+				text += "\n" + item.HelpURI
 			}
-			c.Failure = &junitFailure{Message: strings.ToUpper(v.Severity) + ": " + v.Rule, Type: strings.ToUpper(v.Severity), Text: text}
+			severity := strings.ToUpper(item.Severity)
+			c.Failure = &junitFailure{Message: severity + ": " + item.Rule, Type: severity, Text: text}
 			suite.Failures++
 		}
 		suite.Cases = append(suite.Cases, c)
 	}
 	if len(suite.Cases) == 0 {
-		suite.Cases = append(suite.Cases, junitCase{Name: "No vulnerabilities found", ClassName: image})
+		suite.Cases = append(suite.Cases, junitCase{Name: "Nothing found", ClassName: suiteName})
 	}
 	suite.Tests = len(suite.Cases)
 	document := junitSuites{Name: "DeaconGuard", Tests: suite.Tests, Failures: suite.Failures, Suites: []junitSuite{suite}}
@@ -165,4 +182,21 @@ func JUnit(image string, vulnerabilities []scan.Vulnerability, failing func(scan
 		return nil, err
 	}
 	return append([]byte(xml.Header), append(encoded, '\n')...), nil
+}
+
+// ImageItems turns an image's vulnerabilities into items. The image is the
+// location, as a relative path, since a colon would read as a URI scheme.
+func ImageItems(image string, vulnerabilities []scan.Vulnerability) []Item {
+	uri := strings.NewReplacer(":", "-", "@", "-", " ", "-").Replace(strings.TrimLeft(image, "/"))
+	items := make([]Item, 0, len(vulnerabilities))
+	for _, v := range vulnerabilities {
+		title := strings.TrimPrefix(v.Title, image+": ")
+		items = append(items, Item{
+			Rule: v.Rule, Severity: v.Severity, Title: fmt.Sprintf("%s in %s", title, image), Detail: v.Detail,
+			Help: title + ". " + v.Detail, HelpURI: "https://osv.dev/vulnerability/" + v.Rule,
+			URI: uri, Line: 1, Group: image,
+			Properties: map[string]any{"fixable": v.Fixable, "knownExploited": v.Exploited},
+		})
+	}
+	return items
 }
