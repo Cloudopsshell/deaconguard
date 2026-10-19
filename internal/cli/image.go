@@ -113,12 +113,11 @@ func runImage(arguments []string, input io.Reader, output, diagnostics io.Writer
 		if parseErr != nil {
 			return parseErr
 		}
-		// A login for the image's registry, from the environment: a CI
-		// job's secrets, for example.
-		client := images.NewClient(func(registry string) (images.Credentials, bool) {
-			user := os.Getenv("DEACONGUARD_REGISTRY_USERNAME")
-			return images.Credentials{Username: user, Password: os.Getenv("DEACONGUARD_REGISTRY_PASSWORD")}, user != ""
-		})
+		credentials, credentialsErr := environmentCredentials()
+		if credentialsErr != nil {
+			return credentialsErr
+		}
+		client := images.NewClient(credentials)
 		inventory, resolved, err = images.Read(ctx, client, ref, platform, progress)
 	}
 	if err != nil {
@@ -176,6 +175,28 @@ func runImage(arguments []string, input io.Reader, output, diagnostics io.Writer
 		return errFindings
 	}
 	return nil
+}
+
+// environmentCredentials is the registry login from the environment: a CI
+// job's secrets, for example. DEACONGUARD_REGISTRY limits it to one
+// registry, so a login for the job's own registry never reaches another,
+// such as Docker Hub for a base image.
+func environmentCredentials() (func(string) (images.Credentials, bool), error) {
+	only := ""
+	if name := os.Getenv("DEACONGUARD_REGISTRY"); name != "" {
+		host, err := images.RegistryHost(name)
+		if err != nil {
+			return nil, fmt.Errorf("DEACONGUARD_REGISTRY: %w", err)
+		}
+		only = host
+	}
+	user, password := os.Getenv("DEACONGUARD_REGISTRY_USERNAME"), os.Getenv("DEACONGUARD_REGISTRY_PASSWORD")
+	return func(registry string) (images.Credentials, bool) {
+		if user == "" || (only != "" && registry != only) {
+			return images.Credentials{}, false
+		}
+		return images.Credentials{Username: user, Password: password}, true
+	}, nil
 }
 
 // vulnerabilityList is every vulnerability for --format json.

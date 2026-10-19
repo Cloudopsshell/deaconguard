@@ -104,6 +104,71 @@ jobs:
         env:
           SHELLCHECK_OPTS: -s sh
 
+      - name: ShellCheck the CI installer
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          scandir: ci
+        env:
+          SHELLCHECK_OPTS: -s sh
+
+      - name: The CI installer pins the same cosign as install.sh
+        run: |
+          pins() { grep -E '^COSIGN_(VERSION|SHA256_AMD64|SHA256_ARM64)=' "$1"; }
+          if [ "$(pins packaging/install.sh)" != "$(pins ci/install.sh)" ]; then
+            echo "::error::ci/install.sh and packaging/install.sh pin different cosign releases; update both together"
+            exit 1
+          fi
+
+  action:
+    name: GitHub Action
+    runs-on: [self-hosted, deaconguard]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache: false
+
+      # The action normally installs a release; here it runs this commit's build.
+      - name: Build deaconguard
+        run: |
+          go build -o "$RUNNER_TEMP/bin/deaconguard" ./cmd/deaconguard
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Check this repository's Dockerfile and manifests
+        id: config
+        uses: ./
+        with:
+          scan: config
+          target: Dockerfile deploy
+          version: installed
+          cache: "false"
+          output: config.sarif
+
+      - name: Check an image in a registry
+        uses: ./
+        with:
+          target: alpine:3.22
+          fail-on: critical
+          ignore-unfixed: "true"
+          format: junit
+          output: image.xml
+          version: installed
+          cache: "false"
+
+      - name: The reports were written
+        env:
+          CONFIG_STATUS: ${{ steps.config.outputs.status }}
+        run: |
+          grep -q '"version": "2.1.0"' config.sarif
+          grep -q 'DG-K8S-' config.sarif
+          grep -q '<testsuites' image.xml
+          [ "$CONFIG_STATUS" = "0" ]
+
   docs:
     name: Docs
     runs-on: [self-hosted, deaconguard]
