@@ -134,11 +134,17 @@ func writeFindings(r findingsReport, format, outputFile, failOn string, output, 
 	items := make([]ciout.Item, 0, len(r.findings))
 	for _, f := range r.findings {
 		help := "https://docs.deaconguard.io/usage/config-checks#rules"
-		if !strings.HasPrefix(f.Rule, "DG-") {
+		if strings.HasPrefix(f.Rule, "DG-TLS-") || strings.HasPrefix(f.Rule, "DG-NET-") {
+			help = "https://docs.deaconguard.io/usage/network#rules"
+		} else if !strings.HasPrefix(f.Rule, "DG-") {
 			help = "https://osv.dev/vulnerability/" + f.Rule
 		}
-		items = append(items, ciout.Item{Rule: f.Rule, Severity: f.Severity, Title: f.Title, Detail: f.Detail,
-			HelpURI: help, URI: f.File, Line: f.Line, Group: f.File})
+		item := ciout.Item{Rule: f.Rule, Severity: f.Severity, Title: f.Title, Detail: f.Detail,
+			HelpURI: help, URI: f.File, Line: f.Line, Group: f.File}
+		if len(f.STIG) > 0 {
+			item.Properties = map[string]any{"stig": f.STIG}
+		}
+		items = append(items, item)
 	}
 	var report []byte
 	var err error
