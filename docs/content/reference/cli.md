@@ -44,7 +44,7 @@ Run as root after installing the package; the install script runs these for you.
 | `deaconguard user add USERNAME [--role admin\|operator\|viewer] [--password-stdin]` | Create an account; an admin unless `--role` says otherwise. |
 | `deaconguard user passwd USERNAME [--password-stdin]` | Change an account's password and sign it out. |
 | `deaconguard user role USERNAME admin\|operator\|viewer` | Change an account's [role](../usage/accounts.md#roles) and sign it out. The last admin keeps its role. |
-| `deaconguard user mfa-reset USERNAME` | Turn off an account's two-step sign-in and sign it out, for a lost phone when no other admin can reset it. |
+| `deaconguard user mfa-reset USERNAME` | Turn off an account's two-step sign-in, the authenticator app and every passkey, and sign it out, for a lost phone or passkey when no other admin can reset it. |
 | `deaconguard user list` | List accounts, with roles, two-step sign-in status and recovery codes left. |
 | `deaconguard user remove USERNAME` | Remove an account and sign it out. |
 | `deaconguard token create --server-url https://HOST:8443` | Create a one-time enrollment token, valid for 24 hours, and print the install command. |

@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Passkeys:** on **My account**, add passkeys (WebAuthn) kept on the device, a phone or a password manager, then choose **Sign in with a passkey**: a fingerprint, face or device PIN, with no password or code. A passkey counts as two-step sign-in, by itself or as the second step after the password, and also meets **Require it**. Only the public key is stored; DeaconGuard checks ES256, EdDSA and RS256 signatures itself, needs user verification, and refuses a passkey whose counter goes back. Passkeys need the dashboard on a name with a trusted certificate. Resetting an account's two-step sign-in, on the Accounts page or with `user mfa-reset`, removes its passkeys too. The database moves to schema 25.
+
 ## [1.6.0] - 2026-10-20
 
 ### Added

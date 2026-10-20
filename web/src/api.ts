@@ -75,13 +75,19 @@ export interface Session {
   login_required: boolean;
   authenticated: boolean;
   username?: string;
-  /** The password was right; the code from the authenticator app is still needed. */
+  /** The password was right; the second step is still needed. */
   mfa_pending?: boolean;
+  /** The second steps the account can use: its authenticator app, its passkeys. */
+  mfa_methods?: ("app" | "passkey")[];
   /** An admin set a temporary password, which must be changed first. */
   must_change_password?: boolean;
   /** Two-step sign-in is required for every account, and this one has none yet. */
   mfa_setup_required?: boolean;
+  /** Signs in with more than a password: an authenticator app, a passkey, or both. */
+  two_step?: boolean;
+  /** Has an authenticator app. */
   mfa_enabled?: boolean;
+  passkeys?: number;
   recovery_codes_left?: number;
   role?: Role;
   /** The account's saved mode and theme, if it chose one. */
@@ -94,6 +100,7 @@ export interface Account {
   username: string;
   created_at: string;
   mfa_enabled: boolean;
+  passkeys: number;
   recovery_codes_left: number;
   must_change_password: boolean;
   disabled: boolean;
@@ -619,6 +626,46 @@ export interface ContainerResult {
   error?: string;
 }
 
+/** A passkey of the signed-in account. */
+export interface Passkey {
+  id: string;
+  name: string;
+  transports?: string[];
+  created_at: string;
+  last_used_at: string;
+}
+
+/** Options for navigator.credentials, with binary values base64url-encoded. */
+export interface PasskeyOptions {
+  challenge: string;
+  rp_id: string;
+  rp_name?: string;
+  user_id?: string;
+  user_name?: string;
+  display_name?: string;
+  algorithms?: number[];
+  credentials: { id: string; transports?: string[] }[];
+  timeout: number;
+}
+
+/** A new passkey from navigator.credentials.create, base64url-encoded. */
+export interface PasskeyRegistration {
+  id: string;
+  client_data_json: string;
+  authenticator_data: string;
+  public_key: string;
+  algorithm: number;
+  transports: string[];
+}
+
+/** A passkey's answer from navigator.credentials.get, base64url-encoded. */
+export interface PasskeyAssertion {
+  id: string;
+  client_data_json: string;
+  authenticator_data: string;
+  signature: string;
+}
+
 /** A saved login for a container registry; the secret is never sent back. */
 export interface RegistryLogin {
   id: string;
@@ -1020,6 +1067,14 @@ export const api = {
   login: (username: string, password: string) => request<Session>("POST", "/api/login", { username, password }),
   logout: () => request<{ ok: boolean }>("POST", "/api/logout"),
   loginMFA: (code: string) => request<Session>("POST", "/api/login/mfa", { code }),
+  passkeyLoginOptions: () => request<PasskeyOptions>("POST", "/api/login/passkey/options", {}),
+  passkeyLogin: (assertion: PasskeyAssertion) => request<Session>("POST", "/api/login/passkey", assertion),
+  passkeys: () => request<Passkey[]>("GET", "/api/account/passkeys"),
+  passkeyOptions: () => request<PasskeyOptions>("POST", "/api/account/passkeys/options", {}),
+  addPasskey: (name: string, password: string, registration: PasskeyRegistration) =>
+    request<Passkey>("POST", "/api/account/passkeys", { name, password, ...registration }),
+  renamePasskey: (id: string, name: string) => request<{ ok: boolean }>("PATCH", `/api/account/passkeys/${id}`, { name }),
+  removePasskey: (id: string) => request<{ ok: boolean }>("DELETE", `/api/account/passkeys/${id}`),
   account: () => request<MyAccount>("GET", "/api/account"),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: boolean }>("POST", "/api/account/password", { current_password: currentPassword, new_password: newPassword }),

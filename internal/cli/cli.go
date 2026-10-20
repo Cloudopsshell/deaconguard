@@ -527,7 +527,7 @@ Web UI and server:
                                        roles: admin (default here), operator, viewer
   deaconguard user passwd USERNAME [--password-stdin]
   deaconguard user role USERNAME admin|operator|viewer
-  deaconguard user mfa-reset USERNAME   turn off two-step sign-in, for a lost phone
+  deaconguard user mfa-reset USERNAME   turn off two-step sign-in (app and passkeys), for a lost phone
   deaconguard user list | remove USERNAME
   deaconguard token create --server-url https://HOST:8443   one-time agent token, valid 24 hours
   deaconguard token create --server-url URL --reusable [--days N] [--name NAME] [--quiet]

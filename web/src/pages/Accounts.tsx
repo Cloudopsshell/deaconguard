@@ -112,7 +112,7 @@ export function Accounts() {
   if (users.error) return <ErrorMessage error={users.error} />;
   const { users: accounts, mfa_required: required } = users.data;
   const me = session.data?.username;
-  const withoutMFA = accounts.filter((account) => !account.mfa_enabled && !account.disabled).length;
+  const withoutMFA = accounts.filter((account) => !account.mfa_enabled && account.passkeys === 0 && !account.disabled).length;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -196,10 +196,13 @@ export function Accounts() {
                       </Td>
                       <Td className="whitespace-nowrap">{roleLabels[account.role]}</Td>
                       <Td>
-                        {account.mfa_enabled ? (
+                        {account.mfa_enabled || account.passkeys > 0 ? (
                           <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700 dark:text-emerald-400">
-                            <ShieldCheck className="size-4" /> On
-                            {account.recovery_codes_left <= 2 && (
+                            <ShieldCheck className="size-4" />{" "}
+                            {[account.mfa_enabled && "App", account.passkeys > 0 && `${account.passkeys} ${account.passkeys === 1 ? "passkey" : "passkeys"}`]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            {account.mfa_enabled && account.recovery_codes_left <= 2 && (
                               <span className="text-amber-700 dark:text-amber-400">· {account.recovery_codes_left} codes left</span>
                             )}
                           </span>
@@ -259,11 +262,11 @@ export function Accounts() {
                 detail: "For a forgotten password. Signs them out; they choose a new one at the next sign-in.",
                 run: () => setAction({ kind: "password", account: managing }),
               },
-              ...(managing.mfa_enabled
+              ...(managing.mfa_enabled || managing.passkeys > 0
                 ? [
                     {
                       label: "Reset two-step sign-in",
-                      detail: "For a lost phone and lost recovery codes. They set it up again.",
+                      detail: "For a lost phone or passkey, and lost recovery codes. Removes the app and every passkey, and signs them out; they set it up again.",
                       run: () => setAction({ kind: "reset" as const, account: managing }),
                     },
                   ]
