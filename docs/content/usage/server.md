@@ -3,7 +3,7 @@ title: Server
 description: Set up and run the DeaconGuard server and its dashboard.
 ---
 
-The server hosts the dashboard, stores results, evaluates packages against the advisories and hands scans to agents. It runs without root and never scans anything itself; see [Architecture](../architecture.md#the-rule). The [install script](../installation/install-script.md) sets it up for you. After installing the package yourself, run:
+The server hosts the dashboard, stores results, evaluates packages against the advisories and hands scans to agents. It runs without root and never scans a machine from inside: agents do, while the server reads registry images and scans the network targets you add from the outside; see [Architecture](../architecture.md#the-rule). The [install script](../installation/install-script.md) sets it up for you. After installing the package yourself, run:
 
 ```bash
 sudo deaconguard setup server

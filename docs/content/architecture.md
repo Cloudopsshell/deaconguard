@@ -7,7 +7,7 @@ import ThemedImage from '@theme/ThemedImage';
 
 ## The rule
 
-**The server never scans anything itself.** Every machine, the server's own included, is scanned by its own agent, as root. The server, which faces the network, runs without root and only stores results and checks them against the advisories.
+**The server never scans a machine from inside.** Every machine, the server's own included, is scanned by its own agent, as root. The server, which faces the network, runs without root and stores results and checks them against the advisories. What it reads itself needs no root and no login: [registry images](./usage/images.md), through the registry API, and the [network targets](./usage/network.md#in-the-dashboard) you add, from the outside, by connecting to their ports.
 
 <div className="architecture-figure">
   <ThemedImage
