@@ -27,6 +27,8 @@ The server checks the role on every request, not just the dashboard: a viewer wh
 
 Accounts from before DeaconGuard 0.11.0 are admins, so nobody loses access when upgrading. The first account, made by setup, is an admin. On the **Accounts** page, new accounts are viewers until you choose otherwise.
 
+To sign people in with your organisation's identity provider instead, see [Single sign-on](./single-sign-on.md).
+
 ## Two-step sign-in
 
 With two-step sign-in, a stolen or guessed password alone can't sign in. There are two ways, and an account can use both:

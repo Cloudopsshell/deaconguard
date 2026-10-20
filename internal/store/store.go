@@ -266,6 +266,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 26 {
+		if err := execInTx(db, schemaV26); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -732,6 +737,13 @@ const schemaV21 = `
 ALTER TABLE hosts ADD COLUMN auto_scan_containers INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE hosts ADD COLUMN last_auto_scan TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 21;`
+
+// schemaV26 links accounts to single sign-on: the provider's issuer and
+// subject, which never change for a person, unlike their name or email.
+const schemaV26 = `
+ALTER TABLE users ADD COLUMN oidc_subject TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX users_by_oidc_subject ON users(oidc_subject) WHERE oidc_subject != '';
+PRAGMA user_version = 26;`
 
 // schemaV25 adds passkeys: WebAuthn credentials that sign an account in.
 // Only the public key is kept.

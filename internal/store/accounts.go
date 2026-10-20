@@ -24,6 +24,8 @@ type User struct {
 	CreatedAt string `json:"created_at"`
 	// MFAEnabled reports two-step sign-in with an authenticator app.
 	MFAEnabled bool `json:"mfa_enabled"`
+	// SSO: the account signs in with single sign-on, and has no password.
+	SSO bool `json:"sso"`
 	// Passkeys counts the account's passkeys.
 	Passkeys int `json:"passkeys"`
 	// RecoveryCodesLeft counts the unused recovery codes.
