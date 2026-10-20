@@ -51,12 +51,13 @@ type Session struct {
 }
 
 const userColumns = `u.id, u.username, u.created_at, u.totp_secret != '', u.must_change_password, u.disabled, u.last_login_at,
-	(SELECT COUNT(*) FROM recovery_codes r WHERE r.user_id = u.id AND r.used_at = ''), u.role, u.appearance`
+	(SELECT COUNT(*) FROM recovery_codes r WHERE r.user_id = u.id AND r.used_at = ''), u.role, u.appearance,
+	(SELECT COUNT(*) FROM passkeys p WHERE p.user_id = u.id)`
 
 func scanUser(row rowScanner) (User, error) {
 	var user User
 	err := row.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.MFAEnabled, &user.MustChangePassword, &user.Disabled,
-		&user.LastLoginAt, &user.RecoveryCodesLeft, &user.Role, &user.Appearance)
+		&user.LastLoginAt, &user.RecoveryCodesLeft, &user.Role, &user.Appearance, &user.Passkeys)
 	return user, err
 }
 
@@ -471,8 +472,9 @@ func normalizeRecoveryCode(code string) string {
 	}, strings.ToLower(strings.TrimSpace(code)))
 }
 
-// RemoveMFA turns off userID's two-step sign-in and deletes its recovery
-// codes; an admin's reset also signs the account out everywhere.
+// RemoveMFA turns off userID's authenticator app and deletes its recovery
+// codes; an admin's reset also removes its passkeys and signs the account
+// out everywhere.
 func RemoveMFA(userID string, signOut bool) error {
 	db, err := database()
 	if err != nil {
@@ -494,6 +496,9 @@ func RemoveMFA(userID string, signOut bool) error {
 		return err
 	}
 	if signOut {
+		if _, err := tx.Exec("DELETE FROM passkeys WHERE user_id = ?", userID); err != nil {
+			return err
+		}
 		if _, err := tx.Exec("DELETE FROM sessions WHERE user_id = ?", userID); err != nil {
 			return err
 		}

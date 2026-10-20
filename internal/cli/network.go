@@ -243,9 +243,16 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			fmt.Fprintln(output, noAccountsMessage+" Create one: deaconguard user add USERNAME")
 		}
 		for _, user := range users {
-			state := "two-step sign-in: off"
+			var steps []string
 			if user.MFAEnabled {
-				state = fmt.Sprintf("two-step sign-in: on, %d recovery codes left", user.RecoveryCodesLeft)
+				steps = append(steps, fmt.Sprintf("authenticator app, %d recovery codes left", user.RecoveryCodesLeft))
+			}
+			if user.Passkeys > 0 {
+				steps = append(steps, fmt.Sprintf("%d %s", user.Passkeys, pluralWord(user.Passkeys, "passkey", "passkeys")))
+			}
+			state := "two-step sign-in: off"
+			if len(steps) > 0 {
+				state = "two-step sign-in: " + strings.Join(steps, " and ")
 			}
 			if user.Disabled {
 				state += ", disabled"
@@ -283,7 +290,7 @@ func runUser(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			return err
 		}
 		store.Audit(local.Username()+" (cli)", "user.mfa_reset", user.Username, "signed out everywhere", "")
-		fmt.Fprintf(output, "Turned off two-step sign-in for %s and signed out their sessions. They sign in with their password, then set it up again on My account.\n", user.Username)
+		fmt.Fprintf(output, "Turned off two-step sign-in for %s (the authenticator app and every passkey) and signed out their sessions. They sign in with their password, then set it up again on My account.\n", user.Username)
 		return nil
 	case "remove":
 		if len(arguments) != 2 {

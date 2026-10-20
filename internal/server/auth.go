@@ -25,7 +25,10 @@ type sessionContextKey struct{}
 
 // publicPaths answer without sign-in in network mode. The web app's files
 // are public too; its data is not.
-var publicPaths = map[string]bool{"/api/session": true, "/api/login": true, "/api/version": true}
+var publicPaths = map[string]bool{
+	"/api/session": true, "/api/login": true, "/api/version": true,
+	"/api/login/passkey/options": true, "/api/login/passkey": true,
+}
 
 // pendingPaths are all a session waiting for its second sign-in step may use.
 var pendingPaths = map[string]bool{"/api/login/mfa": true, "/api/logout": true}
@@ -35,6 +38,7 @@ var pendingPaths = map[string]bool{"/api/login/mfa": true, "/api/logout": true}
 var restrictedPaths = map[string]bool{
 	"/api/logout": true, "/api/account": true, "/api/account/password": true,
 	"/api/account/mfa": true, "/api/account/mfa/confirm": true,
+	"/api/account/passkeys": true, "/api/account/passkeys/options": true,
 }
 
 // signedIn requires a valid session for the API in network mode. A session
@@ -134,8 +138,8 @@ func (s *Server) accountNeeds(user store.User) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if required && !user.MFAEnabled {
-		return "set up two-step sign-in first: it is required for every account", nil
+	if required && !user.TwoStep() {
+		return "set up two-step sign-in first, with an authenticator app or a passkey: it is required for every account", nil
 	}
 	return "", nil
 }
@@ -178,14 +182,19 @@ type sessionResponse struct {
 	LoginRequired bool   `json:"login_required"`
 	Authenticated bool   `json:"authenticated"`
 	Username      string `json:"username,omitempty"`
-	// MFAPending: the password was right, and the code from the
-	// authenticator app is still needed.
+	// MFAPending: the password was right, and the second step is still
+	// needed: a code from the authenticator app, or a passkey.
 	MFAPending bool `json:"mfa_pending,omitempty"`
+	// MFAMethods are the second steps the account can use: "app", "passkey".
+	MFAMethods []string `json:"mfa_methods,omitempty"`
 	// What the account must do before anything else, if anything.
 	MustChangePassword bool `json:"must_change_password,omitempty"`
 	MFASetupRequired   bool `json:"mfa_setup_required,omitempty"`
-	// MFAEnabled and RecoveryCodesLeft drive the dashboard's reminders.
+	// TwoStep: the account signs in with an authenticator app or a passkey.
+	// It, MFAEnabled (the app) and RecoveryCodesLeft drive the reminders.
+	TwoStep           bool `json:"two_step"`
 	MFAEnabled        bool `json:"mfa_enabled"`
+	Passkeys          int  `json:"passkeys"`
 	RecoveryCodesLeft int  `json:"recovery_codes_left"`
 	// Role decides what the dashboard offers; the server checks it on every request.
 	Role string `json:"role,omitempty"`
@@ -201,8 +210,8 @@ func (s *Server) sessionFor(user store.User) (sessionResponse, error) {
 	}
 	return sessionResponse{
 		LoginRequired: true, Authenticated: true, Username: user.Username,
-		MustChangePassword: user.MustChangePassword, MFASetupRequired: required && !user.MFAEnabled,
-		MFAEnabled: user.MFAEnabled, RecoveryCodesLeft: user.RecoveryCodesLeft,
+		MustChangePassword: user.MustChangePassword, MFASetupRequired: required && !user.TwoStep(),
+		TwoStep: user.TwoStep(), MFAEnabled: user.MFAEnabled, Passkeys: user.Passkeys, RecoveryCodesLeft: user.RecoveryCodesLeft,
 		Role: user.Role, Appearance: appearanceJSON(user.Appearance),
 	}, nil
 }
@@ -252,7 +261,7 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if session.Stage != store.StageFull {
-		writeJSON(w, http.StatusOK, sessionResponse{LoginRequired: true, Username: user.Username, MFAPending: true})
+		writeJSON(w, http.StatusOK, sessionResponse{LoginRequired: true, Username: user.Username, MFAPending: true, MFAMethods: mfaMethods(user)})
 		return
 	}
 	response, err := s.sessionFor(user)
@@ -261,6 +270,18 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+// mfaMethods lists the second steps user can finish signing in with.
+func mfaMethods(user store.User) []string {
+	var methods []string
+	if user.MFAEnabled {
+		methods = append(methods, "app")
+	}
+	if user.Passkeys > 0 {
+		methods = append(methods, "passkey")
+	}
+	return methods
 }
 
 type loginRequest struct {
@@ -309,7 +330,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stage := store.StageFull
-	if user.MFAEnabled {
+	if user.TwoStep() {
 		stage = store.StageMFA
 	}
 	token, session, err := store.CreateSession(user.ID, stage, remote, r.UserAgent())
@@ -319,7 +340,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setSessionCookie(w, token, session)
 	if stage == store.StageMFA {
-		writeJSON(w, http.StatusOK, sessionResponse{LoginRequired: true, Username: user.Username, MFAPending: true})
+		writeJSON(w, http.StatusOK, sessionResponse{LoginRequired: true, Username: user.Username, MFAPending: true, MFAMethods: mfaMethods(user)})
 		return
 	}
 	store.MarkSignedIn(user.ID)

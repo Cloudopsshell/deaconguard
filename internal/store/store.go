@@ -261,6 +261,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 25 {
+		if err := execInTx(db, schemaV25); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -727,6 +732,24 @@ const schemaV21 = `
 ALTER TABLE hosts ADD COLUMN auto_scan_containers INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE hosts ADD COLUMN last_auto_scan TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 21;`
+
+// schemaV25 adds passkeys: WebAuthn credentials that sign an account in.
+// Only the public key is kept.
+const schemaV25 = `
+CREATE TABLE passkeys (
+	id TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	credential_id BLOB NOT NULL UNIQUE,
+	public_key BLOB NOT NULL,
+	algorithm INTEGER NOT NULL,
+	sign_count INTEGER NOT NULL DEFAULT 0,
+	name TEXT NOT NULL,
+	transports TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	last_used_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX passkeys_by_user ON passkeys(user_id);
+PRAGMA user_version = 25;`
 
 // schemaV24 adds network targets: addresses, ranges and names the server
 // scans for open ports and TLS, and their scans.

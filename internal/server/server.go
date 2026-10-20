@@ -50,6 +50,8 @@ type Server struct {
 	network bool
 	pin     string
 	limiter *failureLimiter
+	// passkeys holds the WebAuthn challenges waiting for the browser.
+	passkeys passkeyChallenges
 	// scheduler runs scheduled scans once StartScheduler is called.
 	scheduler *scheduler
 	// notifier sends notifications once StartScheduler is called.
@@ -109,6 +111,8 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.HandleFunc("POST /api/login/mfa", s.loginMFA)
+	mux.HandleFunc("POST /api/login/passkey/options", s.startPasskeyLogin)
+	mux.HandleFunc("POST /api/login/passkey", s.passkeyLogin)
 	mux.HandleFunc("GET /api/account", s.account)
 	mux.HandleFunc("PATCH /api/account/appearance", s.saveAppearance)
 	mux.HandleFunc("POST /api/account/password", s.changeOwnPassword)
@@ -116,6 +120,11 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/account/mfa/confirm", s.confirmMFA)
 	mux.HandleFunc("POST /api/account/mfa/remove", s.removeOwnMFA)
 	mux.HandleFunc("POST /api/account/recovery-codes", s.newRecoveryCodes)
+	mux.HandleFunc("GET /api/account/passkeys", s.networkOnly(s.listPasskeys))
+	mux.HandleFunc("POST /api/account/passkeys/options", s.networkOnly(s.startPasskey))
+	mux.HandleFunc("POST /api/account/passkeys", s.networkOnly(s.addPasskey))
+	mux.HandleFunc("PATCH /api/account/passkeys/{id}", s.networkOnly(s.renamePasskey))
+	mux.HandleFunc("DELETE /api/account/passkeys/{id}", s.networkOnly(s.removePasskey))
 	mux.HandleFunc("DELETE /api/account/sessions/{id}", s.endOwnSession)
 	mux.HandleFunc("GET /api/account/tokens", s.networkOnly(s.listOwnAPITokens))
 	mux.HandleFunc("POST /api/account/tokens", s.networkOnly(s.createAPIToken))
