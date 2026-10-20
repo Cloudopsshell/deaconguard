@@ -8,6 +8,15 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **TLS checks:** `deaconguard tls check HOST[:PORT]...` checks a TLS service with handshakes only: a certificate expired or expiring within 14 or 30 days, untrusted or for another name, a short key or a SHA-1 signature; TLS 1.0 or 1.1 accepted, TLS 1.3 missing; 3DES or RC4 accepted, and suites without forward secrecy.
+- **Network scans:** `deaconguard net scan TARGET...` finds open TCP ports on addresses, ranges and names you own, with each service's greeting, web server header or TLS, and reports exposed databases, caches and brokers, the Docker API without TLS, kubelets and etcd, cleartext logins, and SMB or Remote Desktop. `--tls` checks each TLS service it finds. Plain TCP connects, 64 at a time, at most 4096 addresses per scan. Run from outside your network, it shows what the internet sees.
+
+### Changed
+
+- SARIF reports of config and cluster scans carry each finding's DISA STIG IDs as a `stig` property too, besides naming them in the message.
+
 ## [1.5.0] - 2026-10-19
 
 ### Added

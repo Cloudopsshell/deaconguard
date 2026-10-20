@@ -154,3 +154,26 @@ func TestEnvironmentCredentialsStayWithTheirRegistry(t *testing.T) {
 		t.Fatal("a bad DEACONGUARD_REGISTRY was accepted")
 	}
 }
+
+func TestNetAndTLSCommands(t *testing.T) {
+	run := func(arguments ...string) (string, int) {
+		var out, diagnostics strings.Builder
+		code := Run(arguments, strings.NewReader(""), &out, &diagnostics)
+		return out.String() + diagnostics.String(), code
+	}
+	if out, code := run("net", "scan", "127.0.0.1", "--ports", "1", "--timeout", "500ms", "--format", "json"); code != 0 || !strings.Contains(out, `"addresses": 1`) {
+		t.Fatalf("net scan: %d %s", code, out)
+	}
+	if out, code := run("net", "scan", "10.0.0.0/8"); code == 0 || !strings.Contains(out, "smaller range") {
+		t.Fatalf("a /8: %d %s", code, out)
+	}
+	if out, code := run("net", "scan", "127.0.0.1", "--ports", "0"); code == 0 || !strings.Contains(out, "not a port") {
+		t.Fatalf("port 0: %d %s", code, out)
+	}
+	if out, code := run("tls", "check", "127.0.0.1:1"); code != 0 || !strings.Contains(out, "Checked TLS on 0 of 1") || !strings.Contains(out, "no TLS handshake") {
+		t.Fatalf("tls on a closed port: %d %s", code, out)
+	}
+	if _, code := run("tls"); code == 0 {
+		t.Fatal("tls without check")
+	}
+}
