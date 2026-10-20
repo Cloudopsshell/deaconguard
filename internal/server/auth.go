@@ -28,6 +28,7 @@ type sessionContextKey struct{}
 var publicPaths = map[string]bool{
 	"/api/session": true, "/api/login": true, "/api/version": true,
 	"/api/login/passkey/options": true, "/api/login/passkey": true,
+	"/api/login/sso": true, ssoCallbackPath: true,
 }
 
 // pendingPaths are all a session waiting for its second sign-in step may use.
@@ -84,7 +85,7 @@ func (s *Server) signedIn(next http.Handler) http.Handler {
 // tokenRefused reports the paths API tokens never reach: accounts, tokens
 // and sign-in security, so a leaked token can't make itself a lasting way in.
 func tokenRefused(path string) bool {
-	for _, prefix := range []string{"/api/account", "/api/users", "/api/tokens", "/api/settings/security", "/api/login", "/api/logout", "/api/session"} {
+	for _, prefix := range []string{"/api/account", "/api/users", "/api/tokens", "/api/settings/security", "/api/settings/sso", "/api/login", "/api/logout", "/api/session"} {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return true
 		}
@@ -131,6 +132,10 @@ type apiTokenContextKey struct{}
 // accountNeeds says what an account must do before it can use DeaconGuard,
 // or "" when nothing.
 func (s *Server) accountNeeds(user store.User) (string, error) {
+	// The identity provider decides how single sign-on accounts sign in.
+	if user.SSO {
+		return "", nil
+	}
 	if user.MustChangePassword {
 		return "choose a new password first: an administrator set a temporary one", nil
 	}
@@ -200,6 +205,10 @@ type sessionResponse struct {
 	Role string `json:"role,omitempty"`
 	// Appearance is the account's saved mode and theme, if it chose one.
 	Appearance json.RawMessage `json:"appearance,omitempty"`
+	// SSO offers single sign-on on the sign-in page, when it is set up.
+	SSO *ssoButton `json:"sso,omitempty"`
+	// SSOAccount: the account signs in with single sign-on, with no password.
+	SSOAccount bool `json:"sso_account,omitempty"`
 }
 
 // sessionFor describes a signed-in account to the dashboard.
@@ -211,7 +220,7 @@ func (s *Server) sessionFor(user store.User) (sessionResponse, error) {
 	return sessionResponse{
 		LoginRequired: true, Authenticated: true, Username: user.Username,
 		MustChangePassword: user.MustChangePassword, MFASetupRequired: required && !user.TwoStep(),
-		TwoStep: user.TwoStep(), MFAEnabled: user.MFAEnabled, Passkeys: user.Passkeys, RecoveryCodesLeft: user.RecoveryCodesLeft,
+		SSOAccount: user.SSO, TwoStep: user.TwoStep(), MFAEnabled: user.MFAEnabled, Passkeys: user.Passkeys, RecoveryCodesLeft: user.RecoveryCodesLeft,
 		Role: user.Role, Appearance: appearanceJSON(user.Appearance),
 	}, nil
 }
@@ -253,7 +262,7 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	}
 	user, session, err := sessionUser(r)
 	if errors.Is(err, store.ErrNoSession) {
-		writeJSON(w, http.StatusOK, sessionResponse{LoginRequired: true})
+		writeJSON(w, http.StatusOK, sessionResponse{LoginRequired: true, SSO: ssoOffer()})
 		return
 	}
 	if err != nil {

@@ -22,6 +22,7 @@ const actionLabels: Record<string, string> = {
   "user.passkey_remove": "Removed a passkey",
   "user.sessions_end": "Signed out sessions",
   "settings.require_mfa": "Require two-step sign-in",
+  "settings.sso": "Changed single sign-on",
   "audit.start": "Started audit",
   "report.create": "Created report",
   "report.download": "Downloaded report",

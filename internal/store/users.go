@@ -52,12 +52,12 @@ type Session struct {
 
 const userColumns = `u.id, u.username, u.created_at, u.totp_secret != '', u.must_change_password, u.disabled, u.last_login_at,
 	(SELECT COUNT(*) FROM recovery_codes r WHERE r.user_id = u.id AND r.used_at = ''), u.role, u.appearance,
-	(SELECT COUNT(*) FROM passkeys p WHERE p.user_id = u.id)`
+	(SELECT COUNT(*) FROM passkeys p WHERE p.user_id = u.id), u.oidc_subject != ''`
 
 func scanUser(row rowScanner) (User, error) {
 	var user User
 	err := row.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.MFAEnabled, &user.MustChangePassword, &user.Disabled,
-		&user.LastLoginAt, &user.RecoveryCodesLeft, &user.Role, &user.Appearance, &user.Passkeys)
+		&user.LastLoginAt, &user.RecoveryCodesLeft, &user.Role, &user.Appearance, &user.Passkeys, &user.SSO)
 	return user, err
 }
 

@@ -40,7 +40,7 @@ Setup saves these in `/etc/systemd/system/deaconguard-server.service.d/10-setup.
 
 ## Accounts
 
-Setup creates the first account, an admin. After that, admins create accounts on the dashboard's **Accounts** page, each with a [role](./accounts.md#roles) (Viewer, Operator or Admin) and a temporary password that the person changes at their first sign-in. Everyone manages their own password, two-step sign-in, appearance and sessions on **My account**. See [Accounts and sign-in](./accounts.md).
+Setup creates the first account, an admin. After that, admins create accounts on the dashboard's **Accounts** page, each with a [role](./accounts.md#roles) (Viewer, Operator or Admin) and a temporary password that the person changes at their first sign-in. Everyone manages their own password, two-step sign-in, passkeys, appearance and sessions on **My account**. See [Accounts and sign-in](./accounts.md). To sign people in with your identity provider instead, see [Single sign-on](./single-sign-on.md).
 
 On the server, as the `deaconguard` user:
 

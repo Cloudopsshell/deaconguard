@@ -1,11 +1,27 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { KeyRound, LogIn, ShieldCheck } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { api } from "../api";
 import { Button, Card, ErrorMessage, Field, Loading } from "../components/ui";
 import { passkeysSupported, signInWithPasskey } from "../lib/passkey";
+
+/** Why single sign-on sent the browser back, by the reason the server names. */
+const ssoErrors: Record<string, string> = {
+  expired: "The single sign-on took too long, or was started in another browser. Try again.",
+  denied: "Your identity provider didn't sign you in.",
+  provider: "DeaconGuard couldn't complete the sign-in with your identity provider. An admin can find the reason in the server's log.",
+  token: "Your identity provider's answer couldn't be verified. Check the server's clock, or ask an admin.",
+  group: "Your account at the identity provider isn't in a group allowed to use DeaconGuard. Ask an admin.",
+  domain: "Your email address isn't in a domain allowed to use DeaconGuard. Ask an admin.",
+  account: "Your identity provider didn't send a verified email or username for your DeaconGuard account. Ask an admin.",
+  exists: "A DeaconGuard account with your name already exists and signs in with a password. Ask an admin.",
+  disabled: "Your DeaconGuard account is disabled. Ask an admin.",
+  off: "Single sign-on isn't turned on.",
+  limited: "Too many failed sign-in attempts; try again in a few minutes.",
+  busy: "Too many sign-ins at once; try again in a minute.",
+};
 
 /** Only paths on this server are followed after sign-in. */
 function safeNext(value: string | null): string {
@@ -15,6 +31,7 @@ function safeNext(value: string | null): string {
 export function Login() {
   const [searchParams] = useSearchParams();
   const next = safeNext(searchParams.get("next"));
+  const ssoError = searchParams.get("sso_error");
   const queryClient = useQueryClient();
   const session = useQuery({ queryKey: ["session"], queryFn: api.session });
   const [username, setUsername] = useState("");
@@ -183,11 +200,16 @@ export function Login() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                 />
-                <ErrorMessage error={login.error ?? session.error} />
+                <ErrorMessage error={login.error ?? session.error ?? (ssoError ? new Error(ssoErrors[ssoError] ?? "Single sign-on failed. Try again.") : null)} />
                 <Button type="submit" className="w-full" loading={login.isPending}>
                   Sign in
                 </Button>
               </form>
+              {session.data?.sso && (
+                <Button className="mt-3 w-full" variant="secondary" onClick={() => window.location.assign(`/api/login/sso?next=${encodeURIComponent(next)}`)}>
+                  <LogIn className="size-4" /> {session.data.sso.label}
+                </Button>
+              )}
               {passkeysSupported() && (
                 <div className="mt-4 space-y-3">
                   <div className="flex items-center gap-3 text-xs text-slate-400">
