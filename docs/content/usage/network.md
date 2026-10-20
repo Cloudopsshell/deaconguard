@@ -3,7 +3,7 @@ title: TLS and network scans
 description: Check TLS certificates and settings, and find open ports and exposed services on networks you own, from the outside, without logging in.
 ---
 
-Two commands look at machines from the network, as an outsider would: what answers, and how well it protects itself. They need DeaconGuard 1.6.0 or later, and no agent, root or login on the machines.
+Two commands look at machines from the network, as an outsider would: what answers, and how well it protects itself. The server can also run the same scans on a schedule, from the [dashboard](#in-the-dashboard). They need DeaconGuard 1.6.0 or later, and no agent, root or login on the machines.
 
 **Only scan what you own or are allowed to test.** Scanning other people's networks can break the law and their acceptable-use terms, even when nothing is attacked. DeaconGuard only connects and reads what services announce: it never logs in, guesses passwords, sends exploits or floods.
 
@@ -61,6 +61,18 @@ deaconguard net scan shop.example.com 203.0.113.10 --tls --fail-on high --format
 ```
 
 Anything the scan finds that you didn't mean to publish is open to everyone. `--fail-on`, `--skip`, `--format` and `--output` work as for [pipelines](./ci-cd.md), so the check can run on a schedule in CI and fail when something new appears.
+
+## In the dashboard
+
+The **Network** page keeps network targets the server scans itself, from its own network: each is a list of addresses, ranges and names, the ports to try, and how often to scan (hourly, every 6 or 12 hours, daily, weekly, or only on **Scan now**).
+
+1. An admin clicks **Add target**, and gives it a name and one address, range (at most a /20) or name per line, at most 4096 addresses in all. **Ports** left empty means the default ports. **Check the TLS** of each TLS service found is on unless you clear it.
+2. **Add and scan** saves it and starts the first scan. Operators can press **Scan now** at any time.
+3. Open the target to see its latest result: the findings, every open port with what answered on it, and the certificate and protocols of each TLS service. **Scan history** keeps the newest 20 scans; click one to see what it found.
+
+Scans run one at a time, 32 connections at a time, and stop after an hour. A scan the server was running when it stopped is marked failed, and the next one runs on schedule. With [notifications](./notifications.md), a scan that finds critical or high findings its previous scan didn't sends **New network findings**, and a scan that fails sends **Failed scans**.
+
+The server scans from where it runs. To see what the internet sees, run `deaconguard net scan` [from outside](#from-the-outside) too.
 
 ## Rules
 

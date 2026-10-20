@@ -56,6 +56,8 @@ type Server struct {
 	notifier *notifier
 	// images runs image scans once StartScheduler is called.
 	images *imageScanner
+	// netScans runs network scans once StartScheduler is called.
+	netScans *networkScanner
 	// agentHandler serves only the agent API, for a listener of its own;
 	// agentPort is that listener's port, once SetAgentPort is called.
 	agentHandler http.Handler
@@ -96,6 +98,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		runner: newRunner(scan), ui: ui, network: network, pin: pin, limiter: newFailureLimiter(), scheduler: &scheduler{},
 		notifier:       &notifier{wake: make(chan struct{}, 1)},
 		images:         newImageScanner(),
+		netScans:       newNetworkScanner(),
 		localAvailable: func() error { _, err := local.New(); return err },
 	}
 	s.agents = newAgentHub(s.runner)
@@ -162,6 +165,13 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("DELETE /api/images/{id}", s.needs(store.RoleOperator, s.deleteImage))
 	mux.HandleFunc("POST /api/images/{id}/scans", s.needs(store.RoleOperator, s.scanImage))
 	mux.HandleFunc("GET /api/image-scans/{id}", s.imageScan)
+	mux.HandleFunc("GET /api/network-targets", s.listNetworkTargets)
+	mux.HandleFunc("POST /api/network-targets", s.needs(store.RoleAdmin, s.createNetworkTarget))
+	mux.HandleFunc("GET /api/network-targets/{id}", s.networkTargetDetail)
+	mux.HandleFunc("PATCH /api/network-targets/{id}", s.needs(store.RoleAdmin, s.updateNetworkTarget))
+	mux.HandleFunc("DELETE /api/network-targets/{id}", s.needs(store.RoleAdmin, s.deleteNetworkTarget))
+	mux.HandleFunc("POST /api/network-targets/{id}/scans", s.needs(store.RoleOperator, s.scanNetworkTarget))
+	mux.HandleFunc("GET /api/network-scans/{id}", s.networkScan)
 	mux.HandleFunc("GET /api/registry-logins", s.needs(store.RoleAdmin, s.listRegistryLogins))
 	mux.HandleFunc("POST /api/registry-logins", s.needs(store.RoleAdmin, s.createRegistryLogin))
 	mux.HandleFunc("PATCH /api/registry-logins/{id}", s.needs(store.RoleAdmin, s.updateRegistryLogin))
@@ -276,6 +286,7 @@ func (s *Server) StartScheduler() {
 	s.startScheduler()
 	s.startNotifier()
 	s.startImageScanner()
+	s.startNetworkScanner()
 }
 
 // Close cancels questions waiting for an answer and blocks until background
@@ -284,6 +295,7 @@ func (s *Server) Close() {
 	s.stopScheduler()
 	s.stopNotifier()
 	s.stopImageScanner()
+	s.stopNetworkScanner()
 	s.agents.stop()
 	s.runner.close()
 }
