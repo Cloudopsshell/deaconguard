@@ -62,6 +62,13 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `GET /api/images/{id}` | Viewer | One image with its last 20 scans, without their results |
 | `GET /api/image-scans/{id}` | Viewer | One image scan with its full result; poll until `status` is `succeeded` or `failed` |
 | `POST /api/registry-logins` | Admin | Save a registry login: `{"registry": "ghcr.io", "username": "robot", "secret": "…"}`, or for Amazon ECR `"kind": "ecr"` with an access key ID as `username`; the secret is never returned |
+| `GET /api/network-targets` | Viewer | The [network targets](../usage/network.md#in-the-dashboard) the server scans, each with its latest scan |
+| `POST /api/network-targets` | Admin | Add a network target and start its first scan: `{"name": "Office", "targets": ["10.0.0.0/24", "shop.example.com"], "ports": "", "tls": true, "interval_hours": 24}`; `ports` empty means the default ports, and `interval_hours` is 0 (only on demand), 1, 6, 12, 24 or 168 |
+| `PATCH /api/network-targets/{id}` | Admin | Change a network target: send every field, as when adding it |
+| `DELETE /api/network-targets/{id}` | Admin | Remove a network target and its scans |
+| `GET /api/network-targets/{id}` | Viewer | One network target with its last 20 scans, without their results |
+| `POST /api/network-targets/{id}/scans` | Operator | Scan a network target now; 409 while a scan of it is queued or running |
+| `GET /api/network-scans/{id}` | Viewer | One network scan with its full result: hosts, open ports, TLS and findings |
 | `GET /api/audits` | Viewer | Audits, with their grades |
 | `PUT /api/hosts/{id}/tags` | Operator | Set a host's tags: `{"tags": ["prod", "web"]}` |
 | `GET /api/trends?days=90&tag=prod` | Viewer | Open vulnerabilities per day |
