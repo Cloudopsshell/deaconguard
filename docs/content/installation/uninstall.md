@@ -10,12 +10,19 @@ sudo zypper remove deaconguard       # openSUSE, SUSE Linux Enterprise
 sudo rm /usr/local/bin/deaconguard   # archive install
 ```
 
+On a Mac, stop the agent's daemon, then remove it and the binary:
+
+```bash
+sudo launchctl bootout system/io.deaconguard.agent
+sudo rm /Library/LaunchDaemons/io.deaconguard.agent.plist /usr/local/bin/deaconguard
+```
+
 Removing the package stops the services and **keeps your data**. To delete it as well:
 
 | Machine | Remove |
 | --- | --- |
 | Server | `/var/lib/deaconguard/` |
-| Agent | `/etc/deaconguard/` |
+| Agent | `/etc/deaconguard/`, and on a Mac also `/var/log/deaconguard-agent.log` |
 | Local mode | `~/.local/share/deaconguard/`, or the directory in `DEACONGUARD_HOME` |
 
 Before uninstalling an agent, remove its host in the server's dashboard. That revokes the agent's credential on the server.
