@@ -25,7 +25,7 @@ import Link from '@docusaurus/Link';
 
 One binary does two jobs, and they are kept apart on purpose:
 
-- **Server:** the HTTPS dashboard, with server audits graded A to F, compliance views and branded PDF reports, sign-in (two-step with any authenticator app), Admin, Operator and Viewer roles, and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
+- **Server:** the HTTPS dashboard, with server audits graded A to F, compliance views and branded PDF reports, sign-in (passkeys, or two-step with any authenticator app), Admin, Operator and Viewer roles, and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
 - **Agent:** runs on each machine to scan, **as root**, so every check sees everything. It listens on nothing: it enrolls once with a token, then connects **out** to the server, runs the scans the server asks for and sends back the results. Scanned machines need no open ports and no internet access.
 
 **The server never scans a machine from inside.** Every machine, the server's own included, is scanned by its own agent. The [install script](./installation/install-script.md) gives the server's machine an agent too, and the dashboard shows it as **This server**.

@@ -189,7 +189,7 @@ func (s *Server) removeOwnMFA(w http.ResponseWriter, r *http.Request) {
 	if required, err := store.RequireMFA(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
-	} else if required {
+	} else if required && user.Passkeys == 0 {
 		writeError(w, http.StatusConflict, store.ErrMFARequired)
 		return
 	}
@@ -457,7 +457,7 @@ func (s *Server) updateSecurity(w http.ResponseWriter, r *http.Request) {
 	}
 	// Requiring it before using it would send the admin who turned it on
 	// straight to setting it up.
-	if me, _, ok := currentUser(r); ok && request.RequireMFA && !me.MFAEnabled {
+	if me, _, ok := currentUser(r); ok && request.RequireMFA && !me.TwoStep() {
 		writeError(w, http.StatusConflict, errors.New("set up two-step sign-in for your own account first, on My account"))
 		return
 	}

@@ -9,6 +9,7 @@ import { api, roleLabels, type Session } from "../api";
 import { adoptAppearance, setAppearanceSaver } from "../lib/appearance";
 import { ChangePassword } from "./account/ChangePassword";
 import { MFASetup } from "./account/MFASetup";
+import { PasskeyInstead } from "./account/Passkeys";
 import { AppearancePicker, ModeSwitch } from "./AppearancePicker";
 import { Card, Dialog, Loading, cx } from "./ui";
 
@@ -32,9 +33,9 @@ const networkPages = ["/agents", "/audit", "/accounts"];
 /** Pages only admins use: the audit log, and managing accounts. */
 const adminPages = ["/audit", "/accounts", "/settings"];
 
-/** True when the account should look at My account: no two-step sign-in, or few recovery codes left. */
+/** True when the account should look at My account: no two-step sign-in, or few recovery codes left for its app. */
 function needsAttention(session?: Session) {
-  return !!session?.login_required && (!session.mfa_enabled || (session.recovery_codes_left ?? 10) <= 2);
+  return !!session?.login_required && (!session.two_step || (!!session.mfa_enabled && (session.recovery_codes_left ?? 10) <= 2));
 }
 
 const reminderKey = "dg-mfa-reminder-hidden";
@@ -52,7 +53,7 @@ function SecurityReminder({ session }: { session: Session }) {
   const [hidden, setHidden] = useState(reminderHidden);
   const location = useLocation();
   if (hidden || !needsAttention(session) || location.pathname === "/account") return null;
-  const missing = !session.mfa_enabled;
+  const missing = !session.two_step;
   function hide() {
     try {
       sessionStorage.setItem(reminderKey, "1");
@@ -71,7 +72,7 @@ function SecurityReminder({ session }: { session: Session }) {
         {missing ? (
           <>
             <span className="font-semibold">Two-step sign-in is off for your account.</span> Anyone who learns your password can see every host and start
-            scans. Turn it on with any authenticator app; it takes a minute.{" "}
+            scans. Turn it on with a passkey or any authenticator app; it takes a minute.{" "}
           </>
         ) : (
           <>
@@ -138,7 +139,7 @@ function SignedInAs({ session }: { session: Session }) {
               : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100",
           )
         }
-        title={`Signed in as ${session.username}${attention ? (session.mfa_enabled ? " · few recovery codes left" : " · two-step sign-in is off") : ""}`}
+        title={`Signed in as ${session.username}${attention ? (session.two_step ? " · few recovery codes left" : " · two-step sign-in is off") : ""}`}
       >
         <span className="relative shrink-0">
           <CircleUser className="size-4.5" aria-hidden />
@@ -147,7 +148,7 @@ function SignedInAs({ session }: { session: Session }) {
         <span className="min-w-0">
           <span className="block truncate">{session.username}</span>
           <span className={cx("block text-xs font-normal", attention ? "text-amber-700 dark:text-amber-400" : "text-slate-500 dark:text-slate-400")}>
-            {attention ? (session.mfa_enabled ? "Few recovery codes left" : "Two-step sign-in off") : `My account · ${roleLabels[session.role ?? "viewer"]}`}
+            {attention ? (session.two_step ? "Few recovery codes left" : "Two-step sign-in off") : `My account · ${roleLabels[session.role ?? "viewer"]}`}
           </span>
         </span>
       </NavLink>
@@ -236,6 +237,7 @@ export function Layout() {
         description="Every account on this server must use two-step sign-in. Scan the code with an authenticator app, then enter the 6-digit code it shows."
       >
         <MFASetup username={signedIn.username ?? ""} replacing={false} onDone={refresh} />
+        <PasskeyInstead onDone={refresh} />
       </RequiredStep>
     );
   }
