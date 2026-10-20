@@ -7,7 +7,7 @@ description: Find what's vulnerable, misconfigured or compromised across your Li
 
 **Find what's vulnerable, misconfigured or compromised**, across your Linux servers, Kubernetes clusters and container images, from one dashboard you host.
 
-On Linux machines, DeaconGuard finds vulnerable packages, tampered system files, signs of compromise and risky configuration. It checks [images in registries and pipelines](./usage/images.md) without running them, [Dockerfiles and Kubernetes manifests](./usage/config-checks.md) before they are deployed, and [running Kubernetes clusters](./usage/kubernetes.md) through their API, read-only.
+On Linux machines, DeaconGuard finds vulnerable packages, tampered system files, signs of compromise and risky configuration. It checks [images in registries and pipelines](./usage/images.md) without running them, [Dockerfiles and Kubernetes manifests](./usage/config-checks.md) before they are deployed, [running Kubernetes clusters](./usage/kubernetes.md) through their API, read-only, and [TLS and open ports](./usage/network.md) on networks you own, from the outside.
 
 It checks installed packages and the running kernel against each distribution's **own security data**: Canonical's OVAL feeds for Ubuntu, the Debian Security Tracker, the OVAL feeds of Red Hat, AlmaLinux, Oracle and SUSE, the errata of Rocky Linux and Fedora, and Amazon Linux's ALAS bulletins. It also tells you when a release no longer gets security fixes. Optional checks add [system file integrity, malware and compromise indicators, security configuration, and an antivirus scan with ClamAV, or ClamAV and YARA rules](./checks.md).
 
@@ -28,7 +28,7 @@ One binary does two jobs, and they are kept apart on purpose:
 - **Server:** the HTTPS dashboard, with server audits graded A to F, compliance views and branded PDF reports, sign-in (two-step with any authenticator app), Admin, Operator and Viewer roles, and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
 - **Agent:** runs on each machine to scan, **as root**, so every check sees everything. It listens on nothing: it enrolls once with a token, then connects **out** to the server, runs the scans the server asks for and sends back the results. Scanned machines need no open ports and no internet access.
 
-**The server never scans anything itself.** Every machine, the server's own included, is scanned by its own agent. The [install script](./installation/install-script.md) gives the server's machine an agent too, and the dashboard shows it as **This server**.
+**The server never scans a machine from inside.** Every machine, the server's own included, is scanned by its own agent. The [install script](./installation/install-script.md) gives the server's machine an agent too, and the dashboard shows it as **This server**.
 
 <div className="architecture-figure">
   <ThemedImage
