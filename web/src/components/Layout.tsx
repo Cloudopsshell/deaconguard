@@ -35,7 +35,7 @@ const adminPages = ["/audit", "/accounts", "/settings"];
 
 /** True when the account should look at My account: no two-step sign-in, or few recovery codes left for its app. */
 function needsAttention(session?: Session) {
-  return !!session?.login_required && (!session.two_step || (!!session.mfa_enabled && (session.recovery_codes_left ?? 10) <= 2));
+  return !!session?.login_required && !session.sso_account && (!session.two_step || (!!session.mfa_enabled && (session.recovery_codes_left ?? 10) <= 2));
 }
 
 const reminderKey = "dg-mfa-reminder-hidden";

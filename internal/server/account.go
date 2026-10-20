@@ -357,6 +357,10 @@ func (s *Server) setTemporaryPassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if target.SSO {
+		writeError(w, http.StatusConflict, errors.New(target.Username+" signs in with single sign-on and has no password; their identity provider manages it"))
+		return
+	}
 	var request temporaryPasswordRequest
 	if !readJSON(w, r, &request) {
 		return

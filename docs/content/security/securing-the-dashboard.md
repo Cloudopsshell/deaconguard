@@ -7,7 +7,8 @@ The dashboard shows every machine's weaknesses and can start scans on all of the
 
 1. **Don't expose port 8443 to the internet.** Reach the dashboard over a private network. [Give agents a port of their own](#give-agents-their-own-port) so the dashboard's port only needs to reach people.
 2. **Turn on two-step sign-in** for every account, best with [passkeys](../usage/accounts.md#passkeys), which can't be phished, and [require it](../usage/accounts.md#require-it-for-everyone).
-3. **Keep accounts tidy:** one per person, no shared accounts, the [least role](../usage/accounts.md#roles) each person needs, and remove or disable people who leave.
+3. **Use [single sign-on](../usage/single-sign-on.md)** if you have an identity provider, so people who leave lose access with everything else.
+4. **Keep accounts tidy:** one per person, no shared accounts, the [least role](../usage/accounts.md#roles) each person needs, and remove or disable people who leave.
 
 ## Keep it off the internet
 
@@ -79,7 +80,7 @@ Make sure the proxy sets `X-Forwarded-For`; most do. Agents connect to the serve
 
 ## What DeaconGuard does not do
 
-- **Single sign-on (OIDC, SAML)** is not supported yet; it is planned. Until then, an identity-aware proxy can add your company sign-in.
+- **SAML** is not supported; [single sign-on](../usage/single-sign-on.md) uses OpenID Connect, which every major identity provider offers.
 - **Password reset by email** is deliberately missing: another admin, or the command line on the server, resets access. See [When someone loses access](../usage/accounts.md#when-someone-loses-access).
 
 See also [Hardening](./hardening.md).

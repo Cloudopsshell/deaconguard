@@ -62,68 +62,79 @@ export function Account() {
     <>
       <PageHeader
         title="My account"
-        description={`Signed in as ${data.username}, with the ${roleLabels[data.role]} role${roleNotes[data.role]}. Your two-step sign-in, passkeys, password, appearance, API tokens and sessions.`}
+        description={`Signed in as ${data.username}, with the ${roleLabels[data.role]} role${roleNotes[data.role]}. ${data.sso ? "Your appearance, API tokens and sessions." : "Your two-step sign-in, passkeys, password, appearance, API tokens and sessions."}`}
       />
       <div className="space-y-6">
-        <Card>
-          <CardHeader
-            title="Authenticator app"
-            description="After your password, DeaconGuard asks for a 6-digit code from an authenticator app on your phone or computer, so a stolen password alone cannot sign in. A passkey, below, does the same."
-          />
-          <div className="px-5 py-5">
-            {codes ? (
-              <RecoveryCodes codes={codes} username={data.username} onDone={() => (setCodes(null), refresh())} />
-            ) : setting ? (
-              <MFASetup username={data.username} replacing={setting === "replace"} onDone={() => (setSetting(null), refresh())} />
-            ) : data.mfa_enabled ? (
-              <div className="space-y-4">
-                <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
-                  <ShieldCheck className="size-5" /> On. {data.recovery_codes_left} of 10 recovery codes left.
-                </p>
-                {data.recovery_codes_left <= 2 && (
-                  <p className="text-sm text-amber-700 dark:text-amber-400">You are running out of recovery codes. Create new ones and save them.</p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => setSetting("replace")}>
-                    Move to a new phone or app
-                  </Button>
-                  <Button variant="secondary" onClick={() => setConfirming("codes")}>
-                    <KeyRound className="size-4" /> New recovery codes
-                  </Button>
-                  {(!data.mfa_required || data.passkeys > 0) && (
-                    <Button variant="secondary" onClick={() => setConfirming("remove")}>
-                      <ShieldOff className="size-4" /> Turn off
-                    </Button>
-                  )}
-                </div>
-                {data.mfa_required && data.passkeys === 0 && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Two-step sign-in is required for every account, so it can't be turned off without a passkey.</p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {data.passkeys > 0 ? (
-                  <p className="text-sm text-slate-600 dark:text-slate-300">Not set up. Your passkeys already sign you in with two steps.</p>
+        {data.sso ? (
+          <Card>
+            <CardHeader
+              title="Single sign-on"
+              description="You sign in with your organisation's identity provider. Your password and two-step sign-in are managed there, not in DeaconGuard."
+            />
+          </Card>
+        ) : (
+          <>
+            <Card>
+              <CardHeader
+                title="Authenticator app"
+                description="After your password, DeaconGuard asks for a 6-digit code from an authenticator app on your phone or computer, so a stolen password alone cannot sign in. A passkey, below, does the same."
+              />
+              <div className="px-5 py-5">
+                {codes ? (
+                  <RecoveryCodes codes={codes} username={data.username} onDone={() => (setCodes(null), refresh())} />
+                ) : setting ? (
+                  <MFASetup username={data.username} replacing={setting === "replace"} onDone={() => (setSetting(null), refresh())} />
+                ) : data.mfa_enabled ? (
+                  <div className="space-y-4">
+                    <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                      <ShieldCheck className="size-5" /> On. {data.recovery_codes_left} of 10 recovery codes left.
+                    </p>
+                    {data.recovery_codes_left <= 2 && (
+                      <p className="text-sm text-amber-700 dark:text-amber-400">You are running out of recovery codes. Create new ones and save them.</p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="secondary" onClick={() => setSetting("replace")}>
+                        Move to a new phone or app
+                      </Button>
+                      <Button variant="secondary" onClick={() => setConfirming("codes")}>
+                        <KeyRound className="size-4" /> New recovery codes
+                      </Button>
+                      {(!data.mfa_required || data.passkeys > 0) && (
+                        <Button variant="secondary" onClick={() => setConfirming("remove")}>
+                          <ShieldOff className="size-4" /> Turn off
+                        </Button>
+                      )}
+                    </div>
+                    {data.mfa_required && data.passkeys === 0 && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Two-step sign-in is required for every account, so it can't be turned off without a passkey.</p>
+                    )}
+                  </div>
                 ) : (
-                  <p className="text-sm text-amber-700 dark:text-amber-400">Off. Anyone who learns your password can sign in as you.</p>
+                  <div className="space-y-4">
+                    {data.passkeys > 0 ? (
+                      <p className="text-sm text-slate-600 dark:text-slate-300">Not set up. Your passkeys already sign you in with two steps.</p>
+                    ) : (
+                      <p className="text-sm text-amber-700 dark:text-amber-400">Off. Anyone who learns your password can sign in as you.</p>
+                    )}
+                    <Button onClick={() => setSetting("setup")}>
+                      <ShieldCheck className="size-4" /> Set up an authenticator app
+                    </Button>
+                  </div>
                 )}
-                <Button onClick={() => setSetting("setup")}>
-                  <ShieldCheck className="size-4" /> Set up an authenticator app
-                </Button>
               </div>
-            )}
-          </div>
-        </Card>
+            </Card>
 
-        <Passkeys onChange={refresh} />
+            <Passkeys onChange={refresh} />
 
-        <Card>
-          <CardHeader title="Password" />
-          <div className="px-5 py-5">
-            {passwordChanged && <p className="mb-4 text-sm text-emerald-700 dark:text-emerald-400">Password changed. Your other sessions were signed out.</p>}
-            <ChangePassword onDone={() => (setPasswordChanged(true), refresh())} />
-          </div>
-        </Card>
+            <Card>
+              <CardHeader title="Password" />
+              <div className="px-5 py-5">
+                {passwordChanged && <p className="mb-4 text-sm text-emerald-700 dark:text-emerald-400">Password changed. Your other sessions were signed out.</p>}
+                <ChangePassword onDone={() => (setPasswordChanged(true), refresh())} />
+              </div>
+            </Card>
+          </>
+        )}
 
         <Card>
           <CardHeader title="Appearance" description="Saved to your account, so it follows you to every browser. Everyone chooses their own." />
