@@ -22,7 +22,7 @@ import (
 const maxStderrBytes = 4 * 1024
 
 // ErrUnsupportedOS is returned when DeaconGuard runs on a system it cannot scan.
-var ErrUnsupportedOS = errors.New("local scanning is supported on Linux only")
+var ErrUnsupportedOS = errors.New("local scanning is supported on Linux and macOS only")
 
 // Target runs commands on this machine as the user running DeaconGuard.
 type Target struct {
@@ -31,10 +31,10 @@ type Target struct {
 
 var _ target.Target = (*Target)(nil)
 
-// New returns a target for this machine. Only Linux is supported: the checks
-// read Linux package databases, /proc, and /etc.
+// New returns a target for this machine: Linux, whose package databases,
+// /proc and /etc the checks read, or macOS, which has checks of its own.
 func New() (*Target, error) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return nil, fmt.Errorf("%w; this machine runs %s", ErrUnsupportedOS, runtime.GOOS)
 	}
 	if _, err := os.Stat(HostPath("/bin/sh")); err != nil {

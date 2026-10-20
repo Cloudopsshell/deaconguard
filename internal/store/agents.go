@@ -245,6 +245,8 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 	kind := KindMachine
 	if enrollment.Kind == KindCluster {
 		kind = KindCluster
+	} else if strings.HasPrefix(enrollment.OS, "macOS") {
+		kind = KindMac
 	}
 	host := Host{ID: id, Address: enrollment.Hostname, Username: enrollment.Username, Transport: TransportAgent, AllowSudo: true, Kind: kind}
 	if _, err := tx.Exec(`INSERT INTO hosts (id, address, username, transport, allow_sudo, kind, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)`,

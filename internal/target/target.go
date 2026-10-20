@@ -54,13 +54,21 @@ type Inventory struct {
 	RPMQuery   string `json:"rpm_query,omitempty"`
 	// APKInstalled is Alpine's /lib/apk/db/installed.
 	APKInstalled string `json:"apk_installed,omitempty"`
-	Kernel       string `json:"kernel"`
+	// SoftwareUpdates is a Mac's `softwareupdate --list --no-scan`: the
+	// updates it has already found, without asking Apple again.
+	SoftwareUpdates string `json:"software_updates,omitempty"`
+	Kernel          string `json:"kernel"`
 }
 
-// OSRelease reads /etc/os-release.
+// OSRelease reads /etc/os-release, or on a Mac makes it from sw_vers.
 func OSRelease(t Target) (string, error) {
 	osRelease, err := t.Run("cat /etc/os-release", nil, MaxOSReleaseBytes, CommandTimeout)
 	if err != nil {
+		if swVers, macErr := t.Run("sw_vers", nil, MaxOSReleaseBytes, CommandTimeout); macErr == nil {
+			if release, macErr := platform.MacOSRelease(string(swVers)); macErr == nil {
+				return release, nil
+			}
+		}
 		return "", fmt.Errorf("read /etc/os-release: %w", err)
 	}
 	return string(osRelease), nil
@@ -77,7 +85,14 @@ func CollectInventory(t Target) (Inventory, error) {
 		return Inventory{}, err
 	}
 	inventory := Inventory{OSRelease: osRelease}
-	if detected.Family == platform.Ubuntu || detected.Family == platform.Debian {
+	if detected.Family == platform.MacOS {
+		// macOS has no package list to check: its updates come from Apple
+		// whole. This lists the ones the Mac has found, from its cache.
+		updates, err := t.Run("softwareupdate --list --no-scan 2>&1", nil, 1<<20, CommandTimeout)
+		if err == nil {
+			inventory.SoftwareUpdates = string(updates)
+		}
+	} else if detected.Family == platform.Ubuntu || detected.Family == platform.Debian {
 		packages, err := t.Run("head -c 33554433 /var/lib/dpkg/status", nil, MaxPackageBytes, CommandTimeout)
 		if err != nil {
 			return Inventory{}, fmt.Errorf("read /var/lib/dpkg/status: %w", err)

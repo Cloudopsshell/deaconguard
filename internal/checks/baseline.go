@@ -31,7 +31,7 @@ const (
 
 // Categories lists the baseline's categories in display order.
 func Categories() []string {
-	return []string{categoryAccounts, categorySSH, categoryNetwork, categoryKernel, categoryServices,
+	return []string{categoryMacProtection, categoryAccounts, categorySSH, categoryNetwork, categoryKernel, categoryServices,
 		categoryLogging, categoryFiles, categoryUpdates, categoryTime, categoryProtection}
 }
 
@@ -980,9 +980,13 @@ func mountHas(mountPoint string, options ...string) func(*machine) (string, stri
 
 // BaselineIDs lists the baseline's control IDs.
 func BaselineIDs() []string {
-	ids := make([]string, len(baseline))
-	for index, control := range baseline {
-		ids[index] = control.id
+	ids := make([]string, 0, len(baseline)+len(macBaseline))
+	for _, control := range baseline {
+		ids = append(ids, control.id)
+	}
+	// The macOS baseline's controls are accepted and mapped the same way.
+	for _, item := range macBaseline {
+		ids = append(ids, item.id)
 	}
 	return ids
 }
