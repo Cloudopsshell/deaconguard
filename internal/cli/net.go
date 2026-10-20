@@ -199,8 +199,9 @@ func runNet(arguments []string, output, diagnostics io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(diagnostics, "Scanning %d addresses, %d ports each, %d connections at a time. Scan only networks you own or may test.\n",
-		len(targets), len(options.Ports), options.Concurrency)
+	fmt.Fprintf(diagnostics, "Scanning %d %s, %d %s each, %d connections at a time. Scan only networks you own or may test.\n",
+		len(targets), pluralWord(len(targets), "address", "addresses"), len(options.Ports), pluralWord(len(options.Ports), "port", "ports"),
+		options.Concurrency)
 	result := netscan.Scan(ctx, targets, options)
 	if flags.format == "table" {
 		for _, host := range result.Hosts {
@@ -228,6 +229,7 @@ func runNet(arguments []string, output, diagnostics io.Writer) error {
 	}
 	return writeFindings(findingsReport{
 		findings: result.Findings, notes: result.Notes, document: result, suite: strings.Join(arguments2, " "),
-		summary: fmt.Sprintf("Scanned %d addresses: %d with open ports, %d open ports", result.Addresses, len(result.Hosts), open),
+		summary: fmt.Sprintf("Scanned %d %s: %d with open ports, %d open %s", result.Addresses, pluralWord(result.Addresses, "address", "addresses"),
+			len(result.Hosts), open, pluralWord(open, "port", "ports")),
 	}, flags.format, flags.output, flags.failOn, output, diagnostics)
 }
