@@ -180,7 +180,7 @@ type Claims struct {
 	IssuedAt          float64   `json:"iat"`
 	Nonce             string    `json:"nonce"`
 	Email             string    `json:"email"`
-	EmailVerified     *flexBool `json:"email_verified"`
+	EmailVerified     *FlexBool `json:"email_verified"`
 	PreferredUsername string    `json:"preferred_username"`
 	Name              string    `json:"name"`
 	// Raw has every claim, for the configured groups claim.
@@ -204,10 +204,10 @@ func (a *audience) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// flexBool is a boolean some providers send as a string.
-type flexBool bool
+// FlexBool is a boolean some providers send as a string.
+type FlexBool bool
 
-func (b *flexBool) UnmarshalJSON(data []byte) error {
+func (b *FlexBool) UnmarshalJSON(data []byte) error {
 	switch strings.Trim(string(data), `"`) {
 	case "true":
 		*b = true
