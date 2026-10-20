@@ -53,6 +53,10 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runConfig(arguments[1:], input, output, diagnostics)
 	case "kube":
 		err = runKube(arguments[1:], output, diagnostics)
+	case "net":
+		err = runNet(arguments[1:], output, diagnostics)
+	case "tls":
+		err = runTLS(arguments[1:], output, diagnostics)
 	case "serve":
 		err = runServe(arguments[1:], output)
 	case "record-stop":
@@ -488,6 +492,14 @@ Scanning:
                                        check a Kubernetes cluster through its API, read-only: workloads,
                                        RBAC, namespaces, the version and its CVEs, the API server's
                                        settings, and with --images the images that run
+  deaconguard tls check HOST[:PORT]... [--fail-on SEVERITY] [--format table|json|sarif|junit] [--output FILE]
+                                       check TLS services: certificate expiry, trust and name, old
+                                       protocols, weak ciphers and keys (handshakes only)
+  deaconguard net scan TARGET... [--ports default|LIST] [--tls] [--concurrency N] [--max-addresses N]
+                         [--fail-on SEVERITY] [--format table|json|sarif|junit] [--output FILE]
+                                       find open ports on addresses, ranges (10.0.0.0/24) or names,
+                                       what answers there, and exposed databases, Docker, kubelets or
+                                       cleartext logins; scan only networks you own or may test
   deaconguard audit HOST_ID [--advanced] [--json]
                                        handover audit: every check, the hardening baseline,
                                        and a grade; --advanced adds the YARA antivirus scan
