@@ -256,6 +256,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 24 {
+		if err := execInTx(db, schemaV24); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -722,6 +727,38 @@ const schemaV21 = `
 ALTER TABLE hosts ADD COLUMN auto_scan_containers INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE hosts ADD COLUMN last_auto_scan TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 21;`
+
+// schemaV24 adds network targets: addresses, ranges and names the server
+// scans for open ports and TLS, and their scans.
+const schemaV24 = `
+CREATE TABLE network_targets (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+	targets TEXT NOT NULL,
+	ports TEXT NOT NULL DEFAULT '',
+	tls INTEGER NOT NULL DEFAULT 1,
+	interval_hours INTEGER NOT NULL DEFAULT 0,
+	created_by TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+CREATE TABLE network_scans (
+	id TEXT PRIMARY KEY,
+	target_id TEXT NOT NULL REFERENCES network_targets(id) ON DELETE CASCADE,
+	status TEXT NOT NULL,
+	error TEXT NOT NULL DEFAULT '',
+	hosts INTEGER NOT NULL DEFAULT 0,
+	open_ports INTEGER NOT NULL DEFAULT 0,
+	critical INTEGER NOT NULL DEFAULT 0,
+	high INTEGER NOT NULL DEFAULT 0,
+	medium INTEGER NOT NULL DEFAULT 0,
+	low INTEGER NOT NULL DEFAULT 0,
+	result TEXT NOT NULL DEFAULT '',
+	started_by TEXT NOT NULL,
+	started_at TEXT NOT NULL,
+	finished_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX network_scans_by_target ON network_scans(target_id, started_at);
+PRAGMA user_version = 24;`
 
 // schemaV23 marks Kubernetes clusters enrolled with a cluster agent.
 const schemaV23 = `

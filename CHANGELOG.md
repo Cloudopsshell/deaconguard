@@ -12,6 +12,8 @@ upgrade notes.
 
 - **TLS checks:** `deaconguard tls check HOST[:PORT]...` checks a TLS service with handshakes only: a certificate expired or expiring within 14 or 30 days, untrusted or for another name, a short key or a SHA-1 signature; TLS 1.0 or 1.1 accepted, TLS 1.3 missing; 3DES or RC4 accepted, and suites without forward secrecy.
 - **Network scans:** `deaconguard net scan TARGET...` finds open TCP ports on addresses, ranges and names you own, with each service's greeting, web server header or TLS, and reports exposed databases, caches and brokers, the Docker API without TLS, kubelets and etcd, cleartext logins, and SMB or Remote Desktop. `--tls` checks each TLS service it finds. Plain TCP connects, 64 at a time, at most 4096 addresses per scan. Run from outside your network, it shows what the internet sees.
+- **Network in the dashboard:** a new **Network** page keeps network targets (addresses, ranges up to a /20 and names, at most 4096 addresses each) that the server scans itself, hourly to weekly or on **Scan now**, with each target's open ports, services, TLS and findings, and its newest 20 scans. Admins add and change targets; operators scan them. The database moves to schema 24.
+- **New network findings** notifications: critical and high findings a network target's previous scan didn't have, as a new event, `exposure`.
 
 ### Changed
 

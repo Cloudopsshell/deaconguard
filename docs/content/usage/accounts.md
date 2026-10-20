@@ -11,14 +11,16 @@ Every account has one of three roles. Give each person the least they need.
 
 | | Viewer | Operator | Admin |
 | --- | :-: | :-: | :-: |
-| See hosts, findings, vulnerabilities, scan reports, images, schedules and logs | ✓ | ✓ | ✓ |
+| See hosts, findings, vulnerabilities, scan reports, images, network targets, schedules and logs | ✓ | ✓ | ✓ |
 | My account: own password, two-step sign-in, appearance, sessions | ✓ | ✓ | ✓ |
 | Scan now, cancel a queued scan, answer sudo prompts | | ✓ | ✓ |
 | Create, change, run and delete schedules; download the log | | ✓ | ✓ |
 | Add, scan and remove [registry images](./images.md) | | ✓ | ✓ |
+| Scan [network targets](./network.md#in-the-dashboard) now | | ✓ | ✓ |
 | Delete scans, change a host's sudo setting | | ✓ | ✓ |
 | Enroll machines (enrollment tokens), remove hosts | | | ✓ |
 | Save [registry logins](./images.md#registries-and-logins) for private images | | | ✓ |
+| Add, change and remove [network targets](./network.md#in-the-dashboard) | | | ✓ |
 | The **Accounts** page, Require two-step sign-in, the **Audit log** | | | ✓ |
 
 The server checks the role on every request, not just the dashboard: a viewer who calls the API directly is refused. The dashboard hides what a role can't use, and **My account** says which role you have.
