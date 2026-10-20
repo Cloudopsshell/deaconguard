@@ -281,6 +281,8 @@ To run the server in the foreground without systemd, use `deaconguard serve --li
 
 3. The machine appears on the **Agents** and **Hosts** pages. Scan it from the dashboard like any other host, or with `deaconguard scan HOST_ID` on the server.
 
+The same command installs the agent on a **Mac** (1.8.0 and later), as the launchd daemon `io.deaconguard.agent`. A Mac runs the [macOS checks](https://docs.deaconguard.io/supported-distributions#macos): its macOS release and updates, and the macOS baseline. See [Install script: on a Mac](https://docs.deaconguard.io/installation/install-script#on-a-mac).
+
 Each token enrolls one machine within 24 hours and can be revoked while unused.
 
 ### Reusable tokens

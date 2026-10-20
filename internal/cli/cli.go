@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -86,7 +87,12 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 	if err != nil {
 		fmt.Fprintf(diagnostics, "deaconguard: %v\n", err)
 		if errors.Is(err, agent.ErrRemoved) {
-			// The agent service does not restart on this status.
+			// The agent service does not restart on this status. launchd
+			// can't spare one status, but restarts only on failure, so on a
+			// Mac a removed agent exits successfully.
+			if runtime.GOOS == "darwin" {
+				return 0
+			}
 			return 3
 		}
 		return 1
