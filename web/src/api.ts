@@ -240,7 +240,7 @@ export interface TrendPoint {
 }
 
 export type ChannelKind = "email" | "slack" | "teams" | "webhook" | "syslog" | "splunk" | "jira" | "servicenow";
-export type NotificationEvent = "exploited" | "critical" | "malware" | "integrity" | "cluster" | "scan_failed" | "audit" | "agent_offline" | "digest";
+export type NotificationEvent = "exploited" | "critical" | "malware" | "integrity" | "cluster" | "exposure" | "scan_failed" | "audit" | "agent_offline" | "digest";
 
 /** A channel's settings. Saved secrets come back as "set" (password, secret) or the address's host (url); send them empty to keep them. */
 export interface ChannelConfig {
@@ -676,6 +676,62 @@ export interface RegistryImage {
   latest?: ImageScan;
 }
 
+/** A finding of a config, cluster, TLS or network scan. */
+export interface ScanFinding {
+  rule: string;
+  severity: Severity;
+  title: string;
+  detail: string;
+  file: string;
+  stig?: string[];
+}
+
+/** Addresses, ranges and names the server scans for open ports and TLS. */
+export interface NetworkTarget {
+  id: string;
+  name: string;
+  targets: string[];
+  ports: string;
+  tls: boolean;
+  /** 0 scans on request only. */
+  interval_hours: number;
+  created_by: string;
+  created_at: string;
+  latest?: NetworkScan;
+}
+
+export type NetworkTargetInput = Pick<NetworkTarget, "name" | "targets" | "ports" | "tls" | "interval_hours">;
+
+export interface NetworkService {
+  port: number;
+  name: string;
+  banner?: string;
+  tls: boolean;
+}
+
+export interface NetworkResult {
+  addresses: number;
+  ports: number;
+  hosts: { address: string; name?: string; services: NetworkService[] }[];
+  tls?: { target: string; version: string; cipher: string; subject: string; issuer: string; dns_names?: string[]; not_after: string; trusted: boolean; protocols: string[] }[];
+  findings: ScanFinding[];
+  notes?: string[];
+}
+
+export interface NetworkScan {
+  id: string;
+  target_id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  error?: string;
+  hosts: number;
+  open_ports: number;
+  severity: SeverityCounts;
+  result?: NetworkResult;
+  started_by: string;
+  started_at: string;
+  finished_at?: string;
+}
+
 /** Runs scans of its hosts on chosen days at a time of day. */
 export interface Schedule {
   id: string;
@@ -1000,6 +1056,13 @@ export const api = {
   updateSchedule: (id: string, input: ScheduleInput) => request<Schedule>("PATCH", `/api/schedules/${id}`, input),
   deleteSchedule: (id: string) => request<null>("DELETE", `/api/schedules/${id}`),
   runSchedule: (id: string) => request<{ started: number; skipped: number }>("POST", `/api/schedules/${id}/run`),
+  networkTargets: () => request<NetworkTarget[]>("GET", "/api/network-targets"),
+  networkTarget: (id: string) => request<{ target: NetworkTarget; scans: NetworkScan[] }>("GET", `/api/network-targets/${id}`),
+  createNetworkTarget: (input: NetworkTargetInput) => request<NetworkTarget>("POST", "/api/network-targets", input),
+  updateNetworkTarget: (id: string, input: NetworkTargetInput) => request<NetworkTarget>("PATCH", `/api/network-targets/${id}`, input),
+  deleteNetworkTarget: (id: string) => request<null>("DELETE", `/api/network-targets/${id}`),
+  scanNetworkTarget: (id: string) => request<NetworkScan>("POST", `/api/network-targets/${id}/scans`),
+  networkScan: (id: string) => request<NetworkScan>("GET", `/api/network-scans/${id}`),
   images: () => request<RegistryImage[]>("GET", "/api/images"),
   image: (id: string) => request<{ image: RegistryImage; scans: ImageScan[] }>("GET", `/api/images/${id}`),
   addImage: (reference: string, platform: string, watch: boolean) => request<RegistryImage>("POST", "/api/images", { reference, platform, watch }),

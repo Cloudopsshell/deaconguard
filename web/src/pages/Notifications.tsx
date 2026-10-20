@@ -34,13 +34,14 @@ const eventMeta: Record<NotificationEvent, { label: string; detail: string }> = 
   malware: { label: "Malware", detail: "A scan found malware or signs of compromise" },
   integrity: { label: "Changed system files", detail: "System files differ from what their packages installed" },
   cluster: { label: "New cluster findings", detail: "A Kubernetes cluster has new critical or high findings, such as a privileged workload" },
+  exposure: { label: "New network findings", detail: "A network scan found new critical or high findings, such as an exposed database or an expiring certificate" },
   scan_failed: { label: "Failed scans", detail: "A scan failed, so its host's results are out of date" },
   audit: { label: "Audits", detail: "An audit finished, with its grade" },
   agent_offline: { label: "Agents offline", detail: "An agent stopped checking in" },
   digest: { label: "Digest", detail: "A summary of every host, daily or weekly; email attaches the open vulnerabilities as CSV" },
 };
 
-const instantEvents: NotificationEvent[] = ["exploited", "critical", "malware", "integrity", "cluster", "scan_failed", "audit", "agent_offline"];
+const instantEvents: NotificationEvent[] = ["exploited", "critical", "malware", "integrity", "cluster", "exposure", "scan_failed", "audit", "agent_offline"];
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** The editable fields of a channel, with saved secrets left empty so the server keeps them. */
