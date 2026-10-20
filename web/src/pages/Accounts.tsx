@@ -112,7 +112,7 @@ export function Accounts() {
   if (users.error) return <ErrorMessage error={users.error} />;
   const { users: accounts, mfa_required: required } = users.data;
   const me = session.data?.username;
-  const withoutMFA = accounts.filter((account) => !account.mfa_enabled && account.passkeys === 0 && !account.disabled).length;
+  const withoutMFA = accounts.filter((account) => !account.sso && !account.mfa_enabled && account.passkeys === 0 && !account.disabled).length;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -191,12 +191,15 @@ export function Accounts() {
                           {self && <Badge tone="slate">You</Badge>}
                           {account.disabled && <Badge tone="slate">Disabled</Badge>}
                           {account.must_change_password && <Badge tone="amber">Must change password</Badge>}
+                          {account.sso && <Badge tone="slate">Single sign-on</Badge>}
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Created {dateTime(account.created_at)}</p>
                       </Td>
                       <Td className="whitespace-nowrap">{roleLabels[account.role]}</Td>
                       <Td>
-                        {account.mfa_enabled || account.passkeys > 0 ? (
+                        {account.sso ? (
+                          <span className="text-sm text-slate-500 dark:text-slate-400">By the identity provider</span>
+                        ) : account.mfa_enabled || account.passkeys > 0 ? (
                           <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700 dark:text-emerald-400">
                             <ShieldCheck className="size-4" />{" "}
                             {[account.mfa_enabled && "App", account.passkeys > 0 && `${account.passkeys} ${account.passkeys === 1 ? "passkey" : "passkeys"}`]
@@ -251,17 +254,23 @@ export function Accounts() {
             {[
               {
                 label: "Change role",
-                detail: `${roleLabels[managing.role]} now. Signs them out so the new role applies.`,
+                detail: managing.sso
+                  ? `${roleLabels[managing.role]} now. Signs them out so the new role applies. With admin or operator groups set for single sign-on, their groups decide it again at their next sign-in.`
+                  : `${roleLabels[managing.role]} now. Signs them out so the new role applies.`,
                 run: () => {
                   setRole(managing.role);
                   setAction({ kind: "role", account: managing });
                 },
               },
-              {
-                label: "Set temporary password",
-                detail: "For a forgotten password. Signs them out; they choose a new one at the next sign-in.",
-                run: () => setAction({ kind: "password", account: managing }),
-              },
+              ...(managing.sso
+                ? []
+                : [
+                    {
+                      label: "Set temporary password",
+                      detail: "For a forgotten password. Signs them out; they choose a new one at the next sign-in.",
+                      run: () => setAction({ kind: "password" as const, account: managing }),
+                    },
+                  ]),
               ...(managing.mfa_enabled || managing.passkeys > 0
                 ? [
                     {

@@ -19,7 +19,7 @@ The server serves the dashboard over HTTPS with sign-in, optionally [with two-st
 - **Logs:** what the server and each agent did. See [Logs](#logs).
 - **Audit log** (server only, admins): sign-ins, account changes, tokens, enrollments, scans and removals.
 - **Accounts** (server only, admins): everyone who can sign in, their role, two-step sign-in status and last sign-in; create accounts, and change roles, reset, disable and remove them. See [Accounts and sign-in](./accounts.md#managing-accounts).
-- **Settings** (admins): [fix deadlines](./vulnerabilities.md#fix-deadlines); your company's name, contact line and logo for [reports](./reports.md#your-companys-branding); **Notifications**: email, Slack, Teams and webhook channels, see [Notifications](./notifications.md); and **Policies**: your own controls for every audit, in YAML. See [Policies](./policies.md).
+- **Settings** (admins): [fix deadlines](./vulnerabilities.md#fix-deadlines); [single sign-on](./single-sign-on.md) with your identity provider; your company's name, contact line and logo for [reports](./reports.md#your-companys-branding); **Notifications**: email, Slack, Teams and webhook channels, see [Notifications](./notifications.md); and **Policies**: your own controls for every audit, in YAML. See [Policies](./policies.md).
 - On an audit's page, **Compliance** reads the audit for NIST SP 800-53, PCI DSS, HIPAA and ISO/IEC 27001. See [Compliance](./compliance.md).
 - **My account** (server only, your name at the bottom of the sidebar): your role, password, two-step sign-in, recovery codes, appearance and sessions. See [My account](./accounts.md#my-account).
 

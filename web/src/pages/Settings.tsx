@@ -5,11 +5,13 @@ import { ImageUp, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { Button, Card, CardHeader, ErrorMessage, Field, Loading, PageHeader } from "../components/ui";
 import { FixDeadlines } from "../components/FixDeadlines";
+import { SingleSignOn } from "../components/SingleSignOn";
 
 /** Admin settings: how reports are branded. */
 export function Settings() {
   const queryClient = useQueryClient();
   const branding = useQuery({ queryKey: ["branding"], queryFn: api.branding });
+  const session = useQuery({ queryKey: ["session"], queryFn: api.session });
   const [company, setCompany] = useState("");
   const [contact, setContact] = useState("");
   const [saved, setSaved] = useState(false);
@@ -41,6 +43,7 @@ export function Settings() {
     <>
       <PageHeader title="Settings" description="Settings for everyone using this server." />
       <FixDeadlines />
+      {session.data?.login_required && <SingleSignOn />}
       <Card className="mb-6">
         <CardHeader
           title="Notifications"

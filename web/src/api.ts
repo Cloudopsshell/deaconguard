@@ -90,6 +90,10 @@ export interface Session {
   passkeys?: number;
   recovery_codes_left?: number;
   role?: Role;
+  /** Single sign-on, offered on the sign-in page when it is set up. */
+  sso?: { label: string };
+  /** The account signs in with single sign-on and has no password. */
+  sso_account?: boolean;
   /** The account's saved mode and theme, if it chose one. */
   appearance?: { mode: "system" | "light" | "dark"; theme: "indigo" | "ocean" | "teal" | "plum" | "graphite" };
 }
@@ -101,6 +105,8 @@ export interface Account {
   created_at: string;
   mfa_enabled: boolean;
   passkeys: number;
+  /** Signs in with single sign-on, with no password. */
+  sso: boolean;
   recovery_codes_left: number;
   must_change_password: boolean;
   disabled: boolean;
@@ -626,6 +632,25 @@ export interface ContainerResult {
   error?: string;
 }
 
+/** Single sign-on with an OpenID Connect provider; the client secret is never sent back. */
+export interface SSOSettings {
+  enabled: boolean;
+  issuer: string;
+  client_id: string;
+  client_secret?: string;
+  secret_set: boolean;
+  redirect_uri: string;
+  button_label: string;
+  username_claim: "email" | "preferred_username";
+  groups_claim: string;
+  scopes: string[] | null;
+  allowed_domains: string[] | null;
+  allowed_groups: string[] | null;
+  admin_groups: string[] | null;
+  operator_groups: string[] | null;
+  default_role: Role;
+}
+
 /** A passkey of the signed-in account. */
 export interface Passkey {
   id: string;
@@ -1070,6 +1095,8 @@ export const api = {
   passkeyLoginOptions: () => request<PasskeyOptions>("POST", "/api/login/passkey/options", {}),
   passkeyLogin: (assertion: PasskeyAssertion) => request<Session>("POST", "/api/login/passkey", assertion),
   passkeys: () => request<Passkey[]>("GET", "/api/account/passkeys"),
+  ssoSettings: () => request<SSOSettings>("GET", "/api/settings/sso"),
+  saveSSOSettings: (settings: Omit<SSOSettings, "secret_set" | "redirect_uri">) => request<SSOSettings>("PUT", "/api/settings/sso", settings),
   passkeyOptions: () => request<PasskeyOptions>("POST", "/api/account/passkeys/options", {}),
   addPasskey: (name: string, password: string, registration: PasskeyRegistration) =>
     request<Passkey>("POST", "/api/account/passkeys", { name, password, ...registration }),

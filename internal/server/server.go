@@ -52,6 +52,8 @@ type Server struct {
 	limiter *failureLimiter
 	// passkeys holds the WebAuthn challenges waiting for the browser.
 	passkeys passkeyChallenges
+	// sso keeps the identity provider and sign-ins waiting for it.
+	sso ssoState
 	// scheduler runs scheduled scans once StartScheduler is called.
 	scheduler *scheduler
 	// notifier sends notifications once StartScheduler is called.
@@ -113,16 +115,18 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/login/mfa", s.loginMFA)
 	mux.HandleFunc("POST /api/login/passkey/options", s.startPasskeyLogin)
 	mux.HandleFunc("POST /api/login/passkey", s.passkeyLogin)
+	mux.HandleFunc("GET /api/login/sso", s.startSSO)
+	mux.HandleFunc("GET "+ssoCallbackPath, s.ssoCallback)
 	mux.HandleFunc("GET /api/account", s.account)
 	mux.HandleFunc("PATCH /api/account/appearance", s.saveAppearance)
-	mux.HandleFunc("POST /api/account/password", s.changeOwnPassword)
-	mux.HandleFunc("POST /api/account/mfa", s.startMFA)
-	mux.HandleFunc("POST /api/account/mfa/confirm", s.confirmMFA)
-	mux.HandleFunc("POST /api/account/mfa/remove", s.removeOwnMFA)
-	mux.HandleFunc("POST /api/account/recovery-codes", s.newRecoveryCodes)
+	mux.HandleFunc("POST /api/account/password", passwordAccount(s.changeOwnPassword))
+	mux.HandleFunc("POST /api/account/mfa", passwordAccount(s.startMFA))
+	mux.HandleFunc("POST /api/account/mfa/confirm", passwordAccount(s.confirmMFA))
+	mux.HandleFunc("POST /api/account/mfa/remove", passwordAccount(s.removeOwnMFA))
+	mux.HandleFunc("POST /api/account/recovery-codes", passwordAccount(s.newRecoveryCodes))
 	mux.HandleFunc("GET /api/account/passkeys", s.networkOnly(s.listPasskeys))
-	mux.HandleFunc("POST /api/account/passkeys/options", s.networkOnly(s.startPasskey))
-	mux.HandleFunc("POST /api/account/passkeys", s.networkOnly(s.addPasskey))
+	mux.HandleFunc("POST /api/account/passkeys/options", s.networkOnly(passwordAccount(s.startPasskey)))
+	mux.HandleFunc("POST /api/account/passkeys", s.networkOnly(passwordAccount(s.addPasskey)))
 	mux.HandleFunc("PATCH /api/account/passkeys/{id}", s.networkOnly(s.renamePasskey))
 	mux.HandleFunc("DELETE /api/account/passkeys/{id}", s.networkOnly(s.removePasskey))
 	mux.HandleFunc("DELETE /api/account/sessions/{id}", s.endOwnSession)
@@ -139,6 +143,8 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/users/{id}/reset-mfa", s.needs(store.RoleAdmin, s.networkOnly(s.resetUserMFA)))
 	mux.HandleFunc("POST /api/users/{id}/temporary-password", s.needs(store.RoleAdmin, s.networkOnly(s.setTemporaryPassword)))
 	mux.HandleFunc("PATCH /api/settings/security", s.needs(store.RoleAdmin, s.networkOnly(s.updateSecurity)))
+	mux.HandleFunc("GET /api/settings/sso", s.needs(store.RoleAdmin, s.networkOnly(s.getSSOSettings)))
+	mux.HandleFunc("PUT /api/settings/sso", s.needs(store.RoleAdmin, s.networkOnly(s.saveSSOSettings)))
 	mux.HandleFunc("GET /api/audit", s.needs(store.RoleAdmin, s.listAudit))
 	mux.HandleFunc("GET /api/enrollment-tokens", s.needs(store.RoleAdmin, s.listEnrollmentTokens))
 	mux.HandleFunc("POST /api/enrollment-tokens", s.needs(store.RoleAdmin, s.createEnrollmentToken))

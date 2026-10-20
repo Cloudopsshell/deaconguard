@@ -14,7 +14,7 @@ DeaconGuard is a security scanner written in Go, for Linux servers, Kubernetes c
 
 One binary does two jobs, and they are kept apart on purpose:
 
-- **Server:** the HTTPS dashboard, with sign-in (passkeys, or two-step with any authenticator app), Admin, Operator and Viewer roles, and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
+- **Server:** the HTTPS dashboard, with sign-in (passkeys, two-step with any authenticator app, or single sign-on with OpenID Connect), Admin, Operator and Viewer roles, and an audit log. It stores results and checks packages against the advisories. It faces the network, so it runs **without root**, as the `deaconguard` user.
 - **Agent:** runs on each machine to scan, **as root**, so every check sees everything. It listens on nothing: it connects out to the server, runs the scans the server asks for, and sends back the results.
 
 **The server never scans a machine from inside.** Every machine, the server's own included, is scanned by its own agent. The server itself only reads registry images and, for network targets you add, connects to their ports from the outside. The install script gives the server's machine an agent too.
@@ -259,6 +259,7 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 Setup saves these settings in `/etc/systemd/system/deaconguard-server.service.d/10-setup.conf`, so package upgrades keep them.
 
 - **Don't expose port 8443 to the internet.** Allow it only from the networks where your admins and agents are, and reach the dashboard over a VPN, Tailscale, an SSH tunnel or AWS Systems Manager port forwarding. With `--agent-listen`, agents use their own port and 8443 only has to reach people. See [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard).
+- **Single sign-on:** under **Settings → Single sign-on**, admins connect an OpenID Connect provider (Microsoft Entra ID, Google, Okta, Keycloak, Authentik and others). Accounts are made at the first sign-in, limited by email domain or group, with roles from groups. See [Single sign-on](https://docs.deaconguard.io/usage/single-sign-on).
 - **Passkeys:** each account can add passkeys under **My account** and sign in with a fingerprint, face or device PIN instead of a password and code. A passkey counts as two-step sign-in. They need the dashboard on a name with a trusted certificate. See [Passkeys](https://docs.deaconguard.io/usage/accounts#passkeys).
 - **Two-step sign-in:** each account turns it on under **My account** with a passkey or any authenticator app (Google or Microsoft Authenticator, Bitwarden, 1Password, Proton Pass, Apple Passwords, Ente Auth, 2FAS, Aegis, and others) and gets 10 one-time recovery codes. Until it is on, the dashboard reminds you. On the **Accounts** page, **Require it** makes it mandatory for every account.
 - **Roles:** every account is an **Admin** (manages accounts and machines, reads the audit log), an **Operator** (scans, answers sudo prompts, manages schedules), or a **Viewer** (sees everything, changes nothing). The server checks the role on every request, and the dashboard hides what a role can't use. Accounts from before 0.11.0 are admins.
