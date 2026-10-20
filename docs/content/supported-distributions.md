@@ -1,6 +1,6 @@
 ---
 title: Supported distributions
-description: Which Linux distributions DeaconGuard scans, the advisory data it uses for each, and how it tells you a release is past its end of life.
+description: Which Linux distributions and macOS releases DeaconGuard scans, the advisory data it uses for each, and how it tells you a release is past its end of life.
 ---
 
 | Distribution | Versions | Advisory data |
@@ -18,6 +18,16 @@ description: Which Linux distributions DeaconGuard scans, the advisory data it u
 | Alpine Linux | 3.18 and later | Alpine's security database (secdb) for the main and community repositories. It lists only vulnerabilities Alpine has fixed, so ones it hasn't fixed yet aren't reported. Alpine rates nothing, so severities are each CVE's CVSS v3 score from [OSV](https://osv.dev), or unknown when no score is published. |
 
 All on **amd64 and arm64**. Advisory checks DeaconGuard can't evaluate are listed with the scan, never treated as clean.
+
+## macOS
+
+DeaconGuard checks **macOS 10.15 and later**, on Apple silicon and Intel, from DeaconGuard 1.8.0. A Mac has no package list to match against advisories: Apple updates macOS whole, and publishes what each update fixes, but not in a form to match against what's installed. So for a Mac, DeaconGuard reports:
+
+- whether its **macOS release still gets security updates**, from [endoflife.date](https://endoflife.date/macos), since Apple announces no end dates (it supports about the three newest releases);
+- each **newer version of its release** that's out, as a high finding, since Apple fixes flaws in every point release, some exploited before the fix;
+- the **updates the Mac has already found** but not installed, from `softwareupdate --list --no-scan`, such as Safari or Command Line Tools.
+
+The [macOS baseline](./usage/audits.md#the-deaconguard-macos-baseline) checks FileVault, System Integrity Protection, Gatekeeper, XProtect, the firewall, sharing, accounts and update settings. File integrity, running containers, and the ClamAV and YARA scans are for Linux and don't run on Macs; the dashboard doesn't offer them there.
 
 ## Packages from other repositories
 

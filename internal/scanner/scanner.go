@@ -212,6 +212,8 @@ func PlatformName(target platform.Platform) string {
 		return "openSUSE Leap " + target.VersionID
 	case platform.Alpine:
 		return "Alpine Linux " + target.VersionID
+	case platform.MacOS:
+		return "macOS " + target.VersionID
 	case platform.SLES:
 		if target.Major == 15 {
 			return fmt.Sprintf("SUSE Linux Enterprise 15 SP%d", target.Minor)
@@ -243,6 +245,8 @@ func coverage(family platform.Family, assumedSigned bool) string {
 		text = "Rocky Linux security errata (updateinfo) from the BaseOS and AppStream repositories"
 	case platform.Fedora:
 		text = "Fedora security updates (updateinfo) from the updates repository"
+	case platform.MacOS:
+		text = "macOS releases and their support from endoflife.date, and the updates this Mac has found (softwareupdate). Apple says what each update fixes, but not per installed app or component, so each missing update is one finding; installing it brings every fix"
 	case platform.Alpine:
 		text = "Alpine security database (secdb) for the main and community repositories. It lists fixed vulnerabilities only, so ones Alpine hasn't fixed yet aren't reported; severities are the CVEs' CVSS scores from OSV"
 	default:

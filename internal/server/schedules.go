@@ -90,10 +90,11 @@ func (s *Server) runSchedule(item store.Schedule) (started, skipped int) {
 		if !item.Covers(host.ID) {
 			continue
 		}
-		// A schedule runs on clusters only its Kubernetes check, and on
-		// machines its other checks; a host with none of its checks is
-		// left out quietly.
-		selected := checks.ForHost(host.IsCluster(), item.Checks)
+		// A schedule runs on each host the checks that apply to it: the
+		// Kubernetes check on clusters, the macOS checks on Macs, and the
+		// rest on machines; a host with none of its checks is left out
+		// quietly.
+		selected := checks.ForHost(host.Kind, item.Checks)
 		if len(selected) == 0 {
 			continue
 		}

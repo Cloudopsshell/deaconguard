@@ -352,7 +352,8 @@ func showReport(report map[string]any, asJSON bool, output io.Writer) error {
 		}
 		fmt.Fprintf(output, "Advisory data: %s, age %v hours\n", freshness, database["feed_age_hours"])
 	}
-	if data, ok := report["exploit_data"].(map[string]any); ok {
+	// A Mac's findings are updates, not CVEs, so exploit data doesn't apply.
+	if data, ok := report["exploit_data"].(map[string]any); ok && report["package_manager"] != "softwareupdate" {
 		parts := []string{}
 		for _, source := range []struct{ key, name, what string }{{"kev", "CISA KEV", "catalog"}, {"epss", "EPSS", "scores of"}} {
 			values, _ := data[source.key].(map[string]any)
