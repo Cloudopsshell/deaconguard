@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Security
+
+- **Single sign-on with Google:** with **Allowed email domains** set, a Google sign-in must also come from an account that one of those Google Workspace domains manages (the ID token's `hd`), as Google advises. Before, a personal Google account with a verified address at an allowed domain could sign in.
+
 ## [1.7.0] - 2026-10-20
 
 ### Added
