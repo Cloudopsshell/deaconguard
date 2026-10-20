@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-20
+
 ### Added
 
 - **TLS checks:** `deaconguard tls check HOST[:PORT]...` checks a TLS service with handshakes only: a certificate expired or expiring within 14 or 30 days, untrusted or for another name, a short key or a SHA-1 signature; TLS 1.0 or 1.1 accepted, TLS 1.3 missing; 3DES or RC4 accepted, and suites without forward secrecy.
@@ -109,7 +111,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.2.0...v1.3.0
