@@ -24,6 +24,8 @@ type User struct {
 	CreatedAt string `json:"created_at"`
 	// MFAEnabled reports two-step sign-in with an authenticator app.
 	MFAEnabled bool `json:"mfa_enabled"`
+	// Passkeys counts the account's passkeys.
+	Passkeys int `json:"passkeys"`
 	// RecoveryCodesLeft counts the unused recovery codes.
 	RecoveryCodesLeft int `json:"recovery_codes_left"`
 	// MustChangePassword is set by a temporary password from an admin.
@@ -35,6 +37,12 @@ type User struct {
 	// Appearance is the dashboard's mode and theme the account chose, as
 	// JSON the dashboard reads; empty until it chooses.
 	Appearance string `json:"-"`
+}
+
+// TwoStep reports whether the account signs in with more than a password:
+// with an authenticator app, a passkey, or both.
+func (user User) TwoStep() bool {
+	return user.MFAEnabled || user.Passkeys > 0
 }
 
 const (

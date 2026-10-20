@@ -12,6 +12,7 @@ const roleNotes: Record<Role, string> = {
 import { ChangePassword } from "../components/account/ChangePassword";
 import { MFASetup } from "../components/account/MFASetup";
 import { RecoveryCodes } from "../components/account/RecoveryCodes";
+import { Passkeys } from "../components/account/Passkeys";
 import { AppearancePicker } from "../components/AppearancePicker";
 import { Button, Card, CardHeader, Dialog, ErrorMessage, Field, Loading, PageHeader } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
@@ -61,13 +62,13 @@ export function Account() {
     <>
       <PageHeader
         title="My account"
-        description={`Signed in as ${data.username}, with the ${roleLabels[data.role]} role${roleNotes[data.role]}. Your password, two-step sign-in, appearance, API tokens and sessions.`}
+        description={`Signed in as ${data.username}, with the ${roleLabels[data.role]} role${roleNotes[data.role]}. Your two-step sign-in, passkeys, password, appearance, API tokens and sessions.`}
       />
       <div className="space-y-6">
         <Card>
           <CardHeader
-            title="Two-step sign-in"
-            description="After your password, DeaconGuard asks for a 6-digit code from an authenticator app on your phone or computer, so a stolen password alone cannot sign in."
+            title="Authenticator app"
+            description="After your password, DeaconGuard asks for a 6-digit code from an authenticator app on your phone or computer, so a stolen password alone cannot sign in. A passkey, below, does the same."
           />
           <div className="px-5 py-5">
             {codes ? (
@@ -89,24 +90,32 @@ export function Account() {
                   <Button variant="secondary" onClick={() => setConfirming("codes")}>
                     <KeyRound className="size-4" /> New recovery codes
                   </Button>
-                  {!data.mfa_required && (
+                  {(!data.mfa_required || data.passkeys > 0) && (
                     <Button variant="secondary" onClick={() => setConfirming("remove")}>
                       <ShieldOff className="size-4" /> Turn off
                     </Button>
                   )}
                 </div>
-                {data.mfa_required && <p className="text-xs text-slate-500 dark:text-slate-400">Required for every account, so it can't be turned off.</p>}
+                {data.mfa_required && data.passkeys === 0 && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Two-step sign-in is required for every account, so it can't be turned off without a passkey.</p>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
-                <p className="text-sm text-amber-700 dark:text-amber-400">Off. Anyone who learns your password can sign in as you.</p>
+                {data.passkeys > 0 ? (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">Not set up. Your passkeys already sign you in with two steps.</p>
+                ) : (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">Off. Anyone who learns your password can sign in as you.</p>
+                )}
                 <Button onClick={() => setSetting("setup")}>
-                  <ShieldCheck className="size-4" /> Set up two-step sign-in
+                  <ShieldCheck className="size-4" /> Set up an authenticator app
                 </Button>
               </div>
             )}
           </div>
         </Card>
+
+        <Passkeys onChange={refresh} />
 
         <Card>
           <CardHeader title="Password" />
@@ -169,7 +178,7 @@ export function Account() {
       <Dialog
         open={confirming !== null}
         onClose={close}
-        title={confirming === "remove" ? "Turn off two-step sign-in?" : "Create new recovery codes?"}
+        title={confirming === "remove" ? "Turn off the authenticator app?" : "Create new recovery codes?"}
       >
         <form
           className="space-y-4"
@@ -181,7 +190,9 @@ export function Account() {
         >
           <p className="text-sm text-slate-600 dark:text-slate-300">
             {confirming === "remove"
-              ? "Your password alone will sign you in again. Your recovery codes stop working."
+              ? data.passkeys > 0
+                ? "Your password then needs a passkey as its second step. Your recovery codes stop working."
+                : "Your password alone will sign you in again. Your recovery codes stop working."
               : "Your current recovery codes stop working, and 10 new ones are shown once."}
           </p>
           <Field label="Password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} data-autofocus />

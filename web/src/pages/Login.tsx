@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldCheck } from "lucide-react";
+import { KeyRound, ShieldCheck } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { api } from "../api";
 import { Button, Card, ErrorMessage, Field, Loading } from "../components/ui";
+import { passkeysSupported, signInWithPasskey } from "../lib/passkey";
 
 /** Only paths on this server are followed after sign-in. */
 function safeNext(value: string | null): string {
@@ -21,6 +22,7 @@ export function Login() {
   const [code, setCode] = useState("");
   const [useRecovery, setUseRecovery] = useState(false);
   const [pending, setPending] = useState(false);
+  const [methods, setMethods] = useState<("app" | "passkey")[]>([]);
   function finish() {
     // A full load starts every page with the new session.
     queryClient.clear();
@@ -36,8 +38,10 @@ export function Login() {
     mutationFn: () => api.login(username, password),
     onSuccess: (result) => {
       setPassword("");
-      if (result.mfa_pending) setPending(true);
-      else finish();
+      if (result.mfa_pending) {
+        setPending(true);
+        setMethods(result.mfa_methods ?? ["app"]);
+      } else finish();
     },
     onError: () => setPassword(""),
   });
@@ -45,6 +49,11 @@ export function Login() {
     mutationFn: () => api.loginMFA(code),
     onSuccess: finish,
     onError: () => setCode(""),
+  });
+  // A passkey signs in by itself, or finishes the second step after the password.
+  const passkey = useMutation({
+    mutationFn: async () => api.passkeyLogin(await signInWithPasskey(await api.passkeyLoginOptions())),
+    onSuccess: finish,
   });
   const cancel = useMutation({
     mutationFn: api.logout,
@@ -58,6 +67,9 @@ export function Login() {
   if (session.isPending) return <Loading />;
   if (session.data && (!session.data.login_required || session.data.authenticated)) return <Navigate to={next} replace />;
   const secondStep = pending || session.data?.mfa_pending;
+  const stepMethods = methods.length > 0 ? methods : (session.data?.mfa_methods ?? ["app"]);
+  const withApp = stepMethods.includes("app");
+  const withPasskey = stepMethods.includes("passkey") && passkeysSupported();
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -81,44 +93,69 @@ export function Login() {
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 {useRecovery
                   ? "Enter one of the recovery codes you saved when you set up two-step sign-in. Each works once."
-                  : "Enter the 6-digit code from your authenticator app."}
+                  : withApp && withPasskey
+                    ? "Use your passkey, or enter the 6-digit code from your authenticator app."
+                    : withApp
+                      ? "Enter the 6-digit code from your authenticator app."
+                      : "Use your passkey to finish signing in."}
               </p>
-              <form onSubmit={submit} className="mt-5 space-y-4">
-                <Field
-                  key={useRecovery ? "recovery" : "code"}
-                  label={useRecovery ? "Recovery code" : "Code"}
-                  name="code"
-                  autoComplete="one-time-code"
-                  inputMode={useRecovery ? "text" : "numeric"}
-                  placeholder={useRecovery ? "abcde-fghij" : "123 456"}
-                  autoFocus
-                  required
-                  value={code}
-                  onChange={(event) => setCode(event.target.value)}
-                  className="font-mono tracking-widest"
-                />
-                <ErrorMessage error={verify.error} />
-                <Button type="submit" className="w-full" loading={verify.isPending}>
-                  Verify
-                </Button>
-              </form>
+              {withPasskey && !useRecovery && (
+                <div className="mt-5 space-y-3">
+                  <Button className="w-full" variant={withApp ? "secondary" : "primary"} loading={passkey.isPending} onClick={() => passkey.mutate()}>
+                    <KeyRound className="size-4" /> Use your passkey
+                  </Button>
+                  <ErrorMessage error={passkey.error} />
+                </div>
+              )}
+              {!withApp && !withPasskey && (
+                <p className="mt-4 text-sm text-amber-700 dark:text-amber-400">
+                  This browser can't use passkeys on this address. Passkeys need the dashboard on a name with a certificate the browser trusts.
+                </p>
+              )}
+              {(withApp || useRecovery) && (
+                <form onSubmit={submit} className="mt-5 space-y-4">
+                  <Field
+                    key={useRecovery ? "recovery" : "code"}
+                    label={useRecovery ? "Recovery code" : "Code"}
+                    name="code"
+                    autoComplete="one-time-code"
+                    inputMode={useRecovery ? "text" : "numeric"}
+                    placeholder={useRecovery ? "abcde-fghij" : "123 456"}
+                    autoFocus
+                    required
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    className="font-mono tracking-widest"
+                  />
+                  <ErrorMessage error={verify.error} />
+                  <Button type="submit" className="w-full" loading={verify.isPending}>
+                    Verify
+                  </Button>
+                </form>
+              )}
               <div className="mt-4 flex items-center justify-between text-sm">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUseRecovery(!useRecovery);
-                    setCode("");
-                  }}
-                  className="text-indigo-600 hover:underline dark:text-indigo-400"
-                >
-                  {useRecovery ? "Use the authenticator app" : "Use a recovery code"}
-                </button>
+                {withApp ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUseRecovery(!useRecovery);
+                      setCode("");
+                    }}
+                    className="text-indigo-600 hover:underline dark:text-indigo-400"
+                  >
+                    {useRecovery ? "Use the authenticator app" : "Use a recovery code"}
+                  </button>
+                ) : (
+                  <span />
+                )}
                 <button type="button" onClick={() => cancel.mutate()} className="text-slate-500 hover:underline dark:text-slate-400">
                   Cancel
                 </button>
               </div>
               <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
-                Lost your phone and your recovery codes? Ask another admin to reset your two-step sign-in on the Accounts page.
+                {withApp
+                  ? "Lost your phone and your recovery codes? Ask another admin to reset your two-step sign-in on the Accounts page."
+                  : "Lost your passkey? Ask another admin to reset your two-step sign-in on the Accounts page."}
               </p>
             </>
           ) : (
@@ -151,6 +188,17 @@ export function Login() {
                   Sign in
                 </Button>
               </form>
+              {passkeysSupported() && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /> or <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+                  </div>
+                  <Button className="w-full" variant="secondary" loading={passkey.isPending} onClick={() => passkey.mutate()}>
+                    <KeyRound className="size-4" /> Sign in with a passkey
+                  </Button>
+                  <ErrorMessage error={passkey.error} />
+                </div>
+              )}
             </>
           )}
         </Card>

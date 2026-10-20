@@ -6,7 +6,7 @@ description: How to keep the DeaconGuard dashboard away from the internet, and w
 The dashboard shows every machine's weaknesses and can start scans on all of them, so it deserves more protection than a password. In order of how much they help:
 
 1. **Don't expose port 8443 to the internet.** Reach the dashboard over a private network. [Give agents a port of their own](#give-agents-their-own-port) so the dashboard's port only needs to reach people.
-2. **Turn on two-step sign-in** for every account, and [require it](../usage/accounts.md#require-it-for-everyone).
+2. **Turn on two-step sign-in** for every account, best with [passkeys](../usage/accounts.md#passkeys), which can't be phished, and [require it](../usage/accounts.md#require-it-for-everyone).
 3. **Keep accounts tidy:** one per person, no shared accounts, the [least role](../usage/accounts.md#roles) each person needs, and remove or disable people who leave.
 
 ## Keep it off the internet
@@ -61,7 +61,7 @@ Then the dashboard's own sign-in is all that stands in the way, so:
 
 Report share links are the one way in without signing in: each opens a single report, expires within 30 days, can be revoked, and every use is in the audit log. Prefer sending the PDF when you can.
 
-DeaconGuard already limits failed sign-ins and failed two-step codes per address, ends sessions after 12 hours, and refuses a code that was already used.
+DeaconGuard already limits failed sign-ins, passkey attempts and failed two-step codes per address, ends sessions after 12 hours, and refuses a code that was already used.
 
 ## Behind a reverse proxy
 
@@ -79,7 +79,7 @@ Make sure the proxy sets `X-Forwarded-For`; most do. Agents connect to the serve
 
 ## What DeaconGuard does not do
 
-- **Single sign-on (OIDC, SAML) and passkeys** are not supported yet; they are planned. Until then, an identity-aware proxy can add your company sign-in.
+- **Single sign-on (OIDC, SAML)** is not supported yet; it is planned. Until then, an identity-aware proxy can add your company sign-in.
 - **Password reset by email** is deliberately missing: another admin, or the command line on the server, resets access. See [When someone loses access](../usage/accounts.md#when-someone-loses-access).
 
 See also [Hardening](./hardening.md).
