@@ -10,6 +10,10 @@ upgrade notes.
 
 ### Security
 
+- DeaconGuard needs Go 1.26.10 or later to build, so no build lacks Go's fix for the compromised eMudhra intermediate CA keys (GO-2026-6809, CVE-2026-111943): `crypto/x509` refuses certificate chains through them. Release 1.7.0 was already built with Go 1.26.10; 1.6.0 and earlier were built with Go 1.26.9, so on them a forged certificate could intercept the server's HTTPS to advisory feeds, OSV, registries or an identity provider. Agents' connections to the server pin its key and weren't affected. Upgrade to 1.7.0 or later.
+
+### Security
+
 - **Single sign-on with Google:** with **Allowed email domains** set, a Google sign-in must also come from an account that one of those Google Workspace domains manages (the ID token's `hd`), as Google advises. Before, a personal Google account with a verified address at an allowed domain could sign in.
 
 ## [1.7.0] - 2026-10-20
