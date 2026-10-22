@@ -22,6 +22,9 @@ const (
 	OpenSUSELeap Family = "opensuse-leap"
 	SLES         Family = "sles"
 	Alpine       Family = "alpine"
+	// MacOS is Apple's macOS, which has no os-release: MacOSRelease makes
+	// one from sw_vers.
+	MacOS Family = "macos"
 )
 
 type Platform struct {
@@ -147,20 +150,30 @@ func Detect(contents string) (Platform, error) {
 		platform.Family = Alpine
 		platform.Minor = minor
 		platform.Codename = fmt.Sprintf("v%d.%d", major, minor)
+	case "macos":
+		// macOS 11 and later number releases by the major version; 10.15
+		// was the last of the 10 series.
+		minor := minorVersion(version)
+		if major < 11 && !(major == 10 && minor >= 15) {
+			return Platform{}, fmt.Errorf("unsupported macOS release %q: 10.15 and later are supported", version)
+		}
+		platform.Family = MacOS
+		platform.Minor = minor
 	case "centos":
 		if strings.Contains(strings.ToLower(values["NAME"]), "centos stream") && (major == 9 || major == 10) {
 			return Platform{}, fmt.Errorf("CentOS Stream %d is recognized but unsupported: no authoritative advisory feed is available", major)
 		}
 		return Platform{}, fmt.Errorf("unsupported CentOS release %q", version)
 	default:
-		return Platform{}, fmt.Errorf("unsupported Linux distribution %q", id)
+		return Platform{}, fmt.Errorf("unsupported operating system %q", id)
 	}
 
 	return platform, nil
 }
 
 func minorVersion(version string) int {
-	_, minorText, _ := strings.Cut(version, ".")
+	_, rest, _ := strings.Cut(version, ".")
+	minorText, _, _ := strings.Cut(rest, ".")
 	minor, _ := strconv.Atoi(minorText)
 	return minor
 }
@@ -168,4 +181,26 @@ func minorVersion(version string) int {
 func versionMajor(version string) (int, error) {
 	majorText, _, _ := strings.Cut(version, ".")
 	return strconv.Atoi(majorText)
+}
+
+// MacOSRelease turns sw_vers output into os-release lines, so a Mac goes
+// through the same detection as a Linux machine.
+func MacOSRelease(swVers string) (string, error) {
+	values := map[string]string{}
+	for _, line := range strings.Split(swVers, "\n") {
+		name, value, found := strings.Cut(line, ":")
+		if found {
+			values[strings.TrimSpace(name)] = strings.TrimSpace(value)
+		}
+	}
+	version := values["ProductVersion"]
+	if !strings.HasPrefix(values["ProductName"], "macOS") && !strings.HasPrefix(values["ProductName"], "Mac OS X") || version == "" {
+		return "", fmt.Errorf("sw_vers didn't name a macOS release")
+	}
+	for _, r := range version + values["BuildVersion"] {
+		if !(r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '.') {
+			return "", fmt.Errorf("sw_vers gave an unexpected version %q", version)
+		}
+	}
+	return fmt.Sprintf("NAME=\"macOS\"\nID=macos\nVERSION_ID=%s\nBUILD_ID=%s\nPRETTY_NAME=\"macOS %s\"\n", version, values["BuildVersion"], version), nil
 }

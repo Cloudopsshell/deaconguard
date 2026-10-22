@@ -19,7 +19,7 @@ description: Operating systems, accounts and network access DeaconGuard needs.
 
 The server can run on any [supported distribution](../supported-distributions.md). Agents only install on distributions DeaconGuard can scan.
 
-The macOS builds run the server and the CLI, but cannot scan the Mac itself.
+The macOS builds run the server, the CLI and the agent, and scan the Mac they run on: [its macOS release and updates, and the macOS baseline](../supported-distributions.md#macos).
 
 The server also runs in a container, with [Docker or Compose](./docker.md) or in [Kubernetes](./kubernetes.md), where an agent DaemonSet scans every node. An agent in a container scans its host with the host's own tools, so the host needs them installed as it would for an installed agent.
 

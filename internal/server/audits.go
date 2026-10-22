@@ -29,8 +29,8 @@ func (s *Server) startAudit(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &request) {
 		return
 	}
-	selected := append([]string(nil), audit.Checks...)
-	if request.Advanced {
+	selected := audit.ChecksFor(host.Kind)
+	if request.Advanced && host.Kind != store.KindMac {
 		selected = append(selected, checks.YARA)
 	}
 	selected, err = checks.Normalize(selected)

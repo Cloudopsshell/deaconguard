@@ -122,6 +122,10 @@ func (s *Summary) ApplyPolicies(policies []NamedPolicy) {
 // Checks every audit runs. The advanced antivirus scan is optional.
 var Checks = []string{checks.Packages, checks.Integrity, checks.Malware, checks.Config, checks.Hardening, checks.Antivirus}
 
+// ChecksFor are the audit's checks for a kind of host: a Mac runs only the
+// macOS ones, so an audit isn't marked incomplete for the Linux checks.
+func ChecksFor(kind string) []string { return checks.ForHost(kind, Checks) }
+
 var weights = map[string]float64{"critical": 10, "high": 6, "medium": 3, "low": 1}
 
 var grades = []string{"A", "B", "C", "D", "F"}
@@ -232,7 +236,10 @@ func Grade(scan store.Scan, report map[string]any, exceptions []store.Exception,
 		summary.Controls = append(summary.Controls, control)
 	}
 	for _, name := range checks.Categories() {
-		summary.Categories = append(summary.Categories, *categories[name])
+		// A category with no controls belongs to another system's baseline.
+		if category := categories[name]; category.Passed+category.Failed+category.Accepted+category.NotApplicable+category.Unknown > 0 {
+			summary.Categories = append(summary.Categories, *category)
+		}
 	}
 	if passedWeight+failedWeight > 0 {
 		summary.Score = int(math.Round(100 * passedWeight / (passedWeight + failedWeight)))
