@@ -3,6 +3,7 @@ package images
 import (
 	"archive/tar"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"deaconguard/internal/containers"
+	"deaconguard/internal/gobinary"
 	"deaconguard/internal/libraries"
 )
 
@@ -103,6 +105,14 @@ func readLayer(ctx context.Context, stream io.Reader, mediaType string) (layerFi
 		}
 		wanted, limit := wantedFile(name)
 		if !wanted {
+			// A program passing by: if it's Go, keep its build information,
+			// a small record, in place of the program.
+			if header.Typeflag == tar.TypeReg && header.Mode&0o111 != 0 && header.Size >= 1024 &&
+				header.Size <= gobinary.MaxProgramBytes && len(layer.Files) < maxFiles {
+				if record := readGoProgram(archive, header.Size); record != nil {
+					layer.Files[name] = record
+				}
+			}
 			continue
 		}
 		switch header.Typeflag {
@@ -131,6 +141,20 @@ func readLayer(ctx context.Context, stream io.Reader, mediaType string) (layerFi
 	io.Copy(io.Discard, reader)
 	io.Copy(io.Discard, buffered)
 	return layer, nil
+}
+
+// readGoProgram reads a program's Go build information from r, which is
+// left wherever reading stopped; the tar reader skips the rest.
+func readGoProgram(r io.Reader, size int64) []byte {
+	start := make([]byte, 4)
+	if _, err := io.ReadFull(r, start); err != nil || !gobinary.Executable(start) {
+		return nil
+	}
+	info, err := gobinary.Read(io.MultiReader(bytes.NewReader(start), r), size)
+	if err != nil {
+		return nil
+	}
+	return info.Record()
 }
 
 // fileSystem is an image's files, layers applied in order, as containers.FS.
@@ -220,7 +244,8 @@ func (fs *fileSystem) ReadDir(dir string) ([]containers.Entry, error) {
 		if isDir {
 			seen[first] = containers.Entry{Name: first, IsDir: true}
 		} else {
-			seen[first] = containers.Entry{Name: first, IsReg: true, Size: int64(len(data))}
+			seen[first] = containers.Entry{Name: first, IsReg: true, Size: int64(len(data)),
+				Exec: bytes.HasPrefix(data, []byte(gobinary.RecordMarker))}
 		}
 	}
 	if len(seen) == 0 && dir != "/" {
@@ -235,3 +260,12 @@ func (fs *fileSystem) ReadDir(dir string) ([]containers.Entry, error) {
 }
 
 func (fs *fileSystem) Device() uint64 { return 0 }
+
+// ReadGoBinary returns a Go program's record, kept as its layer streamed by.
+func (fs *fileSystem) ReadGoBinary(name string) ([]byte, error) {
+	resolved, ok := fs.resolve(path.Clean(name))
+	if !ok || !bytes.HasPrefix(fs.files[resolved], []byte(gobinary.RecordMarker)) {
+		return nil, gobinary.ErrNotGo
+	}
+	return fs.files[resolved], nil
+}
