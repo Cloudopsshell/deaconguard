@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-22
+
 ### Added
 
 - **macOS:** DeaconGuard scans Macs, macOS 10.15 and later. The package check reports whether the Mac's macOS release still gets security updates (from endoflife.date), each newer version of its release (high), and the updates the Mac has already found but not installed (`softwareupdate --list --no-scan`). The audit checks a new **macOS baseline** of 18 controls (`MACOS-01` to `MACOS-18`): FileVault, System Integrity Protection, Gatekeeper, XProtect's age, the firewall and stealth mode, Remote Login, Screen Sharing and File Sharing, the guest account and automatic login, the update settings, waiting updates and network time, reading configuration profiles (MDM) before local settings. The controls map to NIST 800-53, PCI DSS, HIPAA and ISO 27001. A Mac enrolls as a new kind of host, `mac`, which runs only these checks; `deaconguard scan --local` and `audit --local` work on a Mac too.
@@ -140,7 +142,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.4.0...v1.5.0
