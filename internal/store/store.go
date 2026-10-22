@@ -906,6 +906,15 @@ func scanHost(row rowScanner) (Host, error) {
 // ErrLocalHostExists is returned when this machine is already registered.
 var ErrLocalHostExists = errors.New("this machine is already registered as a host")
 
+// LocalHostKind is the kind of host this machine is: a Mac or a Linux
+// machine. Tests of other packages that assume one replace it.
+var LocalHostKind = func() string {
+	if runtime.GOOS == "darwin" {
+		return KindMac
+	}
+	return KindMachine
+}
+
 // AddLocalHost registers the machine DeaconGuard runs on. hostname and username
 // describe it; scans run as the user running DeaconGuard.
 func AddLocalHost(hostname, username string) (Host, error) {
@@ -924,11 +933,7 @@ func AddLocalHost(hostname, username string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	kind := KindMachine
-	if runtime.GOOS == "darwin" {
-		kind = KindMac
-	}
-	host := Host{ID: id, Address: hostname, Username: username, Transport: TransportLocal, Kind: kind}
+	host := Host{ID: id, Address: hostname, Username: username, Transport: TransportLocal, Kind: LocalHostKind()}
 	if err := insertHost(db, host); err != nil {
 		return Host{}, err
 	}
@@ -936,8 +941,11 @@ func AddLocalHost(hostname, username string) (Host, error) {
 }
 
 func insertHost(db *sql.DB, host Host) error {
-	_, err := db.Exec(`INSERT INTO hosts (id, address, username, transport, created_at) VALUES (?, ?, ?, ?, ?)`,
-		host.ID, host.Address, host.Username, host.Transport, nowText())
+	if host.Kind == "" {
+		host.Kind = KindMachine
+	}
+	_, err := db.Exec(`INSERT INTO hosts (id, address, username, transport, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		host.ID, host.Address, host.Username, host.Transport, host.Kind, nowText())
 	return err
 }
 
