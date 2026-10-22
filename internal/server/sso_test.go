@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"deaconguard/internal/oidc"
 	"deaconguard/internal/oidc/oidctest"
 	"deaconguard/internal/store"
 )
@@ -160,5 +161,37 @@ func TestSingleSignOn(t *testing.T) {
 	}
 	if response := do(t, s, call{method: http.MethodGet, path: "/api/settings/sso", bearer: secret}); response.Code != http.StatusForbidden {
 		t.Fatalf("an API token reading SSO settings: %d", response.Code)
+	}
+}
+
+func TestGoogleHostedDomain(t *testing.T) {
+	config := store.SSOConfig{AllowedDomains: []string{"example.com"}}
+	claims := func(issuer, email string, verified bool, hd string) oidc.Claims {
+		raw := map[string]any{}
+		if hd != "" {
+			raw["hd"] = hd
+		}
+		flag := oidc.FlexBool(verified)
+		return oidc.Claims{Issuer: issuer, Email: email, EmailVerified: &flag, Raw: raw}
+	}
+	cases := []struct {
+		name   string
+		claims oidc.Claims
+		allow  bool
+	}{
+		{"a Workspace account", claims(googleIssuer, "ann@example.com", true, "example.com"), true},
+		{"a personal Google account with a company address", claims(googleIssuer, "ann@example.com", true, ""), false},
+		{"another Workspace", claims(googleIssuer, "ann@example.com", true, "other.example"), false},
+		{"an address in another domain", claims(googleIssuer, "ann@gmail.com", true, "example.com"), false},
+		{"an unverified email", claims("https://id.example", "ann@example.com", false, ""), false},
+		{"another provider, which sends no hd", claims("https://id.example", "Ann@Example.com", true, ""), true},
+	}
+	for _, c := range cases {
+		if got := domainRefusal(config, c.claims) == ""; got != c.allow {
+			t.Errorf("%s: allowed %v, want %v", c.name, got, c.allow)
+		}
+	}
+	if domainRefusal(store.SSOConfig{}, claims(googleIssuer, "ann@gmail.com", true, "")) != "" {
+		t.Error("no allowed domains refused a sign-in")
 	}
 }

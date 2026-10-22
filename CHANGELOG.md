@@ -13,6 +13,10 @@ upgrade notes.
 - **macOS:** DeaconGuard scans Macs, macOS 10.15 and later. The package check reports whether the Mac's macOS release still gets security updates (from endoflife.date), each newer version of its release (high), and the updates the Mac has already found but not installed (`softwareupdate --list --no-scan`). The audit checks a new **macOS baseline** of 18 controls (`MACOS-01` to `MACOS-18`): FileVault, System Integrity Protection, Gatekeeper, XProtect's age, the firewall and stealth mode, Remote Login, Screen Sharing and File Sharing, the guest account and automatic login, the update settings, waiting updates and network time, reading configuration profiles (MDM) before local settings. The controls map to NIST 800-53, PCI DSS, HIPAA and ISO 27001. A Mac enrolls as a new kind of host, `mac`, which runs only these checks; `deaconguard scan --local` and `audit --local` work on a Mac too.
 - **The agent on a Mac:** the install script installs the agent on macOS with the same command as on Linux. It checks the macOS archive's signature with cosign for macOS, installs `deaconguard` to `/usr/local/bin`, and `deaconguard setup agent` starts the launchd daemon `io.deaconguard.agent` as root, logging to `/var/log/deaconguard-agent.log`. A Mac agent whose host is removed stays stopped.
 
+### Security
+
+- **Single sign-on with Google:** with **Allowed email domains** set, a Google sign-in must also come from an account that one of those Google Workspace domains manages (the ID token's `hd`), as Google advises. Before, a personal Google account with a verified address at an allowed domain could sign in.
+
 ## [1.7.0] - 2026-10-20
 
 ### Added
