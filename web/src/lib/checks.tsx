@@ -6,7 +6,9 @@ import { severityOrder } from "./format";
 export const checkOrder: CheckId[] = ["packages", "libraries", "containers", "integrity", "malware", "config", "antivirus", "yara", "kubernetes"];
 
 /** The checks a host runs: a Kubernetes cluster only the Kubernetes check, a machine every other. */
+/** The checks a host runs: a cluster only the Kubernetes check, a Mac the macOS checks, and a machine every other. */
 export function checksFor(host: { kind?: string } | undefined, ids: CheckId[] = checkOrder): CheckId[] {
+  if (host?.kind === "mac") return ids.filter((id) => id === "packages" || id === "hardening");
   const cluster = host?.kind === "cluster";
   return ids.filter((id) => (id === "kubernetes") === cluster);
 }

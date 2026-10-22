@@ -16,6 +16,8 @@ Every audit runs all of DeaconGuard's [checks](../checks.md):
 - **The hardening baseline**: 72 controls, from accounts and SSH to kernel settings, logging and file permissions. See [the baseline's controls](#the-deaconguard-linux-baseline).
 - **An antivirus scan** with ClamAV. Optionally the **advanced antivirus scan** with YARA rules too.
 
+On a **Mac**, an audit runs the checks that apply to macOS: whether the Mac has [Apple's latest updates](../supported-distributions.md#macos), and [the macOS baseline](#the-deaconguard-macos-baseline). The others are for Linux.
+
 It also records the machine's **inventory**: operating system, kernel, hardware, memory, uptime, disks and their usage, network addresses, listening services, administrators and accounts that can log in, time zone and clock synchronisation, and the number of packages.
 
 Like every scan, an audit only reads: it changes nothing on the machine. It takes a few minutes, mostly for the antivirus scan.
@@ -198,3 +200,54 @@ The controls read the machine's settings with fixed, read-only commands, and aud
 | ID | Control | Severity |
 | --- | --- | --- |
 | MAC-01 | AppArmor or SELinux is enforcing | Medium |
+
+## The DeaconGuard macOS baseline
+
+On a Mac, the audit checks 18 controls of DeaconGuard's macOS baseline, written from Apple's own security guidance, with fixed, read-only commands: `fdesetup`, `csrutil`, `spctl`, the application firewall, `launchctl`, `systemsetup`, `softwareupdate --list --no-scan` (which uses what the Mac already knows, without asking Apple), and the system's preference files. Settings a configuration profile from an MDM sets win over local ones, as on the Mac itself, and the evidence says which applied.
+
+The agent runs as root, so it sees everything. Without root, Remote Login and network time can't be read and are reported as not checked.
+
+Control IDs start with `MACOS-`, so they never mix with the Linux baseline's. Like the Linux controls, they map to [compliance frameworks](./compliance.md), and a control that doesn't fit, such as Screen Sharing on a Mac your IT team manages with it, can be [accepted](#accepted-risks).
+
+### System protection
+
+| ID | Control | Severity |
+| --- | --- | --- |
+| MACOS-01 | FileVault encrypts the startup disk | High |
+| MACOS-02 | System Integrity Protection is on | High |
+| MACOS-03 | Gatekeeper checks apps before they open | High |
+| MACOS-04 | XProtect's malware definitions are recent (45 days) | Medium |
+
+### Services and firewall
+
+| ID | Control | Severity |
+| --- | --- | --- |
+| MACOS-05 | The firewall is on | Medium |
+| MACOS-06 | The firewall's stealth mode is on | Low |
+| MACOS-07 | Remote Login (SSH) is off | Medium |
+| MACOS-08 | Screen Sharing and Remote Management are off | Medium |
+| MACOS-09 | File Sharing is off | Low |
+
+### Accounts and passwords
+
+| ID | Control | Severity |
+| --- | --- | --- |
+| MACOS-10 | The guest account is off | Medium |
+| MACOS-11 | Automatic login is off | High |
+
+### Updates
+
+| ID | Control | Severity |
+| --- | --- | --- |
+| MACOS-12 | The Mac checks for updates automatically | Medium |
+| MACOS-13 | macOS updates download automatically | Low |
+| MACOS-14 | Security responses and system files install automatically | High |
+| MACOS-15 | macOS updates install automatically | Low |
+| MACOS-16 | App Store apps update automatically | Low |
+| MACOS-17 | No found updates are waiting to be installed | Medium |
+
+### Time
+
+| ID | Control | Severity |
+| --- | --- | --- |
+| MACOS-18 | The clock is set automatically | Low |
