@@ -168,13 +168,26 @@ type Cluster struct {
 }
 
 // ForHost leaves out the checks a kind of host doesn't run: a cluster runs
-// only the Kubernetes check, and a machine every check but it. It returns
-// nil when nothing is left.
-func ForHost(cluster bool, ids []string) []string {
+// only the Kubernetes check, a Mac the macOS checks, and a machine every
+// check but Kubernetes. It returns nil when nothing is left.
+func ForHost(kind string, ids []string) []string {
 	var kept []string
 	for _, id := range ids {
-		if (id == Kubernetes) == cluster {
-			kept = append(kept, id)
+		switch kind {
+		case "cluster":
+			if id == Kubernetes {
+				kept = append(kept, id)
+			}
+		case "mac":
+			for _, mac := range MacOSChecks {
+				if id == mac {
+					kept = append(kept, id)
+				}
+			}
+		default:
+			if id != Kubernetes {
+				kept = append(kept, id)
+			}
 		}
 	}
 	return kept
@@ -226,6 +239,12 @@ type Inputs struct {
 
 // Run executes one check. The package check is run by the scan itself.
 func Run(id string, executor *Executor, target platform.Platform, now time.Time, inputs Inputs) Result {
+	if target.Family == platform.MacOS {
+		if id == Hardening {
+			return runMacHardening(executor, target)
+		}
+		return macOSSkipped(id)
+	}
 	var result Result
 	switch id {
 	case Libraries:

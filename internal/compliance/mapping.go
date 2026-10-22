@@ -17,7 +17,7 @@ var frameworks = []Framework{
 		"CM-6": "Configuration settings", "CM-7": "Least functionality", "CM-14": "Signed components", "IA-2": "Identification and authentication",
 		"IA-5": "Authenticator management", "IA-5(1)": "Password-based authentication", "MP-7": "Media use", "RA-5": "Vulnerability monitoring and scanning",
 		"SC-5": "Denial-of-service protection", "SC-7": "Boundary protection", "SC-8": "Transmission confidentiality and integrity",
-		"SC-10": "Network disconnect", "SC-13": "Cryptographic protection", "SC-39": "Process isolation", "SI-2": "Flaw remediation",
+		"SC-10": "Network disconnect", "SC-13": "Cryptographic protection", "SC-28": "Protection of information at rest", "SC-39": "Process isolation", "SI-2": "Flaw remediation",
 		"SI-3": "Malicious code protection", "SI-4": "System monitoring", "SI-7": "Software, firmware and information integrity", "SI-16": "Memory protection",
 	}},
 	{ID: PCI, Name: "PCI DSS v4.0", Short: "PCI DSS", Requirements: map[string]string{
@@ -36,7 +36,7 @@ var frameworks = []Framework{
 		"164.308(a)(1)(ii)(A)": "Risk analysis", "164.308(a)(5)(ii)(B)": "Protection from malicious software",
 		"164.308(a)(5)(ii)(C)": "Log-in monitoring", "164.308(a)(5)(ii)(D)": "Password management",
 		"164.310(d)(1)": "Device and media controls", "164.312(a)(1)": "Access control", "164.312(a)(2)(i)": "Unique user identification",
-		"164.312(a)(2)(iii)": "Automatic logoff", "164.312(b)": "Audit controls", "164.312(c)(1)": "Integrity",
+		"164.312(a)(2)(iii)": "Automatic logoff", "164.312(a)(2)(iv)": "Encryption and decryption", "164.312(b)": "Audit controls", "164.312(c)(1)": "Integrity",
 		"164.312(d)": "Person or entity authentication", "164.312(e)(1)": "Transmission security",
 	}},
 	{ID: ISO, Name: "ISO/IEC 27001:2022 Annex A", Short: "ISO 27001", Requirements: map[string]string{
@@ -149,6 +149,26 @@ var mapping = map[string]refs{
 	"TIME-02": m(l("AU-8"), l("10.6.1"), l("164.312(b)"), l("8.17")),
 
 	"MAC-01": m(l("AC-3(3)", "SC-39"), l("2.2.6"), l("164.312(a)(1)"), l("8.9")),
+
+	// The macOS baseline.
+	"MACOS-01": m(l("SC-28"), nil, l("164.312(a)(2)(iv)"), l("8.24")),
+	"MACOS-02": m(l("SI-7", "CM-6"), l("2.2.6"), l("164.312(c)(1)"), l("8.9")),
+	"MACOS-03": m(l("CM-14", "SI-3"), l("5.2.1"), l("164.308(a)(5)(ii)(B)"), l("8.7", "8.19")),
+	"MACOS-04": m(l("SI-3"), l("5.2.1"), l("164.308(a)(5)(ii)(B)"), l("8.7")),
+	"MACOS-05": m(l("SC-7"), l("1.3.1"), l("164.312(e)(1)"), l("8.20")),
+	"MACOS-06": m(l("SC-7"), l("1.3.1"), nil, l("8.20")),
+	"MACOS-07": m(l("AC-17", "CM-7"), l("2.2.4"), l("164.312(a)(1)"), l("8.20")),
+	"MACOS-08": m(l("AC-17", "CM-7"), l("2.2.4"), l("164.312(a)(1)"), l("8.20")),
+	"MACOS-09": m(l("CM-7"), l("2.2.4"), nil, l("8.3")),
+	"MACOS-10": m(l("AC-2", "IA-2"), l("8.2.2"), l("164.312(a)(2)(i)"), l("5.16")),
+	"MACOS-11": m(l("IA-2"), l("8.3.1"), l("164.312(d)"), l("8.5")),
+	"MACOS-12": m(l("SI-2"), l("6.3.3"), nil, l("8.8")),
+	"MACOS-13": m(l("SI-2"), l("6.3.3"), nil, l("8.8")),
+	"MACOS-14": m(l("SI-2", "SI-3"), l("6.3.3", "5.2.1"), l("164.308(a)(5)(ii)(B)"), l("8.7", "8.8")),
+	"MACOS-15": m(l("SI-2"), l("6.3.3"), nil, l("8.8")),
+	"MACOS-16": m(l("SI-2"), l("6.3.3"), nil, l("8.8")),
+	"MACOS-17": m(l("SI-2"), l("6.3.3"), nil, l("8.8")),
+	"MACOS-18": m(l("AU-8"), l("10.6.1"), l("164.312(b)"), l("8.17")),
 
 	"CHECK-packages":  m(l("SI-2", "RA-5"), l("6.3.3", "11.3.1"), l("164.308(a)(1)(ii)(A)"), l("8.8")),
 	"CHECK-integrity": m(l("SI-7"), l("11.5.2"), l("164.312(c)(1)"), l("8.16")),

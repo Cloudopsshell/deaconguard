@@ -40,7 +40,7 @@ For a single machine, `deaconguard serve` gives a local dashboard without accoun
 
 ## Requirements
 
-- **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. The macOS builds can run the server and the CLI but cannot scan the Mac itself. The server also runs [in a container](#docker-compose-and-kubernetes), with Docker, Compose or Kubernetes, and the agent runs on every Kubernetes node as a DaemonSet.
+- **Where DeaconGuard runs:** Linux machines, amd64 or arm64, running a [supported distribution](#supported-distributions). It is a single self-contained binary, and nothing else is needed. On a Mac, the agent checks its macOS release and updates and the [macOS baseline](https://docs.deaconguard.io/usage/audits#the-deaconguard-macos-baseline). The server also runs [in a container](#docker-compose-and-kubernetes), with Docker, Compose or Kubernetes, and the agent runs on every Kubernetes node as a DaemonSet.
 - **Account:** the agent service runs as root, so every check sees everything. The server service runs as its own `deaconguard` user. A normal account is enough for a local scan; the optional checks see more when [sudo is allowed](#checks).
 - **Server memory:** give the server at least **1 GB of memory** (RAM plus swap). It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB. With too little, Linux stops the server mid-scan, and the dashboard says so after it restarts.
 - **Network:** the server needs HTTPS access to the distributions' advisory feeds (the hosts are listed under [Supported distributions](#supported-distributions)), and to `www.cisa.gov` and `epss.empiricalsecurity.com` for exploit data. With the [application library check](#application-libraries-and-sbom), it also reaches `api.osv.dev`, sending only library names and versions. With [notifications](#notifications), it also reaches your mail server and webhooks. With network targets, it connects to the addresses and ports they name. Agents only need to reach the server, on port 8443 by default, or on a port of their own with `--agent-listen`.
@@ -141,7 +141,7 @@ sudo install -m 0755 deaconguard /usr/local/bin/deaconguard
 deaconguard version
 ```
 
-macOS builds can run the server and the CLI but cannot scan the Mac itself. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
+macOS builds run the server, the CLI and the agent, which checks the Mac's macOS release and updates and the macOS baseline. They are not yet signed by Apple; if macOS blocks the first run of a browser download, allow it with `xattr -d com.apple.quarantine /usr/local/bin/deaconguard`.
 
 With the [GitHub CLI](https://cli.github.com), `gh release download -R Cloudopsshell/deaconguard -p 'FILE'` downloads a file of the latest release instead of `curl` (add a tag such as `v1.0.0` for another release).
 

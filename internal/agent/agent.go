@@ -16,7 +16,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -532,6 +534,14 @@ func (c *client) yaraRules(ctx context.Context) checks.YARAInput {
 
 func osName() string {
 	contents, err := os.ReadFile(local.HostPath("/etc/os-release"))
+	if err != nil && runtime.GOOS == "darwin" {
+		// A Mac has no os-release; sw_vers names the release.
+		if output, macErr := exec.Command("/usr/bin/sw_vers").Output(); macErr == nil {
+			if release, macErr := platform.MacOSRelease(string(output)); macErr == nil {
+				contents, err = []byte(release), nil
+			}
+		}
+	}
 	if err != nil {
 		return ""
 	}

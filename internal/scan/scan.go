@@ -145,7 +145,7 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 		if id == checks.Kubernetes {
 			result = checks.Result{Status: checks.StatusSkipped, Findings: []checks.Finding{}, Notes: []string{},
 				Summary: "The Kubernetes check runs on clusters: use deaconguard kube scan, or enroll the cluster with the cluster agent"}
-		} else if id == checks.Containers {
+		} else if id == checks.Containers && detected.Family != platform.MacOS {
 			result = collectContainers(executor)
 			// An agent sends what it read; a scan run here checks it now.
 			if options.CollectInventory == nil && result.Status == checks.StatusCompleted {
@@ -199,6 +199,9 @@ func EvaluateInventory(report map[string]any, inventory target.Inventory, emit f
 }
 
 func evaluatePackages(report map[string]any, inventory target.Inventory, progress *reporter, started time.Time) error {
+	if detected, err := platform.Detect(inventory.OSRelease); err == nil && detected.Family == platform.MacOS {
+		return evaluateMacOS(report, inventory, progress, started)
+	}
 	progress.info("Running kernel %s", inventory.Kernel)
 	if len(evaluationSlots) == cap(evaluationSlots) {
 		progress.info("Waiting for another host's advisory evaluation to finish")
@@ -222,6 +225,33 @@ func evaluatePackages(report map[string]any, inventory target.Inventory, progres
 	}
 	progress.endPhase(status, fmt.Sprintf("%d installed packages · %d findings · %d rules not evaluated · %s",
 		packages.PackageCount, packages.FindingCount, packages.UnsupportedCount, formatDuration(time.Since(started))))
+	encoded, err := json.Marshal(packages)
+	if err != nil {
+		return err
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		return fmt.Errorf("encode package report: %w", err)
+	}
+	for key, value := range fields {
+		report[key] = value
+	}
+	return nil
+}
+
+// evaluateMacOS checks a Mac's release and pending updates, in place of
+// the package evaluation.
+func evaluateMacOS(report map[string]any, inventory target.Inventory, progress *reporter, started time.Time) error {
+	progress.info("Checking the macOS release against Apple's releases and the updates the Mac has found")
+	packages, err := scanner.ScanMacOS(inventory.OSRelease, inventory.SoftwareUpdates, nil, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	progress.endPhase(checks.StatusCompleted, fmt.Sprintf("%s · %d updates to install · %s", packages.OS, packages.FindingCount, formatDuration(time.Since(started))))
+	return mergeReport(report, packages)
+}
+
+func mergeReport(report map[string]any, packages scanner.Report) error {
 	encoded, err := json.Marshal(packages)
 	if err != nil {
 		return err

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -28,14 +29,16 @@ type Host struct {
 	// AutoScanContainers scans the running containers when its agent sees
 	// new ones (1.2.0 and later).
 	AutoScanContainers bool `json:"auto_scan_containers"`
-	// Kind is KindMachine, or KindCluster for a Kubernetes cluster enrolled
-	// with a cluster agent, which runs only the Kubernetes check.
+	// Kind is KindMachine, KindMac for a Mac (1.8.0 and later), which runs
+	// the macOS checks, or KindCluster for a Kubernetes cluster enrolled with
+	// a cluster agent, which runs only the Kubernetes check.
 	Kind string `json:"kind"`
 }
 
 // Kinds of host.
 const (
 	KindMachine = "machine"
+	KindMac     = "mac"
 	KindCluster = "cluster"
 )
 
@@ -921,7 +924,11 @@ func AddLocalHost(hostname, username string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	host := Host{ID: id, Address: hostname, Username: username, Transport: TransportLocal, Kind: KindMachine}
+	kind := KindMachine
+	if runtime.GOOS == "darwin" {
+		kind = KindMac
+	}
+	host := Host{ID: id, Address: hostname, Username: username, Transport: TransportLocal, Kind: kind}
 	if err := insertHost(db, host); err != nil {
 		return Host{}, err
 	}
