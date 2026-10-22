@@ -19,8 +19,21 @@ func runLibraries(executor *Executor) Result {
 	if err != nil && len(output) == 0 {
 		return failed(fmt.Errorf("list the application libraries: %w", err))
 	}
+	// Compiled Go programs are read here directly: their build information
+	// is a small block inside files too large to send whole.
+	var goNotes []string
+	goNote := ""
+	if executor.OnThisMachine() {
+		var records []byte
+		records, goNotes = collectGoBinaries()
+		output = append(output, records...)
+		goNote = goBinaryNote(records)
+	}
 	found := libraries.Parse(output)
-	result := Result{Privileged: privileged, Libraries: &found, Notes: append([]string(nil), found.Notes...)}
+	result := Result{Privileged: privileged, Libraries: &found, Notes: append(append([]string(nil), found.Notes...), goNotes...)}
+	if goNote != "" {
+		result.note("%s", goNote)
+	}
 	if !privileged {
 		result.note("Ran without root, so projects in other users' folders may be missing.")
 	}

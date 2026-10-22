@@ -3,6 +3,7 @@
 package containers
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"deaconguard/internal/gobinary"
 )
 
 // ErrSymlink means a path inside a container went through a symbolic link,
@@ -137,7 +140,41 @@ func (r *root) ReadDir(path string) ([]Entry, error) {
 			continue
 		}
 		mode := stat.Mode & unix.S_IFMT
-		entries = append(entries, Entry{Name: name, IsDir: mode == unix.S_IFDIR, IsReg: mode == unix.S_IFREG, Size: stat.Size, Dev: uint64(stat.Dev)})
+		entries = append(entries, Entry{Name: name, IsDir: mode == unix.S_IFDIR, IsReg: mode == unix.S_IFREG, Size: stat.Size, Dev: uint64(stat.Dev),
+			Exec: mode == unix.S_IFREG && stat.Mode&0o111 != 0})
 	}
 	return entries, nil
+}
+
+// ReadGoBinary reads a Go program's build information inside the root,
+// without following any symbolic link, streaming through the file.
+func (r *root) ReadGoBinary(path string) ([]byte, error) {
+	cut := strings.LastIndex(path, "/")
+	dir, name := path[:cut+1], path[cut+1:]
+	if name == "" || name == "." || name == ".." {
+		return nil, fmt.Errorf("%s: not a file", path)
+	}
+	dirfd, err := r.openDir(dir, unix.O_PATH)
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(dirfd)
+	fd, err := unix.Openat(dirfd, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	defer file.Close()
+	if info, err := file.Stat(); err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: not a regular file", path)
+	}
+	start := make([]byte, 4)
+	if _, err := io.ReadFull(file, start); err != nil || !gobinary.Executable(start) {
+		return nil, gobinary.ErrNotGo
+	}
+	info, err := gobinary.Read(io.MultiReader(bytes.NewReader(start), file), gobinary.MaxProgramBytes)
+	if err != nil {
+		return nil, err
+	}
+	return info.Record(), nil
 }

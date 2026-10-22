@@ -20,4 +20,12 @@ type Entry struct {
 	IsReg bool
 	Size  int64
 	Dev   uint64
+	// Exec: a regular file someone may run, which may be a Go program.
+	Exec bool
+}
+
+// GoBinaryReader is an FS that can read a compiled Go program's build
+// information (a gobinary.Record), without holding the program in memory.
+type GoBinaryReader interface {
+	ReadGoBinary(path string) ([]byte, error)
 }
