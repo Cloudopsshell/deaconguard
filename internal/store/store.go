@@ -936,8 +936,11 @@ func AddLocalHost(hostname, username string) (Host, error) {
 }
 
 func insertHost(db *sql.DB, host Host) error {
-	_, err := db.Exec(`INSERT INTO hosts (id, address, username, transport, created_at) VALUES (?, ?, ?, ?, ?)`,
-		host.ID, host.Address, host.Username, host.Transport, nowText())
+	if host.Kind == "" {
+		host.Kind = KindMachine
+	}
+	_, err := db.Exec(`INSERT INTO hosts (id, address, username, transport, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		host.ID, host.Address, host.Username, host.Transport, host.Kind, nowText())
 	return err
 }
 
