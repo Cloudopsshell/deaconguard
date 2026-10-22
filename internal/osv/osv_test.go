@@ -119,6 +119,11 @@ func TestEvaluate(t *testing.T) {
 		lodash.Evidence != "/srv/app/package-lock.json" {
 		t.Errorf("lodash finding = %+v", lodash)
 	}
+	if lodash.Source != "library" || lodash.Package != "lodash" || lodash.Version != "4.17.20" || lodash.Ecosystem != libraries.NPM ||
+		lodash.Fixed != "4.17.21" || !lodash.Fixable || lodash.Exploited || lodash.Summary != "Command Injection in lodash" ||
+		len(lodash.Paths) != 1 || lodash.Paths[0] != "/srv/app/package-lock.json" {
+		t.Errorf("lodash's details for grouping = %+v", lodash)
+	}
 	// PYSEC-2023-74 and GHSA-j8r2-6x86-q33q are one vulnerability: one finding,
 	// shown with the GitHub advisory's summary.
 	if requests.Rule != "GHSA-j8r2-6x86-q33q" || requests.Severity != "MEDIUM" || !strings.Contains(requests.Detail, "Fixed in 2.31.0.") ||

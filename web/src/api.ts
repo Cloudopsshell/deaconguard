@@ -600,6 +600,21 @@ export interface CheckFinding {
   title: string;
   detail: string;
   evidence: string;
+  /** Set on vulnerabilities in libraries, containers and images (server 1.8.0 and later), for grouping. */
+  container?: string;
+  image?: string;
+  /** "os" for an OS package, "library" for an application library. */
+  source?: "os" | "library" | string;
+  package?: string;
+  version?: string;
+  /** The library's ecosystem (npm, PyPI…), or the OS for a package. */
+  ecosystem?: string;
+  summary?: string;
+  fixed?: string;
+  fixable?: boolean;
+  exploited?: boolean;
+  /** The files it was found in; inside the container, for a container. */
+  paths?: string[];
 }
 
 export interface CheckResult {
@@ -613,13 +628,30 @@ export interface CheckResult {
   containers?: ContainerResult[];
 }
 
-/** One running container and what its check found. */
+/** One container and what its check found. */
 export interface ContainerResult {
   id: string;
   name: string;
   image: string;
   image_id: string;
   runtime: "docker" | "podman" | "cri" | string;
+  /** running, paused, restarting, exited, created, dead or stopped; missing from agents before 1.8.0, which listed running containers only. */
+  state?: string;
+  created?: string;
+  started_at?: string;
+  finished_at?: string;
+  exit_code?: number;
+  restarts?: number;
+  /** The configured user; empty is root. */
+  user?: string;
+  privileged?: boolean;
+  network?: string;
+  ports?: string[];
+  command?: string;
+  /** The user its main process runs as. */
+  runs_as?: string;
+  /** Every vulnerability, fixable or not (server 1.8.0 and later); findings has only those to fix. */
+  vulnerabilities?: CheckFinding[];
   os?: string;
   lifecycle?: Lifecycle | null;
   packages: number;

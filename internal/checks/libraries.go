@@ -2,9 +2,12 @@ package checks
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"deaconguard/internal/libraries"
+	"deaconguard/internal/local"
 )
 
 // Libraries is the application library check. On the host it only lists the
@@ -33,6 +36,17 @@ func runLibraries(executor *Executor) Result {
 	result := Result{Privileged: privileged, Libraries: &found, Notes: append(append([]string(nil), found.Notes...), goNotes...)}
 	if goNote != "" {
 		result.note("%s", goNote)
+	}
+	if executor.OnThisMachine() {
+		var skipped []string
+		for _, dir := range libraries.ContainerStorage {
+			if _, err := os.Stat(local.HostPath(dir)); err == nil {
+				skipped = append(skipped, dir)
+			}
+		}
+		if len(skipped) > 0 {
+			result.note("Container storage (%s) is skipped here: the Running containers check reads each container's libraries and names the container.", strings.Join(skipped, ", "))
+		}
 	}
 	if !privileged {
 		result.note("Ran without root, so projects in other users' folders may be missing.")
