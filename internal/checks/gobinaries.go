@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"deaconguard/internal/gobinary"
+	"deaconguard/internal/libraries"
 	"deaconguard/internal/local"
 )
 
@@ -34,7 +35,12 @@ var goBinarySkipped = map[string]bool{
 	"/proc": true, "/sys": true, "/dev": true, "/run": true, "/boot": true, "/snap": true,
 	"/bin": true, "/sbin": true, "/usr/bin": true, "/usr/sbin": true, "/lib": true, "/lib32": true, "/lib64": true,
 	"/usr/lib": true, "/usr/lib32": true, "/usr/lib64": true, "/usr/libexec": true,
-	"/var/lib/docker": true, "/var/lib/containerd": true, "/var/lib/containers": true, "/var/lib/kubelet": true,
+}
+
+func init() {
+	for _, dir := range libraries.ContainerStorage {
+		goBinarySkipped[dir] = true
+	}
 }
 
 // OnThisMachine reports whether the executor runs commands on the machine

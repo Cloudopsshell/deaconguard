@@ -14,7 +14,7 @@ deaconguard image scan ghcr.io/acme/shop:4.2 --platform linux/arm64
 
 ## In the dashboard
 
-On **Images**, **Add image** takes an image's name, as in `docker pull`, and a platform (`linux/amd64` unless you choose another), and checks it at once. Each image shows its last scan, its vulnerabilities, those known to be exploited and how many a newer image fixes. **Scan now** checks it again; an image's page shows its latest result, what to fix first, and its last 20 scans with their digests, so you can see when the tag moved to a new build.
+On **Images**, **Add image** takes an image's name, as in `docker pull`, and a platform (`linux/amd64` unless you choose another), and checks it at once. Each image shows its last scan, its vulnerabilities, those known to be exploited and how many a newer image fixes. **Scan now** checks it again; an image's page shows its latest result, every vulnerability as a tree (OS packages and library folders, then packages, then vulnerabilities, filtered to those with a fix or known to be exploited if you like, or grouped by severity, as for a [running container](./containers.md#results)), and its last 20 scans with their digests, so you can see when the tag moved to a new build.
 
 The server reads the image itself, one at a time, so the machine running DeaconGuard needs to reach the registry over HTTPS. A scan interrupted by a server restart is marked failed; scan it again.
 

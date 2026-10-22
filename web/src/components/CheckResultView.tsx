@@ -1,4 +1,5 @@
 import { Info, ShieldCheck } from "lucide-react";
+import { useSearchParams } from "react-router";
 import type { CheckId, CheckResult } from "../api";
 import { checkStatusStyle } from "../lib/checks";
 import { normalizeSeverity, severityOrder } from "../lib/format";
@@ -12,6 +13,11 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
   );
   const notes = result.notes ?? [];
   const status = checkStatusStyle[result.status] ?? checkStatusStyle.failed;
+  // Container findings (server 1.8.0 and later) name their container and where in it they were found.
+  const byContainer = findings.some((finding) => finding.container);
+  // With one container open, its own tree replaces the host-wide list.
+  const [searchParams] = useSearchParams();
+  const containerOpen = check === "containers" && searchParams.has("container") && (result.containers ?? []).length > 0;
   return (
     <div className="space-y-4">
       <Card>
@@ -43,7 +49,7 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
 
       {check === "containers" && (result.containers ?? []).length > 0 && <ContainersTable containers={result.containers ?? []} />}
 
-      {result.status !== "skipped" && result.status !== "failed" && (
+      {result.status !== "skipped" && result.status !== "failed" && !containerOpen && (
         <Card>
           <CardHeader title="Findings" description={`${findings.length} ${findings.length === 1 ? "issue" : "issues"}`} />
           {findings.length === 0 ? (
@@ -62,7 +68,14 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
                 <tr>
                   <Th>Severity</Th>
                   <Th>Issue</Th>
-                  <Th>Evidence</Th>
+                  {byContainer ? (
+                    <>
+                      <Th>Container</Th>
+                      <Th>Where in the container</Th>
+                    </>
+                  ) : (
+                    <Th>Evidence</Th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -72,10 +85,22 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
                       <SeverityBadge severity={normalizeSeverity(finding.severity)} />
                     </Td>
                     <Td className="max-w-md">
-                      <p className="font-medium">{finding.title}</p>
+                      <p className="font-medium">{finding.container ? finding.title.replace(`${finding.container}: `, "") : finding.title}</p>
                       <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{finding.detail}</p>
                     </Td>
-                    <Td className="max-w-md font-mono text-xs break-all text-slate-700 dark:text-slate-300">{finding.evidence}</Td>
+                    {byContainer ? (
+                      <>
+                        <Td>
+                          <p className="font-medium break-all">{finding.container}</p>
+                          <p className="font-mono text-xs break-all text-slate-500 dark:text-slate-400">{finding.image}</p>
+                        </Td>
+                        <Td className="max-w-md font-mono text-xs break-all whitespace-pre-line text-slate-700 dark:text-slate-300">
+                          {finding.source === "os" ? "OS package" : (finding.paths ?? []).length > 0 ? (finding.paths ?? []).join("\n") : finding.evidence}
+                        </Td>
+                      </>
+                    ) : (
+                      <Td className="max-w-md font-mono text-xs break-all text-slate-700 dark:text-slate-300">{finding.evidence}</Td>
+                    )}
                   </tr>
                 ))}
               </tbody>
