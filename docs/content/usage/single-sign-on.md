@@ -22,7 +22,7 @@ The dashboard needs a certificate the provider's users' browsers trust, and the 
 | Provider | Issuer URL | Notes |
 | --- | --- | --- |
 | Microsoft Entra ID | `https://login.microsoftonline.com/TENANT-ID/v2.0` | Register an app with a **Web** redirect URI and a client secret. For roles from groups, add a groups claim to the ID token (**Token configuration**); it sends group object IDs, so use those as group names here, or have it send names for groups synced from on-premises. |
-| Google | `https://accounts.google.com` | Create an OAuth client of type **Web application**. Google sends no groups: limit sign-in with **Allowed email domains**, and give roles on the Accounts page. |
+| Google | `https://accounts.google.com` | Create an OAuth client of type **Web application**. Google sends no groups: limit sign-in with **Allowed email domains**, and give roles on the Accounts page. With Google, an allowed domain must also be the account's Google Workspace domain (`hd`), so personal Google accounts that use a company address are refused. |
 | Okta | `https://YOUR-ORG.okta.com` or an authorization server's URL | Create an **OIDC web application**. For groups, add a groups claim to the ID token and put `groups` in **Extra scopes**. |
 | Keycloak | `https://keycloak.example.com/realms/REALM` | Create an OpenID Connect client with **Client authentication** on. For groups, add a **Group Membership** mapper to the ID token, with **Full group path** off. |
 | Authentik | `https://authentik.example.com/application/o/SLUG/` | Create an OAuth2/OpenID provider of type **Confidential**. Its `profile` scope sends `groups`. |
@@ -44,7 +44,7 @@ To stop someone signing in, remove them at the provider, or **Disable** their ac
 
 By default, anyone your provider signs in to this application may use DeaconGuard, as a **Viewer**, or the role you choose for everyone. Under **Who may sign in, and roles from groups**:
 
-- **Allowed email domains**, such as `example.com`, admit only people with a verified email there.
+- **Allowed email domains**, such as `example.com`, admit only people with a verified email there. With Google, the account must also belong to that Google Workspace domain.
 - **Allowed groups** admit only their members, and members of the admin and operator groups.
 - **Admin groups** and **Operator groups** give their members that role. With either set, **roles follow the groups at every sign-in**: someone removed from the admin group is an operator or viewer the next time they sign in, and a role an admin sets on the Accounts page lasts until then. The last admin that can sign in is never demoted this way.
 - **Groups claim** is the ID token claim that lists groups, `groups` unless your provider uses another name.
