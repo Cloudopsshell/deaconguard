@@ -30,7 +30,7 @@ export interface Host {
   /** Scan the running containers when the agent sees new ones (1.2.0 and later). */
   auto_scan_containers?: boolean;
   /** "cluster" is a Kubernetes cluster enrolled with the cluster agent; it runs only the Kubernetes check (1.5.0 and later). */
-  kind?: "machine" | "cluster";
+  kind?: "machine" | "cluster" | "mac";
 }
 
 /** What the Kubernetes check read of a cluster. */

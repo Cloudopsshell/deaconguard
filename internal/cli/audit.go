@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"time"
 
@@ -42,21 +43,23 @@ func runAudit(arguments []string, output, diagnostics io.Writer) error {
 	if auditLocal == (hostID != "") || (allowSudo && !auditLocal) {
 		return fmt.Errorf("%s", auditUsage)
 	}
-	selected := append([]string(nil), audit.Checks...)
-	if advanced {
-		selected = append(selected, checks.YARA)
+	host := store.Host{Address: local.Hostname(), Username: local.Username(), Transport: store.TransportLocal, AllowSudo: allowSudo, Kind: store.KindMachine}
+	if runtime.GOOS == "darwin" {
+		host.Kind = store.KindMac
 	}
-	selected, err := checks.Normalize(selected)
-	if err != nil {
-		return err
-	}
-
-	host := store.Host{Address: local.Hostname(), Username: local.Username(), Transport: store.TransportLocal, AllowSudo: allowSudo}
+	var err error
 	var report map[string]any
 	if !auditLocal {
 		if host, err = store.GetHost(hostID); err != nil {
 			return err
 		}
+	}
+	selected := audit.ChecksFor(host.Kind)
+	if advanced && host.Kind != store.KindMac {
+		selected = append(selected, checks.YARA)
+	}
+	if selected, err = checks.Normalize(selected); err != nil {
+		return err
 	}
 	if host.Transport == store.TransportAgent {
 		id, err := queueForAgent(host, selected, true, diagnostics)

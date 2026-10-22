@@ -246,7 +246,7 @@ func (h *agentHub) auditNewMachine(host store.Host, version string) {
 		serverLog(host.ID, store.LogWarning, "Not auditing %s on enrollment: its agent %s is older than 0.12.0", host.Address, version)
 		return
 	}
-	record, err := h.runner.start(host, audit.Checks, true)
+	record, err := h.runner.start(host, audit.ChecksFor(host.Kind), true)
 	if err == nil {
 		err = store.MarkAudit(record.ID)
 	}
@@ -626,10 +626,14 @@ func (h *agentHub) yaraRules(w http.ResponseWriter, r *http.Request, host store.
 
 // checkAgentVersion refuses checks an agent host's agent cannot run.
 func checkAgentVersion(host store.Host, selected []string) error {
-	// A cluster runs only the Kubernetes check, and a machine every other.
-	if kept := checks.ForHost(host.IsCluster(), selected); len(kept) != len(selected) {
+	// A cluster runs only the Kubernetes check, a Mac the macOS checks, and
+	// a machine every other.
+	if kept := checks.ForHost(host.Kind, selected); len(kept) != len(selected) {
 		if host.IsCluster() {
 			return fmt.Errorf("%s is a Kubernetes cluster: it runs only the Kubernetes check", host.Address)
+		}
+		if host.Kind == store.KindMac {
+			return fmt.Errorf("%s is a Mac: it runs the package (macOS updates) and hardening checks; the others are for Linux", host.Address)
 		}
 		return fmt.Errorf("the Kubernetes check runs on clusters, enrolled with the cluster agent; %s is a machine", host.Address)
 	}
