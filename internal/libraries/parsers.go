@@ -282,6 +282,17 @@ func parsePipfileLock(c *collector, path string, contents []byte) error {
 	return nil
 }
 
+// parseGoBinary reads a compiled Go program's record (gobinary.Record):
+// "stdlib" with its Go version, then its modules, one "path<TAB>version" per
+// line.
+func parseGoBinary(c *collector, path string, record []byte) {
+	for _, line := range strings.Split(string(record), "\n") {
+		if name, version, found := strings.Cut(line, "\t"); found {
+			c.add(Go, name, version, path)
+		}
+	}
+}
+
 // go.mod: require lines and blocks. The module's own path is not a library.
 func parseGoMod(c *collector, path string, contents []byte) error {
 	inBlock := false

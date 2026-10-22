@@ -152,7 +152,8 @@ func ReadFS(r FS, container Container) Inventory {
 	case exists(r, "/var/lib/rpm/Packages") || exists(r, "/usr/lib/sysimage/rpm/Packages.db"):
 		result.Notes = append(result.Notes, "The image's RPM database is in Berkeley DB or ndb format (RHEL 8, SUSE), which DeaconGuard can't read yet; only its libraries are checked")
 	}
-	found := walkLibraries(r)
+	packaged := result.DPKGStatus != "" || result.APKInstalled != "" || result.RPMQuery != ""
+	found := walkLibraries(r, packaged)
 	result.Libraries = &found
 	return result
 }
