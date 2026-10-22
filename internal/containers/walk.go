@@ -5,8 +5,12 @@ import (
 	"strings"
 	"time"
 
+	"deaconguard/internal/gobinary"
 	"deaconguard/internal/libraries"
 )
+
+// maxGoPrograms bounds the Go programs read in one container or image.
+const maxGoPrograms = 5000
 
 // lockFiles are the package-manager files read wherever they are, as the
 // host's library check reads them (libraries.CollectCommand).
@@ -37,9 +41,9 @@ func SkippedDir(dir, name string) bool {
 // walkLibraries finds the application libraries in a container, with the
 // same files and limits as the host's library check, on the container's own
 // file system only (volumes mounted into it are left out, like find -xdev).
-func walkLibraries(r FS) libraries.Result {
+func walkLibraries(r FS, packaged bool) libraries.Result {
 	var records bytes.Buffer
-	files, dirs, total := 0, 0, 0
+	files, dirs, total, goPrograms := 0, 0, 0, 0
 	deadline := time.Now().Add(walkTimeout)
 	stopped := ""
 	var walk func(dir string)
@@ -66,6 +70,22 @@ func walkLibraries(r FS) libraries.Result {
 					continue
 				}
 				walk(path)
+				continue
+			}
+			// A compiled Go program: its build information, outside the
+			// distribution's folders when the image has a package database.
+			if goReader, ok := r.(GoBinaryReader); ok && e.IsReg && e.Exec && !wanted(path, e.Name) {
+				if (packaged && gobinary.DistroDir(path)) || goPrograms >= maxGoPrograms {
+					continue
+				}
+				if record, err := goReader.ReadGoBinary(path); err == nil {
+					goPrograms++
+					records.WriteByte(0x1e)
+					records.WriteString(path)
+					records.WriteByte('\n')
+					records.Write(record)
+					records.WriteByte('\n')
+				}
 				continue
 			}
 			if !e.IsReg || e.Size > libraries.MaxFileBytes || !wanted(path, e.Name) {

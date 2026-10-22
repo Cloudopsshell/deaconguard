@@ -18,3 +18,4 @@ func (r *root) close()                                       {}
 func (r *root) Device() uint64                               { return 0 }
 func (r *root) ReadFile(string, int64) ([]byte, bool, error) { return nil, false, errNotLinux }
 func (r *root) ReadDir(string) ([]Entry, error)              { return nil, errNotLinux }
+func (r *root) ReadGoBinary(string) ([]byte, error)          { return nil, errNotLinux }
