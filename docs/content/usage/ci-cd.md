@@ -12,7 +12,7 @@ description: Check a container image, an image archive or a project folder in a 
 | `nginx:1.27`, `ghcr.io/acme/shop:4.2` | An image in its registry. See [Images in registries](./images.md). |
 | `image.tar`, `docker-archive:image.tar` | An archive from `docker save` or `podman save`, compressed with gzip or not. |
 | `oci:layout/`, `oci:image.tar` | An OCI image layout, a folder or a tar of one, as `docker buildx build --output type=oci`, `buildah push` or `skopeo copy` write it. `--platform` picks one of several platforms. |
-| `dir:path/` | A folder: an image's unpacked files, a chroot, or a project. Its OS packages are checked when it has a package database, and its lock files (`package-lock.json`, `requirements.txt`, `go.mod`, `Cargo.lock` and the others in [Libraries](./libraries-and-sbom.md#what-it-looks-at)) against OSV. |
+| `dir:path/` | A folder: an image's unpacked files, a chroot, or a project. Its OS packages are checked when it has a package database, and its lock files (`package-lock.json`, `requirements.txt`, `go.mod`, `Cargo.lock` and the others in [Libraries](./libraries-and-sbom.md#what-it-looks-at)) and [compiled Go programs](./libraries-and-sbom.md#go-programs), such as a build's output, against OSV. |
 
 Without a prefix, a path that exists is read as what it holds: an archive with `manifest.json` is a `docker save` archive, one with `index.json` and `oci-layout` an OCI layout, and a plain folder a folder. Anything else is an image name.
 

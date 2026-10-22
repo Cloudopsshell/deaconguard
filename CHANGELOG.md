@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Go programs:** the library check, the running-container check and image scans read the build information in compiled Go programs (Go 1.18 and later): the Go version, checked against OSV as the module `stdlib`, and every module the program was built with. A program built with an old Go is reported for Go's own vulnerabilities, such as the compromised eMudhra CA keys (GO-2026-6809). Programs are read as files, never run, and image layers are read as they stream, without holding programs in memory. On machines, and in images with a package database, the distribution's folders (`/usr/bin`, `/usr/lib` and the like) are left to the package check.
+
 ### Security
 
 - **Single sign-on with Google:** with **Allowed email domains** set, a Google sign-in must also come from an account that one of those Google Workspace domains manages (the ID token's `hd`), as Google advises. Before, a personal Google account with a verified address at an allowed domain could sign in.
