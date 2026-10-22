@@ -28,8 +28,8 @@ func TestHostAddRegistersThisMachine(t *testing.T) {
 	t.Setenv("DEACONGUARD_HOME", t.TempDir())
 	var output, diagnostics bytes.Buffer
 	code := Run([]string{"host", "add"}, nil, &output, &diagnostics)
-	if runtime.GOOS != "linux" {
-		if code == 0 || !strings.Contains(diagnostics.String(), "Linux only") {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		if code == 0 {
 			t.Fatalf("host add on %s: code %d, %s", runtime.GOOS, code, diagnostics.String())
 		}
 		return
@@ -37,6 +37,13 @@ func TestHostAddRegistersThisMachine(t *testing.T) {
 	hosts, err := store.ListHosts()
 	if code != 0 || err != nil || len(hosts) != 1 || hosts[0].Transport != store.TransportLocal {
 		t.Fatalf("host add: code %d, %s, hosts %+v, %v", code, diagnostics.String(), hosts, err)
+	}
+	want := store.KindMachine
+	if runtime.GOOS == "darwin" {
+		want = store.KindMac
+	}
+	if hosts[0].Kind != want {
+		t.Errorf("host add on %s: kind %q, want %q", runtime.GOOS, hosts[0].Kind, want)
 	}
 }
 

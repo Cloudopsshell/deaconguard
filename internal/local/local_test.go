@@ -55,12 +55,13 @@ func TestRunTimeoutStopsTheWholePipeline(t *testing.T) {
 	}
 }
 
-func TestNewOnlyOnLinux(t *testing.T) {
+func TestNewOnlyOnLinuxAndMacOS(t *testing.T) {
 	_, err := New()
-	if runtime.GOOS == "linux" && err != nil {
-		t.Fatalf("New() on Linux: %v", err)
+	supported := runtime.GOOS == "linux" || runtime.GOOS == "darwin"
+	if supported && err != nil {
+		t.Fatalf("New() on %s: %v", runtime.GOOS, err)
 	}
-	if runtime.GOOS != "linux" && !errors.Is(err, ErrUnsupportedOS) {
+	if !supported && !errors.Is(err, ErrUnsupportedOS) {
 		t.Fatalf("New() on %s: %v", runtime.GOOS, err)
 	}
 }
