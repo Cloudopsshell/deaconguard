@@ -17,6 +17,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -644,49 +645,16 @@ func serverAddresses(listen string) []string {
 }
 
 func setupAgent(options agentSetup, output, diagnostics io.Writer) error {
+	if runtime.GOOS == "darwin" {
+		return setupMacAgent(options, output, diagnostics)
+	}
 	if err := checkServiceHost(agentUnit); err != nil {
 		return err
 	}
-	path := agent.SystemConfigPath
-	token, err := agentToken(options)
+	changed, err := enrollForSetup(options, output, diagnostics)
 	if err != nil {
 		return err
 	}
-	current, loadErr := agent.LoadConfig(path)
-	enrolled := loadErr == nil
-	// changed is whether this setup enrolled the machine, which the running
-	// agent must restart to pick up.
-	changed := false
-	switch {
-	case enrolled && token == "" && !options.force:
-		fmt.Fprintf(output, "Already enrolled with %s as host %s; keeping it.\n", current.ServerURL, current.HostID)
-	case enrolled && !options.force:
-		return fmt.Errorf("this machine is already enrolled with %s; add --force to enroll it again with the new token", current.ServerURL)
-	default:
-		if token == "" {
-			terminal, closeTerminal, err := openTerminal()
-			if err != nil {
-				return fmt.Errorf("enroll this machine: %w; or pass --token-file FILE, or set DEACONGUARD_TOKEN", err)
-			}
-			defer closeTerminal()
-			fmt.Fprint(diagnostics, "Enrollment token (from the server's Agents page; hidden while you paste): ")
-			secret, err := term.ReadPassword(int(terminal.Fd()))
-			fmt.Fprintln(diagnostics)
-			if err != nil {
-				return fmt.Errorf("read the token: %w", err)
-			}
-			token = strings.TrimSpace(string(secret))
-			clear(secret)
-		}
-		// An unreadable or incomplete configuration is replaced.
-		config, err := agent.Enroll(context.Background(), token, path, options.force || !enrolled)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\n", local.Hostname(), config.ServerURL, config.HostID)
-		changed = true
-	}
-
 	if err := startService(agentUnit, changed, output); err != nil {
 		return err
 	}
@@ -697,6 +665,52 @@ func setupAgent(options agentSetup, output, diagnostics io.Writer) error {
 	}
 	fmt.Fprintln(output, "The DeaconGuard agent is running. This machine appears on the server's Agents page.")
 	return nil
+}
+
+// enrollForSetup enrolls the machine with the token, unless it is enrolled
+// already, and reports whether it enrolled it now, which the running agent
+// must restart to pick up.
+func enrollForSetup(options agentSetup, output, diagnostics io.Writer) (bool, error) {
+	path := agent.SystemConfigPath
+	token, err := agentToken(options)
+	if err != nil {
+		return false, err
+	}
+	current, loadErr := agent.LoadConfig(path)
+	enrolled := loadErr == nil
+	// changed is whether this setup enrolled the machine, which the running
+	// agent must restart to pick up.
+	changed := false
+	switch {
+	case enrolled && token == "" && !options.force:
+		fmt.Fprintf(output, "Already enrolled with %s as host %s; keeping it.\n", current.ServerURL, current.HostID)
+	case enrolled && !options.force:
+		return false, fmt.Errorf("this machine is already enrolled with %s; add --force to enroll it again with the new token", current.ServerURL)
+	default:
+		if token == "" {
+			terminal, closeTerminal, err := openTerminal()
+			if err != nil {
+				return false, fmt.Errorf("enroll this machine: %w; or pass --token-file FILE, or set DEACONGUARD_TOKEN", err)
+			}
+			defer closeTerminal()
+			fmt.Fprint(diagnostics, "Enrollment token (from the server's Agents page; hidden while you paste): ")
+			secret, err := term.ReadPassword(int(terminal.Fd()))
+			fmt.Fprintln(diagnostics)
+			if err != nil {
+				return false, fmt.Errorf("read the token: %w", err)
+			}
+			token = strings.TrimSpace(string(secret))
+			clear(secret)
+		}
+		// An unreadable or incomplete configuration is replaced.
+		config, err := agent.Enroll(context.Background(), token, path, options.force || !enrolled)
+		if err != nil {
+			return false, err
+		}
+		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\n", local.Hostname(), config.ServerURL, config.HostID)
+		changed = true
+	}
+	return changed, nil
 }
 
 // agentToken reads the token from --token-file or DEACONGUARD_TOKEN; "" means

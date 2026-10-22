@@ -14,6 +14,9 @@
 # token to sudo without putting it on a command line other users can see):
 #   curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.... sudo -E sh -
 #
+# On a Mac it installs the agent only, as the launchd daemon
+# io.deaconguard.agent, from the release's macOS archive.
+#
 # Without a token it sets up a server, or upgrades the agent on a machine that
 # is already enrolled. Started without root, it stops before doing anything
 # and shows the command to use; it never asks for a password itself.
@@ -46,6 +49,8 @@ SIGNER_ISSUER="https://token.actions.githubusercontent.com"
 COSIGN_VERSION="3.1.3"
 COSIGN_SHA256_AMD64="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
 COSIGN_SHA256_ARM64="c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a"
+COSIGN_SHA256_DARWIN_AMD64="2347488e5d5b25336644024dfeca5601b190e91197a71a917bda44744aff106c"
+COSIGN_SHA256_DARWIN_ARM64="5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76"
 
 # YARA-X, the engine of the advanced antivirus scan, installed to
 # /usr/local/bin. Its releases publish no checksums, so these are of the
@@ -164,13 +169,15 @@ install_cosign() {
 		ok "cosign $(cosign version 2>/dev/null | awk '/GitVersion/{print $2}') found"
 		return
 	fi
-	case "$arch" in
-	amd64) expected_cosign="$COSIGN_SHA256_AMD64" ;;
-	arm64) expected_cosign="$COSIGN_SHA256_ARM64" ;;
+	case "$system-$arch" in
+	linux-amd64) expected_cosign="$COSIGN_SHA256_AMD64" ;;
+	linux-arm64) expected_cosign="$COSIGN_SHA256_ARM64" ;;
+	darwin-amd64) expected_cosign="$COSIGN_SHA256_DARWIN_AMD64" ;;
+	darwin-arm64) expected_cosign="$COSIGN_SHA256_DARWIN_ARM64" ;;
 	esac
-	url="https://github.com/sigstore/cosign/releases/download/v$COSIGN_VERSION/cosign-linux-$arch"
+	url="https://github.com/sigstore/cosign/releases/download/v$COSIGN_VERSION/cosign-$system-$arch"
 	curl -fsSL --proto '=https' --tlsv1.2 -o "$work/cosign" "$url" || fail "could not download cosign from $url"
-	[ "$(sha256sum "$work/cosign" | cut -d' ' -f1)" = "$expected_cosign" ] ||
+	[ "$(sha256 "$work/cosign")" = "$expected_cosign" ] ||
 		fail "the cosign download does NOT match its pinned checksum. Nothing was installed"
 	install -m 0755 "$work/cosign" /usr/local/bin/cosign
 	ok "Installed cosign $COSIGN_VERSION to /usr/local/bin (verifies release signatures)"
@@ -201,6 +208,91 @@ install_yara_x() {
 	tar -xzf "$work/yara-x.tar.gz" -C "$work/yara-x" yr || fail "could not unpack YARA-X"
 	install -m 0755 "$work/yara-x/yr" /usr/local/bin/yr
 	ok "Installed YARA-X $YARA_X_VERSION to /usr/local/bin (the advanced antivirus scan)"
+}
+
+# sha256 prints a file's SHA-256: sha256sum on Linux, shasum on a Mac.
+sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | cut -d' ' -f1
+	else
+		shasum -a 256 "$1" | cut -d' ' -f1
+	fi
+}
+
+# find_version sets version to the latest release, unless one was given.
+find_version() {
+	if [ -z "$version" ]; then
+		latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$REPOSITORY/releases/latest")" ||
+			fail "could not reach GitHub to find the latest release"
+		version="${latest##*/tag/v}"
+	fi
+	case "$version" in
+	"" | *[!0-9A-Za-z.-]* | */*) fail "could not determine the release to install; pass --version, such as --version 1.0.0" ;;
+	esac
+	ok "Release v$version"
+}
+
+# download_verified downloads checksums.txt, its signature and the file
+# named, checks the signature with cosign and the file against checksums.txt.
+download_verified() {
+	base="$REPOSITORY/releases/download/v$version"
+	for file in checksums.txt checksums.txt.sigstore.json "$1"; do
+		curl -fsSL --proto '=https' --tlsv1.2 -o "$work/$file" "$base/$file" ||
+			fail "could not download $base/$file"
+	done
+	chmod 0644 "$work/$1"
+	ok "Downloaded $1"
+
+	cosign verify-blob "$work/checksums.txt" --bundle "$work/checksums.txt.sigstore.json" \
+		--certificate-identity "$SIGNER@refs/tags/v$version" \
+		--certificate-oidc-issuer "$SIGNER_ISSUER" >"$work/cosign.log" 2>&1 ||
+		{ cat "$work/cosign.log" >&2; fail "the signature of checksums.txt for v$version is NOT valid. DeaconGuard was not installed. Report this: $REPOSITORY/security"; }
+	ok "Signature valid (signed by the release workflow for v$version)"
+
+	expected="$(awk -v name="$1" '$2 == name || $2 == "*" name { print $1 }' "$work/checksums.txt")"
+	[ -n "$expected" ] || fail "checksums.txt for v$version does not list $1"
+	[ "$expected" = "$(sha256 "$work/$1")" ] || fail "the checksum of $1 does NOT match the release's checksums.txt. DeaconGuard was not installed"
+	ok "Checksum valid"
+}
+
+# shellcheck disable=SC2120 # "$@" is the setup options, set inside.
+# install_mac installs the agent on a Mac: the binary from the release's
+# macOS archive to /usr/local/bin, then `deaconguard setup agent`, which
+# enrolls the Mac and starts the launchd daemon. ClamAV and YARA-X aren't
+# installed: those scans are for Linux.
+install_mac() {
+	[ "$mode" != "server" ] || fail "on a Mac, the installer sets up the agent only. Run the server on Linux, in Docker or in Kubernetes, or run deaconguard serve from the macOS archive: $REPOSITORY/releases"
+	if [ -z "$token" ] && [ "$mode" != "agent" ] && [ ! -f /etc/deaconguard/agent.json ]; then
+		fail "this Mac isn't enrolled yet: pass the enrollment token from the server's Agents page, or --agent to paste it when asked:
+  curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=<your token> sudo -E sh -"
+	fi
+	mode="agent"
+	for tool in curl shasum tar; do
+		command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
+	done
+	ok "macOS $(sw_vers -productVersion), $arch"
+	ok "Mode: agent"
+	find_version
+
+	work="$(mktemp -d /tmp/deaconguard-install.XXXXXX)"
+	trap 'rm -rf "$work"' EXIT
+	trap 'exit 130' INT TERM
+	install_cosign
+	archive="deaconguard_${version}_darwin_${arch}.tar.gz"
+	download_verified "$archive"
+	tar -xzf "$work/$archive" -C "$work" deaconguard || fail "could not unpack $archive"
+	mkdir -p /usr/local/bin
+	install -m 0755 -o root -g wheel "$work/deaconguard" /usr/local/bin/deaconguard
+	ok "Installed $(/usr/local/bin/deaconguard version | cut -d' ' -f1-2) to /usr/local/bin"
+	/usr/local/bin/deaconguard help 2>/dev/null | grep -q "deaconguard setup agent" ||
+		fail "DeaconGuard v$version predates the macOS agent; install 1.8.0 or later"
+	printf '\n'
+	if [ -n "$token" ]; then
+		(umask 077 && printf '%s\n' "$token" >"$work/token")
+		setup_options="$setup_options --token-file $(quote "$work/token")"
+	fi
+	eval "set -- $setup_options"
+	/usr/local/bin/deaconguard setup agent "$@" </dev/null
 }
 
 # quote prints its argument as a single-quoted shell word, for eval.
@@ -243,18 +335,32 @@ main() {
 		shift
 	done
 	printf 'DeaconGuard installer\n'
-	[ "$(uname -s)" = "Linux" ] || fail "the installer supports Linux; on other systems, download a release archive from $REPOSITORY/releases"
+	case "$(uname -s)" in
+	Linux) system="linux" ;;
+	Darwin) system="darwin" ;;
+	*) fail "the installer supports Linux and macOS; on other systems, download a release archive from $REPOSITORY/releases" ;;
+	esac
 
 	# Installing a package and a service needs root. Say so plainly instead of
 	# asking for a password part-way through.
 	if [ "$(id -u)" -ne 0 ]; then
-		if [ -n "$token" ] || [ "$mode" = "agent" ]; then
+		if [ -n "$token" ] || [ "$mode" = "agent" ] || [ "$system" = "darwin" ]; then
 			example="curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=<your token> sudo -E sh -"
 		else
 			example="curl -fsSL https://get.deaconguard.io | sudo sh -"
 		fi
 		printf '\nThe installer needs root: it installs a system package and a service.\nRun it again with sudo (or as root, without sudo):\n\n  %s\n\nNothing was installed.\n' "$example" >&2
 		exit 1
+	fi
+
+	case "$(uname -m)" in
+	x86_64 | amd64) arch="amd64" ;;
+	aarch64 | arm64) arch="arm64" ;;
+	*) fail "unsupported processor $(uname -m); DeaconGuard supports amd64 and arm64" ;;
+	esac
+	if [ "$system" = "darwin" ]; then
+		install_mac
+		return
 	fi
 
 	if [ -n "$token" ]; then
@@ -273,12 +379,6 @@ main() {
 	for tool in curl sha256sum; do
 		command -v "$tool" >/dev/null 2>&1 || fail "$tool is required; install it with your package manager and run the installer again"
 	done
-
-	case "$(uname -m)" in
-	x86_64 | amd64) arch="amd64" ;;
-	aarch64 | arm64) arch="arm64" ;;
-	*) fail "unsupported processor $(uname -m); DeaconGuard supports amd64 and arm64" ;;
-	esac
 
 	[ -r /etc/os-release ] || fail "cannot identify this Linux distribution: /etc/os-release is missing"
 	# shellcheck disable=SC1091
@@ -328,15 +428,7 @@ main() {
 		ok "Mode: server"
 	fi
 
-	if [ -z "$version" ]; then
-		latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$REPOSITORY/releases/latest")" ||
-			fail "could not reach GitHub to find the latest release"
-		version="${latest##*/tag/v}"
-	fi
-	case "$version" in
-	"" | *[!0-9A-Za-z.-]* | */*) fail "could not determine the release to install; pass --version, such as --version 1.0.0" ;;
-	esac
-	ok "Release v$version"
+	find_version
 
 	work="$(mktemp -d /tmp/deaconguard-install.XXXXXX)"
 	trap 'rm -rf "$work"' EXIT
@@ -349,25 +441,7 @@ main() {
 	install_cosign
 
 	package="deaconguard_${version}_linux_${arch}.${format}"
-	base="$REPOSITORY/releases/download/v$version"
-	for file in checksums.txt checksums.txt.sigstore.json "$package"; do
-		curl -fsSL --proto '=https' --tlsv1.2 -o "$work/$file" "$base/$file" ||
-			fail "could not download $base/$file"
-	done
-	chmod 0644 "$work/$package"
-	ok "Downloaded $package"
-
-	cosign verify-blob "$work/checksums.txt" --bundle "$work/checksums.txt.sigstore.json" \
-		--certificate-identity "$SIGNER@refs/tags/v$version" \
-		--certificate-oidc-issuer "$SIGNER_ISSUER" >"$work/cosign.log" 2>&1 ||
-		{ cat "$work/cosign.log" >&2; fail "the signature of checksums.txt for v$version is NOT valid. DeaconGuard was not installed. Report this: $REPOSITORY/security"; }
-	ok "Signature valid (signed by the release workflow for v$version)"
-
-	expected="$(awk -v name="$package" '$2 == name || $2 == "*" name { print $1 }' "$work/checksums.txt")"
-	actual="$(sha256sum "$work/$package" | cut -d' ' -f1)"
-	[ -n "$expected" ] || fail "checksums.txt for v$version does not list $package"
-	[ "$expected" = "$actual" ] || fail "the checksum of $package does NOT match the release's checksums.txt. DeaconGuard was not installed"
-	ok "Checksum valid"
+	download_verified "$package"
 
 	if [ "$format" = "deb" ]; then
 		DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$work/$package" >"$work/install.log" 2>&1 ||

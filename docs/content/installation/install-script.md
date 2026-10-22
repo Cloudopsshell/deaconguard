@@ -25,6 +25,17 @@ curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.… sudo 
 
 `sudo -E` hands the token to the installer through the environment, so it never appears on a command line other users of the machine can see. If your sudo rules don't allow `-E`, open a root shell with `sudo -i` and run the command without `sudo -E`.
 
+### On a Mac
+
+The same command installs the agent on a Mac, from DeaconGuard 1.8.0, as an administrator in Terminal. On a Mac the script:
+
+1. downloads the release's macOS archive for the Mac's processor (Apple silicon or Intel), and cosign for macOS, pinned by version and checksum;
+2. checks that `checksums.txt` was signed by the release workflow and that the archive matches it, as on Linux;
+3. installs `deaconguard` to `/usr/local/bin`;
+4. runs `deaconguard setup agent`, which enrolls the Mac and starts the agent as the launchd daemon `io.deaconguard.agent` (`/Library/LaunchDaemons/io.deaconguard.agent.plist`), running as root and logging to `/var/log/deaconguard-agent.log`.
+
+It installs nothing else: the ClamAV and YARA scans are for Linux. Run it again to upgrade; it restarts the daemon with the new version. A Mac runs the agent only; the server runs on Linux.
+
 ## What the script does
 
 1. Detects the distribution and the processor (amd64 or arm64).

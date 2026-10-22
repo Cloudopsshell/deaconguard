@@ -8,7 +8,7 @@ The agent runs on each machine you want to scan. It connects **out** to the serv
 ## Enroll a machine
 
 1. As an admin, open **Agents → Enroll a machine** in the dashboard, keep **One machine**, check the address agents will use to reach the server (it uses the [agent port](../security/securing-the-dashboard.md#give-agents-their-own-port) if the server has one), and click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same.
-2. Run the command the dialog shows on the machine to scan, as a user with sudo rights (as root, leave out `sudo -E`):
+2. Run the command the dialog shows on the machine to scan, a Linux machine or a Mac, as a user with sudo rights (as root, leave out `sudo -E`):
 
    ```bash
    curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.… sudo -E sh -
@@ -69,10 +69,17 @@ deaconguard agent status              # where it is enrolled
 journalctl -u deaconguard-agent       # what it did
 ```
 
+On a Mac, the agent is the launchd daemon `io.deaconguard.agent`:
+
+```bash
+sudo launchctl print system/io.deaconguard.agent | grep state   # whether it runs
+tail /var/log/deaconguard-agent.log                              # what it did
+```
+
 From 0.6.0, the agent also sends its log to the server: the host's page and the [Logs](./dashboard.md#logs) page show it, including the lines from while the server was unreachable.
 
 The agent checks in with the server every 25 seconds. The dashboard shows an agent as offline when it hasn't checked in for 90 seconds; scans you start for it wait up to an hour for it to reconnect.
 
 ## Removing an agent
 
-Remove the host in the dashboard. That revokes the agent's credential at once, and the agent service stops. The credential is stored on the machine in `/etc/deaconguard/agent.json`, readable by root only.
+Remove the host in the dashboard. That revokes the agent's credential at once, and the agent service stops (on a Mac, launchd doesn't start it again). The credential is stored on the machine in `/etc/deaconguard/agent.json`, readable by root only.
