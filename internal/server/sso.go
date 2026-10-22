@@ -244,16 +244,38 @@ func ssoRole(config store.SSOConfig, groups []string) (string, bool) {
 	return config.DefaultRole, mapped
 }
 
+// googleIssuer is Google's OpenID Connect issuer.
+const googleIssuer = "https://accounts.google.com"
+
+// domainRefusal says why claims aren't in an allowed email domain, or ""
+// when they are or no domains are set. Google's ID tokens also carry hd, the
+// Google Workspace domain that manages the account: Google says to check it,
+// because a personal Google account can have a verified address at a
+// company's domain that the company's Workspace doesn't manage.
+func domainRefusal(config store.SSOConfig, claims oidc.Claims) string {
+	if len(config.AllowedDomains) == 0 {
+		return ""
+	}
+	email := strings.ToLower(strings.TrimSpace(claims.Email))
+	at := strings.LastIndex(email, "@")
+	if at < 0 || !claims.EmailIsVerified() || !slices.Contains(config.AllowedDomains, email[at+1:]) {
+		return fmt.Sprintf("%q isn't a verified email in an allowed domain", email)
+	}
+	if claims.Issuer == googleIssuer {
+		if hd := strings.ToLower(claims.String("hd")); !slices.Contains(config.AllowedDomains, hd) {
+			return fmt.Sprintf("%s isn't managed by an allowed Google Workspace domain (hd %q); a personal Google account can't use a company address here", email, hd)
+		}
+	}
+	return ""
+}
+
 // ssoAccount finds the account for claims, or creates it, and checks it may
 // sign in. reason is one of the sign-in page's reasons when it may not.
 func (s *Server) ssoAccount(config store.SSOConfig, claims oidc.Claims) (store.User, string, string) {
 	groups := claims.Strings(config.GroupsClaim)
 	email := strings.ToLower(strings.TrimSpace(claims.Email))
-	if len(config.AllowedDomains) > 0 {
-		domain := email[strings.LastIndex(email, "@")+1:]
-		if email == "" || !strings.Contains(email, "@") || !claims.EmailIsVerified() || !slices.Contains(config.AllowedDomains, domain) {
-			return store.User{Username: email}, "domain", fmt.Sprintf("%q isn't a verified email in an allowed domain", email)
-		}
+	if detail := domainRefusal(config, claims); detail != "" {
+		return store.User{Username: email}, "domain", detail
 	}
 	if len(config.AllowedGroups) > 0 {
 		allowed := append(append(append([]string{}, config.AllowedGroups...), config.AdminGroups...), config.OperatorGroups...)
