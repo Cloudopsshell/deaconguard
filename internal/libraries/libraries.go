@@ -1,7 +1,8 @@
 // Package libraries finds the application libraries installed on a machine,
 // from the files package managers leave behind: npm, Yarn and pnpm lock
 // files, installed Python packages and Python lock files, Go modules, Ruby
-// bundles, Rust crates and Composer packages. The agent collects the files
+// bundles, Rust crates and Composer packages, and from the build information
+// in compiled Go programs (internal/gobinary). The agent collects the files
 // with one fixed, read-only command (CollectCommand) and parses them here;
 // the server checks the libraries against OSV (internal/osv).
 package libraries
@@ -10,6 +11,8 @@ import (
 	"bytes"
 	"sort"
 	"strings"
+
+	"deaconguard/internal/gobinary"
 )
 
 // Ecosystems, named as OSV names them.
@@ -139,6 +142,10 @@ func Parse(output []byte) Result {
 }
 
 func parseFile(c *collector, path string, contents []byte) error {
+	if bytes.HasPrefix(contents, []byte(gobinary.RecordMarker)) {
+		parseGoBinary(c, path, contents[len(gobinary.RecordMarker):])
+		return nil
+	}
 	base := path[strings.LastIndexByte(path, '/')+1:]
 	switch {
 	case base == "package-lock.json" || base == "npm-shrinkwrap.json":

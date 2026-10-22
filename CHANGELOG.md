@@ -11,13 +11,11 @@ upgrade notes.
 ### Added
 
 - **macOS:** DeaconGuard scans Macs, macOS 10.15 and later. The package check reports whether the Mac's macOS release still gets security updates (from endoflife.date), each newer version of its release (high), and the updates the Mac has already found but not installed (`softwareupdate --list --no-scan`). The audit checks a new **macOS baseline** of 18 controls (`MACOS-01` to `MACOS-18`): FileVault, System Integrity Protection, Gatekeeper, XProtect's age, the firewall and stealth mode, Remote Login, Screen Sharing and File Sharing, the guest account and automatic login, the update settings, waiting updates and network time, reading configuration profiles (MDM) before local settings. The controls map to NIST 800-53, PCI DSS, HIPAA and ISO 27001. A Mac enrolls as a new kind of host, `mac`, which runs only these checks; `deaconguard scan --local` and `audit --local` work on a Mac too.
+- **Go programs:** the library check, the running-container check and image scans read the build information in compiled Go programs (Go 1.18 and later): the Go version, checked against OSV as the module `stdlib`, and every module the program was built with. A program built with an old Go is reported for Go's own vulnerabilities, such as the compromised eMudhra CA keys (GO-2026-6809). Programs are read as files, never run, and image layers are read as they stream, without holding programs in memory. On machines, and in images with a package database, the distribution's folders (`/usr/bin`, `/usr/lib` and the like) are left to the package check.
 
 ### Security
 
 - DeaconGuard needs Go 1.26.10 or later to build, so no build lacks Go's fix for the compromised eMudhra intermediate CA keys (GO-2026-6809, CVE-2026-111943): `crypto/x509` refuses certificate chains through them. Release 1.7.0 was already built with Go 1.26.10; 1.6.0 and earlier were built with Go 1.26.9, so on them a forged certificate could intercept the server's HTTPS to advisory feeds, OSV, registries or an identity provider. Agents' connections to the server pin its key and weren't affected. Upgrade to 1.7.0 or later.
-
-### Security
-
 - **Single sign-on with Google:** with **Allowed email domains** set, a Google sign-in must also come from an account that one of those Google Workspace domains manages (the ID token's `hd`), as Google advises. Before, a personal Google account with a verified address at an allowed domain could sign in.
 
 ## [1.7.0] - 2026-10-20

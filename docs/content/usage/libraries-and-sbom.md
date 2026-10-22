@@ -23,7 +23,7 @@ The agent looks for the files package managers leave behind on `/`, `/home`, `/o
 | --- | --- |
 | npm | `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` (Yarn 1 and later), `pnpm-lock.yaml`, and globally installed packages in `lib/node_modules` |
 | Python (PyPI) | Installed packages (`*.dist-info` and `*.egg-info` in `site-packages` or `dist-packages`, virtualenvs included), `poetry.lock`, `Pipfile.lock`, and exact pins (`name==1.2.3`) in `requirements.txt` |
-| Go | `go.mod` |
+| Go | `go.mod`, and **compiled Go programs** (1.8.0 and later): see [Go programs](#go-programs) |
 | Ruby (RubyGems) | `Gemfile.lock` |
 | Rust (crates.io) | `Cargo.lock` |
 | PHP (Packagist) | `composer.lock` |
@@ -32,6 +32,22 @@ The agent looks for the files package managers leave behind on `/`, `/home`, `/o
 - **Limits:** files up to 4 MB, at most 5,000 files and 50,000 libraries per machine. A note says when a limit was reached.
 - **Read-only:** one fixed command finds and reads the files; nothing is run or changed. With root (or sudo), it can read every user's projects; without, the result is marked partial.
 - Dependencies from git, a local path or a URL can't be matched by version, so they're left out.
+
+## Go programs
+
+From 1.8.0, the check also reads **compiled Go programs**, such as `kubectl`, `terraform`, `helm`, k3s or your own services. Go 1.18 and later write into every program the Go version it was built with and the modules it contains. DeaconGuard reads that small block and checks:
+
+- the **Go version**, as the module `stdlib`, which is how OSV lists Go's own vulnerabilities. For example, a program built with Go before 1.26.10 trusts certificates from the compromised eMudhra intermediate CAs ([GO-2026-6809](https://osv.dev/vulnerability/GO-2026-6809)) until it's rebuilt with a newer Go;
+- each **module** the program was built with, at its version.
+
+Where it reads them:
+
+- **Machines:** programs under the same folders as above, on each folder's own file system. The distribution's own folders (`/bin`, `/sbin`, `/usr/bin`, `/usr/sbin`, `/usr/lib` and the like) and container storage (`/var/lib/docker`, `/var/lib/containerd`) are left out: distributions patch their Go programs without changing the Go version they record, and the package check covers them with the distribution's advisories. Programs from a vendor's own package repository, such as Docker's or HashiCorp's, install in `/usr/bin` and aren't read yet.
+- **[Running containers](./containers.md) and [images](./images.md):** every program, read as the layers stream by; the distribution's folders are left out only when the image has a package database. Scratch and distroless images are read everywhere.
+
+The agent reads each program itself, as a file, without following links; it never runs one. It reads at most 20,000 programs (16 GB) per machine, each up to 512 MB, for at most 10 minutes.
+
+A program records its modules, not the packages it actually uses, so a finding means the program **contains** the vulnerable module, not necessarily that it calls the vulnerable code. Go's [govulncheck](https://go.dev/doc/tutorial/govulncheck) can tell, from the source. Go's vulnerability database publishes no severity scores, so Go findings show as unknown severity unless another source rates them.
 
 ## What is sent to OSV
 

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"deaconguard/internal/containers"
+	"deaconguard/internal/gobinary"
 )
 
 // Local images: a `docker save` archive, an OCI image layout (a folder or a
@@ -468,6 +469,16 @@ func readFolder(ctx context.Context, root, platform string, say func(string, ...
 		}
 		wanted, limit := wantedFile(name)
 		if !wanted {
+			if entry.Type().IsRegular() && len(layer.Files) < maxFiles {
+				if info, err := entry.Info(); err == nil && info.Mode().Perm()&0o111 != 0 && info.Size() >= 1024 && info.Size() <= gobinary.MaxProgramBytes {
+					if file, err := os.Open(full); err == nil {
+						if record := readGoProgram(file, info.Size()); record != nil {
+							layer.Files[name] = record
+						}
+						file.Close()
+					}
+				}
+			}
 			return nil
 		}
 		switch {

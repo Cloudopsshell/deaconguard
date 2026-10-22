@@ -74,7 +74,7 @@ func TestReadContainer(t *testing.T) {
 	result := Inventory{}
 	result.OSRelease = readFirst(r, &result, 16<<10, "/etc/os-release", "/usr/lib/os-release")
 	result.DPKGStatus = readDPKG(r, &result)
-	found := walkLibraries(r)
+	found := walkLibraries(r, true)
 	r.close()
 	if !strings.Contains(result.OSRelease, "ID=debian") {
 		t.Errorf("os-release = %q", result.OSRelease)
@@ -97,5 +97,59 @@ func TestReadContainer(t *testing.T) {
 	}
 	if len(got) != 3 {
 		t.Errorf("libraries = %v: /usr/lib is the distribution's, and a project's node_modules is listed by its lock file", got)
+	}
+}
+
+// copyProgram puts this test binary, a Go program, at path in root.
+func copyProgram(t *testing.T, root, path string) {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := filepath.Join(root, path)
+	os.MkdirAll(filepath.Dir(full), 0o755)
+	if err := os.WriteFile(full, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGoProgramsInAContainer(t *testing.T) {
+	container := t.TempDir()
+	copyProgram(t, container, "app/server")
+	copyProgram(t, container, "usr/bin/distro-tool")
+	write(t, container, "app/not-a-program", strings.Repeat("x", 4096))
+	os.Chmod(filepath.Join(container, "app/not-a-program"), 0o755)
+	r, err := openRoot(container)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.close()
+	paths := func(found []string) map[string]bool {
+		set := map[string]bool{}
+		for _, path := range found {
+			set[path] = true
+		}
+		return set
+	}
+	stdlib := func(packaged bool) map[string]bool {
+		for _, library := range walkLibraries(r, packaged).Libraries {
+			if library.Ecosystem == "Go" && library.Name == "stdlib" {
+				return paths(library.Paths)
+			}
+		}
+		return nil
+	}
+	// With a package database, /usr/bin is the distribution's.
+	if got := stdlib(true); !got["/app/server"] || got["/usr/bin/distro-tool"] || got["/app/not-a-program"] {
+		t.Errorf("with a package database: %v", got)
+	}
+	// Without one (scratch, distroless), every folder is read.
+	if got := stdlib(false); !got["/app/server"] || !got["/usr/bin/distro-tool"] {
+		t.Errorf("without a package database: %v", got)
 	}
 }
