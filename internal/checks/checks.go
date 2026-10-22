@@ -132,6 +132,24 @@ type Finding struct {
 	Title    string `json:"title"`
 	Detail   string `json:"detail"`
 	Evidence string `json:"evidence"`
+
+	// The rest are set on vulnerabilities in libraries, containers and
+	// images, so the dashboard can group them: the container and image it
+	// is in, whether it is in an OS package ("os") or an application
+	// library ("library"), the package, its version and ecosystem, the
+	// versions that fix it, and the files it was found in (inside the
+	// container, for a container).
+	Container string   `json:"container,omitempty"`
+	Image     string   `json:"image,omitempty"`
+	Source    string   `json:"source,omitempty"`
+	Package   string   `json:"package,omitempty"`
+	Version   string   `json:"version,omitempty"`
+	Ecosystem string   `json:"ecosystem,omitempty"`
+	Summary   string   `json:"summary,omitempty"`
+	Fixed     string   `json:"fixed,omitempty"`
+	Fixable   bool     `json:"fixable,omitempty"`
+	Exploited bool     `json:"exploited,omitempty"`
+	Paths     []string `json:"paths,omitempty"`
 }
 
 type Result struct {

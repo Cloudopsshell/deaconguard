@@ -29,6 +29,7 @@ The agent looks for the files package managers leave behind on `/`, `/home`, `/o
 | PHP (Packagist) | `composer.lock` |
 
 - **Skipped on purpose:** `/usr/lib`, `/usr/libexec` and `/usr/share`. Libraries there come from the distribution's own packages, which the [package check](../checks.md) already covers with the distribution's advisories. OSV doesn't know about the fixes distributions back-port, so checking those copies would report fixed problems. Kernel and device file systems, `.git` folders and libraries nested inside other libraries' `node_modules` are skipped too.
+- **Container storage is skipped** (1.8.0 and later): `/var/lib/docker`, `/var/lib/containerd`, `/var/lib/containers`, `/var/lib/kubelet`, k3s's and RKE2's containerd folders, Docker's snap and rootless Podman's `~/.local/share/containers`. The [Running containers](./containers.md) check reads each container and names it, with the path inside the container; a note on the result says which of these folders the machine has.
 - **Limits:** files up to 4 MB, at most 5,000 files and 50,000 libraries per machine. A note says when a limit was reached.
 - **Read-only:** one fixed command finds and reads the files; nothing is run or changed. With root (or sudo), it can read every user's projects; without, the result is marked partial.
 - Dependencies from git, a local path or a URL can't be matched by version, so they're left out.
@@ -42,7 +43,7 @@ From 1.8.0, the check also reads **compiled Go programs**, such as `kubectl`, `t
 
 Where it reads them:
 
-- **Machines:** programs under the same folders as above, on each folder's own file system. The distribution's own folders (`/bin`, `/sbin`, `/usr/bin`, `/usr/sbin`, `/usr/lib` and the like) and container storage (`/var/lib/docker`, `/var/lib/containerd`) are left out: distributions patch their Go programs without changing the Go version they record, and the package check covers them with the distribution's advisories. Programs from a vendor's own package repository, such as Docker's or HashiCorp's, install in `/usr/bin` and aren't read yet.
+- **Machines:** programs under the same folders as above, on each folder's own file system. The distribution's own folders (`/bin`, `/sbin`, `/usr/bin`, `/usr/sbin`, `/usr/lib` and the like) and container storage (as above) are left out: distributions patch their Go programs without changing the Go version they record, and the package check covers them with the distribution's advisories. Programs from a vendor's own package repository, such as Docker's or HashiCorp's, install in `/usr/bin` and aren't read yet.
 - **[Running containers](./containers.md) and [images](./images.md):** every program, read as the layers stream by; the distribution's folders are left out only when the image has a package database. Scratch and distroless images are read everywhere.
 
 The agent reads each program itself, as a file, without following links; it never runs one. It reads at most 20,000 programs (16 GB) per machine, each up to 512 MB, for at most 10 minutes.

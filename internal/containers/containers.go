@@ -1,4 +1,4 @@
-// Package containers finds the containers running on a machine (Docker,
+// Package containers finds the containers on a machine (Docker,
 // Podman, and containerd or CRI-O through crictl) and reads what is
 // installed in each: the OS packages and the application libraries.
 //
@@ -11,8 +11,10 @@ package containers
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -34,25 +36,66 @@ const (
 	walkTimeout     = 2 * time.Minute
 )
 
-// ListCommand lists running containers, one per line:
-// PID|ID|name|image|image ID|runtime. Each runtime is asked only if its
-// command exists; a failure of one doesn't stop the others.
-const ListCommand = `{ command -v docker >/dev/null 2>&1 && docker ps --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 300 | while read -r id; do ` +
-	`docker inspect --format '{{.State.Pid}}|{{.Id}}|{{.Name}}|{{.Config.Image}}|{{.Image}}|docker' "$id" 2>/dev/null; done; } ; ` +
-	`{ command -v podman >/dev/null 2>&1 && podman ps --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 300 | while read -r id; do ` +
-	`podman inspect --format '{{.State.Pid}}|{{.Id}}|{{.Name}}|{{.ImageName}}|{{.Image}}|podman' "$id" 2>/dev/null; done; } ; ` +
-	`{ command -v crictl >/dev/null 2>&1 && crictl ps -q 2>/dev/null | head -n 300 | while read -r id; do ` +
-	`crictl inspect -o go-template --template '{{.info.pid}}|{{.status.id}}|{{index .status.labels "io.kubernetes.pod.namespace"}}/{{index .status.labels "io.kubernetes.pod.name"}}/{{.status.metadata.name}}|{{.status.image.image}}|{{.status.imageRef}}|cri' "$id" 2>/dev/null; echo; done; } ; true`
+// ListCommand lists the containers, running and stopped, one per line:
+// PID|ID|name|image|image ID|runtime|state|created|started|finished|exit
+// code|restarts|user|privileged|network|ports|command, with the command
+// last since it may hold "|". A stopped container's PID is 0. Each runtime
+// is asked only if its command exists; a failure of one doesn't stop the
+// others, and an engine whose inspect lacks one of the details falls back
+// to the first six fields.
+const ListCommand = `{ command -v docker >/dev/null 2>&1 && docker ps -a --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 300 | while read -r id; do ` +
+	`docker inspect --format '` + dockerDetails + `|docker|` + engineDetails + `' "$id" 2>/dev/null || { echo; ` +
+	`docker inspect --format '` + dockerDetails + `|docker' "$id" 2>/dev/null; }; done; } ; ` +
+	`{ command -v podman >/dev/null 2>&1 && podman ps -a --no-trunc --format '{{.ID}}' 2>/dev/null | head -n 300 | while read -r id; do ` +
+	`podman inspect --format '` + podmanDetails + `|podman|` + engineDetails + `' "$id" 2>/dev/null || { echo; ` +
+	`podman inspect --format '` + podmanDetails + `|podman' "$id" 2>/dev/null; }; done; } ; ` +
+	`{ command -v crictl >/dev/null 2>&1 && crictl ps -a -q 2>/dev/null | head -n 300 | while read -r id; do ` +
+	`{ crictl inspect -o go-template --template '` + criDetails + `|cri|` + criMore + `' "$id" 2>/dev/null || { echo; ` +
+	`crictl inspect -o go-template --template '` + criDetails + `|cri' "$id" 2>/dev/null; }; }; echo; done; } ; true`
 
-// Container is one running container.
+const (
+	dockerDetails = `{{.State.Pid}}|{{.Id}}|{{.Name}}|{{.Config.Image}}|{{.Image}}`
+	podmanDetails = `{{.State.Pid}}|{{.Id}}|{{.Name}}|{{.ImageName}}|{{.Image}}`
+	// engineDetails are the same in Docker's and Podman's inspect.
+	engineDetails = `{{.State.Status}}|{{.Created}}|{{.State.StartedAt}}|{{.State.FinishedAt}}|{{.State.ExitCode}}|{{.RestartCount}}|` +
+		`{{.Config.User}}|{{.HostConfig.Privileged}}|{{.HostConfig.NetworkMode}}|` +
+		`{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostIp}}:{{.HostPort}}->{{$p}} {{end}}{{end}}|` +
+		`{{json .Config.Entrypoint}} {{json .Config.Cmd}}`
+	criDetails = `{{.info.pid}}|{{.status.id}}|{{index .status.labels "io.kubernetes.pod.namespace"}}/{{index .status.labels "io.kubernetes.pod.name"}}/{{.status.metadata.name}}|{{.status.image.image}}|{{.status.imageRef}}`
+	// criMore: the pod's network and the command aren't in a CRI
+	// container's status; the restart count is its attempt.
+	criMore = `{{.status.state}}|{{.status.createdAt}}|{{.status.startedAt}}|{{.status.finishedAt}}|{{.status.exitCode}}|{{.status.metadata.attempt}}|||||`
+)
+
+// Container is one container on a machine.
 type Container struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Image   string `json:"image"`
 	ImageID string `json:"image_id"`
 	Runtime string `json:"runtime"`
-	pid     int
+	// State is running, paused, restarting, exited, created or dead; empty
+	// from agents before 1.8.0, which listed running containers only.
+	State      string `json:"state,omitempty"`
+	Created    string `json:"created,omitempty"`
+	StartedAt  string `json:"started_at,omitempty"`
+	FinishedAt string `json:"finished_at,omitempty"`
+	ExitCode   int    `json:"exit_code,omitempty"`
+	Restarts   int    `json:"restarts,omitempty"`
+	// User is the user the container was configured with; empty is root.
+	User       string   `json:"user,omitempty"`
+	Privileged bool     `json:"privileged,omitempty"`
+	Network    string   `json:"network,omitempty"`
+	Ports      []string `json:"ports,omitempty"`
+	Command    string   `json:"command,omitempty"`
+	// RunsAs is the user its main process runs as, read from /proc.
+	RunsAs string `json:"runs_as,omitempty"`
+	pid    int
 }
+
+// Running reports whether the container has a process whose files can be
+// read.
+func (c Container) Running() bool { return c.pid > 0 }
 
 // Inventory is what was read from one container, in the same formats the
 // host scan uses, with the package lists cut down to the fields evaluated.
@@ -68,32 +111,127 @@ type Inventory struct {
 	Notes []string `json:"notes,omitempty"`
 }
 
-// ParseList reads ListCommand's output. Containers without a running
-// process, and repeats, are skipped.
+// ParseList reads ListCommand's output. Repeats, such as a Podman
+// container that the docker command (podman-docker) lists too, are
+// skipped. Running containers come first, then by name.
 func ParseList(output []byte) []Container {
 	var list []Container
-	seen := make(map[int]bool)
+	seen := make(map[string]bool)
 	for _, line := range strings.Split(string(output), "\n") {
 		fields := strings.Split(strings.TrimSpace(line), "|")
-		if len(fields) != 6 {
+		if len(fields) < 6 || fields[1] == "" || fields[1] == noValue {
 			continue
 		}
 		pid, err := strconv.Atoi(fields[0])
-		if err != nil || pid <= 0 || seen[pid] {
+		if err != nil {
+			pid = 0
+		}
+		if pid < 0 || seen[fields[1]] {
 			continue
 		}
-		seen[pid] = true
+		seen[fields[1]] = true
 		name := strings.TrimPrefix(fields[2], "/")
 		if fields[5] == "cri" {
 			name = strings.TrimPrefix(name, "/")
 		}
-		list = append(list, Container{ID: fields[1], Name: name, Image: fields[3], ImageID: fields[4], Runtime: fields[5], pid: pid})
+		container := Container{ID: fields[1], Name: name, Image: fields[3], ImageID: fields[4], Runtime: fields[5], pid: pid}
+		if len(fields) >= 17 {
+			detail := func(i int) string {
+				if value := strings.TrimSpace(fields[i]); value != noValue {
+					return value
+				}
+				return ""
+			}
+			container.State = normalState(detail(6))
+			container.Created, container.StartedAt, container.FinishedAt = timestamp(detail(7)), timestamp(detail(8)), timestamp(detail(9))
+			container.ExitCode, _ = strconv.Atoi(detail(10))
+			container.Restarts, _ = strconv.Atoi(detail(11))
+			container.User = detail(12)
+			container.Privileged = detail(13) == "true"
+			container.Network = detail(14)
+			container.Ports = strings.Fields(detail(15))
+			container.Command = command(strings.Join(fields[16:], "|"))
+		} else if pid > 0 {
+			container.State = "running"
+		} else {
+			container.State = "stopped"
+		}
+		if container.State == "running" && pid == 0 {
+			container.State = "exited"
+		}
+		if container.State == "running" {
+			container.FinishedAt = ""
+		}
+		list = append(list, container)
 		if len(list) >= MaxContainers {
 			break
 		}
 	}
-	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].Running() != list[j].Running() {
+			return list[i].Running()
+		}
+		return list[i].Name < list[j].Name
+	})
 	return list
+}
+
+// noValue is what a Go template prints for a missing map key, as crictl's
+// output has for fields a runtime leaves out.
+const noValue = "<no value>"
+
+// normalState gives CRI's states (CONTAINER_RUNNING) Docker's names.
+func normalState(state string) string {
+	state = strings.ToLower(strings.TrimPrefix(state, "CONTAINER_"))
+	if state == "unknown" {
+		return ""
+	}
+	return state
+}
+
+// timestamp reads the times Docker (RFC 3339), Podman (Go's time format)
+// and crictl print, as RFC 3339 in UTC; a zero time is empty.
+func timestamp(value string) string {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999 -0700 MST", "2006-01-02 15:04:05.999999999 -0700 -0700"} {
+		if t, err := time.Parse(layout, value); err == nil {
+			if t.Year() <= 1970 {
+				return ""
+			}
+			return t.UTC().Format(time.RFC3339)
+		}
+	}
+	if nanos, err := strconv.ParseInt(value, 10, 64); err == nil && nanos > 0 {
+		return time.Unix(0, nanos).UTC().Format(time.RFC3339)
+	}
+	return ""
+}
+
+// command joins the entrypoint and command Docker and Podman print as JSON
+// (Podman 4 prints the entrypoint as a string).
+func command(value string) string {
+	var parts []string
+	decoder := json.NewDecoder(strings.NewReader(value))
+	for {
+		var part any
+		if err := decoder.Decode(&part); err != nil {
+			break
+		}
+		switch v := part.(type) {
+		case string:
+			parts = append(parts, v)
+		case []any:
+			for _, arg := range v {
+				if s, ok := arg.(string); ok {
+					parts = append(parts, s)
+				}
+			}
+		}
+	}
+	joined := strings.Join(parts, " ")
+	if len(joined) > 500 {
+		joined = joined[:500] + "…"
+	}
+	return joined
 }
 
 // Read reads one container's OS packages and libraries. It needs root.
@@ -112,7 +250,41 @@ func Read(container Container) Inventory {
 		return result
 	}
 	defer r.close()
-	return ReadFS(r, container)
+	result = ReadFS(r, container)
+	result.RunsAs = runsAs(container.pid, r)
+	return result
+}
+
+// runsAs names the user the container's main process runs as: its
+// effective user ID from /proc, named from the container's /etc/passwd.
+func runsAs(pid int, r FS) string {
+	status, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "status"))
+	if hostRoot := local.HostRoot(); err != nil && hostRoot != "" {
+		status, err = os.ReadFile(filepath.Join(hostRoot, "proc", strconv.Itoa(pid), "status"))
+	}
+	if err != nil {
+		return ""
+	}
+	uid := ""
+	for _, line := range strings.Split(string(status), "\n") {
+		if fields := strings.Fields(line); len(fields) >= 3 && fields[0] == "Uid:" {
+			uid = fields[2]
+		}
+	}
+	if uid == "" {
+		return ""
+	}
+	if uid == "0" {
+		return "root"
+	}
+	if passwd, _, err := r.ReadFile("/etc/passwd", 1<<20); err == nil {
+		for _, line := range strings.Split(string(passwd), "\n") {
+			if fields := strings.Split(line, ":"); len(fields) > 2 && fields[2] == uid && fields[0] != "" {
+				return fields[0] + " (uid " + uid + ")"
+			}
+		}
+	}
+	return "uid " + uid
 }
 
 // ReadFS reads the OS packages and libraries from a container's or an

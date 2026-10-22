@@ -107,7 +107,16 @@ func Evaluate(result *checks.Result, client *Client, exploits advisory.HTTPClien
 		if exploit != nil && exploit.KEV {
 			exploitedCount++
 		}
-		f.finding.Detail = detail(f.cve, f.record.ID, fixedVersions(f.record, f.library), exploit)
+		fixed := fixedVersions(f.record, f.library)
+		f.finding.Detail = detail(f.cve, f.record.ID, fixed, exploit)
+		f.finding.Source, f.finding.Package, f.finding.Version, f.finding.Ecosystem = "library", f.library.Name, f.library.Version, f.library.Ecosystem
+		f.finding.Summary = summaryOf(f.record)
+		f.finding.Fixed, f.finding.Fixable = strings.Join(fixed, ", "), len(fixed) > 0
+		f.finding.Exploited = exploit != nil && exploit.KEV
+		f.finding.Paths = f.library.Paths
+		if len(f.finding.Paths) > maxPaths {
+			f.finding.Paths = f.finding.Paths[:maxPaths]
+		}
 	}
 
 	sort.SliceStable(all, func(i, j int) bool {
@@ -277,7 +286,15 @@ func sameName(ecosystem, a, b string) bool {
 	return a == b
 }
 
+// maxPaths bounds the files a finding lists.
+const maxPaths = 20
+
 func title(library libraries.Library, record Vulnerability) string {
+	return fmt.Sprintf("%s %s (%s): %s", library.Name, library.Version, library.Ecosystem, summaryOf(record))
+}
+
+// summaryOf is the record's one-line summary.
+func summaryOf(record Vulnerability) string {
 	summary := strings.TrimSpace(record.Summary)
 	if summary == "" {
 		// Some sources, such as PyPA's, have only details: use their first line.
@@ -290,7 +307,7 @@ func title(library libraries.Library, record Vulnerability) string {
 	if len(summary) > 160 {
 		summary = summary[:160] + "…"
 	}
-	return fmt.Sprintf("%s %s (%s): %s", library.Name, library.Version, library.Ecosystem, summary)
+	return summary
 }
 
 func detail(cve, id string, fixed []string, exploit *advisory.Exploit) string {

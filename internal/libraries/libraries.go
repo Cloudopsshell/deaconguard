@@ -54,15 +54,27 @@ const recordStart = '\x1e'
 // /usr/lib*, /usr/libexec and /usr/share: libraries there come from the
 // distribution's packages, which the package check covers with the
 // distribution's own advisories (OSV doesn't know its back-ported fixes).
-// /usr/local is checked.
+// /usr/local is checked. Container storage (ContainerStorage) is skipped
+// too: the container check reads each container, and names it.
 const CollectCommand = `find / /home /opt /srv /usr/local /var/www /root -xdev ` +
 	`\( -path /proc -o -path /sys -o -path /dev -o -path /run -o -path /usr/lib -o -path /usr/lib32 -o -path /usr/lib64 -o -path /usr/libexec -o -path /usr/share ` +
+	`-o -path /var/lib/docker -o -path /var/lib/containerd -o -path /var/lib/containers -o -path /var/lib/kubelet ` +
+	`-o -path /var/lib/rancher/k3s/agent/containerd -o -path /var/lib/rancher/rke2/agent/containerd -o -path /var/snap/docker ` +
+	`-o -path '*/.local/share/containers' ` +
 	`-o -name .git -o -path '*/node_modules/*/node_modules' \) -prune -o -type f ` +
 	`\( -name package-lock.json -o -name npm-shrinkwrap.json -o -name yarn.lock -o -name pnpm-lock.yaml ` +
 	`-o -name requirements.txt -o -name poetry.lock -o -name Pipfile.lock -o -path '*-packages/*.dist-info/METADATA' -o -path '*-packages/*.egg-info/PKG-INFO' ` +
 	`-o -path '*/lib/node_modules/*/package.json' -o -name go.mod -o -name Gemfile.lock -o -name Cargo.lock -o -name composer.lock \) ` +
 	`-size -4097k -print 2>/dev/null | awk '!seen[$0]++' | head -n 5000 | ` +
 	`while IFS= read -r file; do printf '\036%s\n' "$file"; head -c 4194304 -- "$file" 2>/dev/null; printf '\n'; done`
+
+// ContainerStorage are the folders where Docker, containerd, Podman, CRI-O,
+// the kubelet, k3s and RKE2 keep containers' files. The host's checks leave
+// them out; the container check reads each container instead.
+var ContainerStorage = []string{
+	"/var/lib/docker", "/var/lib/containerd", "/var/lib/containers", "/var/lib/kubelet",
+	"/var/lib/rancher/k3s/agent/containerd", "/var/lib/rancher/rke2/agent/containerd", "/var/snap/docker",
+}
 
 // Result is what Parse found.
 type Result struct {
