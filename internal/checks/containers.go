@@ -10,6 +10,17 @@ import (
 // checks them, as it checks a machine's.
 const Containers = "containers"
 
+// Scanned reports whether the container's files could be read: it was
+// running (or paused) when the agent looked. Agents before 1.8.0 listed
+// running containers only, with no state.
+func (c ContainerResult) Scanned() bool {
+	switch c.State {
+	case "", "running", "paused":
+		return true
+	}
+	return false
+}
+
 // ContainerResult is one container: what the agent read (Inventory, which
 // the server drops once it has checked it) and what the check found.
 type ContainerResult struct {
@@ -33,7 +44,11 @@ type ContainerResult struct {
 	// Findings are the container's vulnerabilities that have a fix or are
 	// known to be exploited, most urgent first, at most 300.
 	Findings []Finding `json:"findings,omitempty"`
-	Notes    []string  `json:"notes,omitempty"`
+	// Vulnerabilities are all of the container's vulnerabilities, fixable
+	// or not, most urgent first, at most 1000; empty from servers before
+	// 1.8.0, which kept only Findings.
+	Vulnerabilities []Finding `json:"vulnerabilities,omitempty"`
+	Notes           []string  `json:"notes,omitempty"`
 	// Error says why the container's packages couldn't be checked, such as
 	// an unsupported distribution; its libraries are checked anyway.
 	Error string `json:"error,omitempty"`

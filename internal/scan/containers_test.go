@@ -65,3 +65,43 @@ func TestEvaluateContainers(t *testing.T) {
 		t.Errorf("summary %q, %d findings", result.Summary, len(result.Findings))
 	}
 }
+
+// Every vulnerability is kept with what the dashboard groups it by, and a
+// stopped container is listed without being checked.
+func TestEvaluateContainersKeepsEveryVulnerability(t *testing.T) {
+	scanPackages = func(_, _, _, _, _ string, _ *http.Client, _ time.Time) (scanner.Report, error) {
+		return scanner.Report{OS: "Debian 10 (buster)", PackageCount: 104, Findings: []advisory.Finding{
+			{ID: "CVE-2022-2068", Package: "openssl", InstalledVersion: "1.1.1n-0+deb10u3", FixedVersion: "1.1.1n-0+deb10u6", Severity: "critical", Fix: advisory.FixAvailable, Title: "c_rehash command injection"},
+			{ID: "CVE-2024-3", Package: "perl", InstalledVersion: "5.28", Severity: "low", Fix: advisory.FixNone},
+		}}, nil
+	}
+	defer func() { scanPackages = scanner.Scan }()
+	debian := containers.Inventory{OSRelease: "ID=debian\nVERSION_ID=10\n", DPKGStatus: "Package: openssl\n"}
+	result := checks.Result{Status: checks.StatusCompleted, Containers: []checks.ContainerResult{
+		{Container: containers.Container{Name: "web-1", Image: "nginx:1.18", State: "running"}, Inventory: &debian},
+		{Container: containers.Container{Name: "web-2", Image: "nginx:1.18", State: "running"}, Inventory: &debian},
+		{Container: containers.Container{Name: "old-job", Image: "alpine:3.12", State: "exited", ExitCode: 3}},
+	}}
+	evaluateContainers(&result, &reporter{})
+	web1, web2, old := result.Containers[0], result.Containers[1], result.Containers[2]
+	if len(web1.Vulnerabilities) != 2 || len(web1.Findings) != 1 {
+		t.Fatalf("web-1 keeps every vulnerability and the ones to fix: %+v", web1)
+	}
+	first := web1.Vulnerabilities[0]
+	if first.Source != "os" || first.Package != "openssl" || first.Version != "1.1.1n-0+deb10u3" || first.Fixed != "1.1.1n-0+deb10u6" ||
+		!first.Fixable || first.Container != "web-1" || first.Image != "nginx:1.18" || first.Summary != "c_rehash command injection" {
+		t.Errorf("first = %+v", first)
+	}
+	if web1.Vulnerabilities[1].Fixable || web1.Vulnerabilities[1].Fixed != "" {
+		t.Errorf("no fix: %+v", web1.Vulnerabilities[1])
+	}
+	if len(web2.Vulnerabilities) != 2 || web2.Vulnerabilities[0].Container != "web-2" || !strings.HasPrefix(web2.Vulnerabilities[0].Title, "web-2: ") {
+		t.Errorf("web-2 = %+v", web2.Vulnerabilities)
+	}
+	if old.Error != "" || len(old.Vulnerabilities) != 0 || old.Scanned() {
+		t.Errorf("stopped container = %+v", old)
+	}
+	if !strings.HasPrefix(result.Summary, "3 containers, 2 running: 4 vulnerabilities, 2 to fix in 2 containers") {
+		t.Errorf("summary = %q", result.Summary)
+	}
+}

@@ -20,12 +20,17 @@ import (
 // scanPackages evaluates a package inventory; tests replace it.
 var scanPackages = scanner.Scan
 
-// maxContainerFindings bounds the findings kept for each container.
-const maxContainerFindings = 300
+// maxContainerFindings bounds the findings to fix kept for each container,
+// and maxContainerVulnerabilities all of its vulnerabilities.
+const (
+	maxContainerFindings        = 300
+	maxContainerVulnerabilities = 1000
+)
 
-// collectContainers lists the running containers and reads each one. It
-// needs root, as the agent has, to see other users' processes and read
-// their containers' files.
+// collectContainers lists the containers and reads each running one; a
+// stopped container has no files to read, and is only listed. It needs
+// root, as the agent has, to see other users' processes and read their
+// containers' files.
 func collectContainers(executor *checks.Executor) checks.Result {
 	if os.Geteuid() != 0 {
 		return checks.Result{Status: checks.StatusSkipped, Summary: "Needs root",
@@ -39,17 +44,27 @@ func collectContainers(executor *checks.Executor) checks.Result {
 	}
 	kernel, _, _ := executor.Run("uname -r", 256, time.Minute)
 	result := checks.Result{Status: checks.StatusCompleted, Privileged: privileged, Findings: []checks.Finding{}, Notes: []string{}}
+	running := 0
 	for _, container := range containers.ParseList(output) {
+		if !container.Running() {
+			result.Containers = append(result.Containers, checks.ContainerResult{Container: container})
+			continue
+		}
+		running++
 		read := containers.Read(container)
 		result.Containers = append(result.Containers, checks.ContainerResult{
-			Container: container, Inventory: &read, HostKernel: strings.TrimSpace(string(kernel)),
+			Container: read.Container, Inventory: &read, HostKernel: strings.TrimSpace(string(kernel)),
 		})
 	}
-	if len(result.Containers) == 0 {
-		result.Summary = "No running containers"
-		result.Notes = append(result.Notes, "Docker, Podman and crictl (containerd, CRI-O) were asked; none listed a running container.")
-	} else {
-		result.Summary = fmt.Sprintf("Found %d running containers", len(result.Containers))
+	switch {
+	case len(result.Containers) == 0:
+		result.Summary = "No containers"
+		result.Notes = append(result.Notes, "Docker, Podman and crictl (containerd, CRI-O) were asked; none listed a container.")
+	case running == 0:
+		result.Summary = fmt.Sprintf("Found %d containers; none running", len(result.Containers))
+		result.Notes = append(result.Notes, "No container is running, so none could be read. Scan their images on the Images page instead.")
+	default:
+		result.Summary = fmt.Sprintf("Found %d running containers", running)
 	}
 	return result
 }
@@ -98,11 +113,15 @@ type ranked struct {
 func evaluateContainers(result *checks.Result, progress *reporter) {
 	verdicts := make(map[string]*checks.ContainerResult)
 	var all []ranked
-	vulnerableContainers, exploitedTotal := 0, 0
+	vulnerableContainers, exploitedTotal, stopped := 0, 0, 0
 	for index := range result.Containers {
 		container := &result.Containers[index]
 		inventory := container.Inventory
 		container.Inventory = nil
+		if !container.Scanned() {
+			stopped++
+			continue
+		}
 		if inventory == nil {
 			container.Error = "the agent sent nothing for this container"
 			continue
@@ -143,7 +162,11 @@ func evaluateContainers(result *checks.Result, progress *reporter) {
 			total += count
 		}
 	}
-	result.Summary = fmt.Sprintf("%d running containers: %d vulnerabilities, %d to fix in %d containers", len(result.Containers), total, len(all), vulnerableContainers)
+	counted := fmt.Sprintf("%d running containers", len(result.Containers)-stopped)
+	if stopped > 0 {
+		counted = fmt.Sprintf("%d containers, %d running", len(result.Containers), len(result.Containers)-stopped)
+	}
+	result.Summary = fmt.Sprintf("%s: %d vulnerabilities, %d to fix in %d containers", counted, total, len(all), vulnerableContainers)
 	if exploitedTotal > 0 {
 		result.Summary += fmt.Sprintf(", %d known to be exploited", exploitedTotal)
 	}
@@ -165,10 +188,19 @@ func copyVerdict(container, done *checks.ContainerResult, inventory *containers.
 	container.OS, container.Lifecycle, container.Packages, container.Libraries = done.OS, done.Lifecycle, done.Packages, done.Libraries
 	container.Severity, container.Exploited, container.Fixable, container.Error = done.Severity, done.Exploited, done.Fixable, done.Error
 	container.Notes = append(append([]string(nil), inventory.Notes...), done.Notes...)
-	for _, finding := range done.Findings {
+	rename := func(finding checks.Finding) checks.Finding {
 		finding.Title = container.Name + strings.TrimPrefix(finding.Title, done.Name)
-		finding.Evidence = container.Image
-		container.Findings = append(container.Findings, finding)
+		if finding.Source == "os" {
+			finding.Evidence = container.Image
+		}
+		finding.Container, finding.Image = container.Name, container.Image
+		return finding
+	}
+	for _, finding := range done.Findings {
+		container.Findings = append(container.Findings, rename(finding))
+	}
+	for _, finding := range done.Vulnerabilities {
+		container.Vulnerabilities = append(container.Vulnerabilities, rename(finding))
 	}
 }
 
@@ -217,9 +249,19 @@ func evaluateContainer(container *checks.ContainerResult, inventory *containers.
 				if exploited {
 					detail += " Known to be exploited (CISA KEV)."
 				}
+				summary := strings.TrimSpace(f.Title)
+				if summary == "" || summary == f.ID {
+					summary = ""
+				}
+				fixed := ""
+				if fixable {
+					fixed = f.FixedVersion
+				}
 				findings = append(findings, ranked{finding: checks.Finding{
 					Rule: f.ID, Severity: severity, Detail: detail, Evidence: container.Image,
-					Title: fmt.Sprintf("%s: %s %s (%s): %s", container.Name, f.Package, f.InstalledVersion, report.OS, f.ID),
+					Title:     fmt.Sprintf("%s: %s %s (%s): %s", container.Name, f.Package, f.InstalledVersion, report.OS, f.ID),
+					Container: container.Name, Image: container.Image, Source: "os", Package: f.Package, Version: f.InstalledVersion,
+					Ecosystem: report.OS, Summary: summary, Fixed: fixed, Fixable: fixable, Exploited: exploited,
 				}, rank: severityRank(severity), exploited: exploited, fixable: fixable})
 			}
 		}
@@ -245,6 +287,7 @@ func evaluateContainer(container *checks.ContainerResult, inventory *containers.
 				container.FixableSeverity[f.Severity]++
 			}
 			f.Title = container.Name + ": " + f.Title
+			f.Container, f.Image = container.Name, container.Image
 			findings = append(findings, ranked{finding: f, rank: severityRank(f.Severity), exploited: exploited, fixable: fixable})
 		}
 	}
@@ -255,13 +298,21 @@ func evaluateContainer(container *checks.ContainerResult, inventory *containers.
 		return findings[i].rank > findings[j].rank
 	})
 	var toFix []checks.Finding
+	container.Vulnerabilities = nil
 	for _, item := range findings {
 		if item.fixable || item.exploited {
 			toFix = append(toFix, item.finding)
 		}
+		if len(container.Vulnerabilities) < maxContainerVulnerabilities {
+			container.Vulnerabilities = append(container.Vulnerabilities, item.finding)
+		}
 	}
+	if len(findings) > maxContainerVulnerabilities {
+		container.Notes = append(container.Notes, fmt.Sprintf("Only the %d most urgent of %d vulnerabilities are kept.", maxContainerVulnerabilities, len(findings)))
+	}
+	// The dashboard lists Vulnerabilities; Findings is kept, cut short, for
+	// the flat list and older dashboards.
 	if len(toFix) > maxContainerFindings {
-		container.Notes = append(container.Notes, fmt.Sprintf("%d more findings weren't listed.", len(toFix)-maxContainerFindings))
 		toFix = toFix[:maxContainerFindings]
 	}
 	container.Findings = toFix
