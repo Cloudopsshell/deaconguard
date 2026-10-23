@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-10-23
+
 ### Added
 
 - **End-of-life releases in containers and images:** a container or image on a release that has ended, such as Debian 10 or 11, Alpine before 3.18, CentOS Linux, CentOS Stream 8, Amazon Linux 2, openSUSE Leap before 15.6 or Fedora before 40, gets a high finding, `DG-EOL-001`, with the release, when it ended and what to rebuild on, an **End of life** badge, and a count in the **End-of-life OS** tile. Before, it only said "Packages not checked: unsupported Debian release", and a container with no vulnerable libraries looked as if it had nothing to fix. A machine on such a release still isn't scanned, but the error now says when the release ended and what to upgrade to.
@@ -155,7 +157,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.5.0...v1.6.0
