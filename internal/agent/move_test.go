@@ -89,3 +89,45 @@ func TestAgentStaysWhenTheAgentPortIsWrong(t *testing.T) {
 		t.Fatal("a failed move saved a config")
 	}
 }
+
+// An agent that moved goes back to where it came from when the agent port is
+// turned off, and remembers that address only while it is on the agent port.
+func TestAgentMovesBackWhenTheAgentPortGoes(t *testing.T) {
+	dashboard := agentServer(t, nil, http.StatusNoContent)
+	agents := agentServer(t, dashboard, http.StatusNoContent)
+	pin := agentapi.PublicKeyPin(dashboard.Certificate())
+	config := Config{ServerURL: dashboard.URL, Pin: pin, HostID: "host", Credential: "secret"}
+	path := filepath.Join(t.TempDir(), "agent.json")
+
+	moved, _, err := moveToPort(context.Background(), config, portOf(t, agents), path)
+	if err != nil || moved.MovedFrom != dashboard.URL {
+		t.Fatalf("moved = %+v, %v", moved, err)
+	}
+	agents.Close()
+	back, client, err := moveBack(context.Background(), moved, path)
+	if err != nil || client == nil || back.ServerURL != dashboard.URL || back.MovedFrom != "" {
+		t.Fatalf("back = %+v, %v", back, err)
+	}
+	if saved, err := LoadConfig(path); err != nil || saved.ServerURL != dashboard.URL || saved.MovedFrom != "" {
+		t.Fatalf("saved = %+v, %v", saved, err)
+	}
+
+	// Nowhere to go back to: the dashboard's port is gone too.
+	dashboard.Close()
+	if _, _, err := moveBack(context.Background(), moved, path); err == nil {
+		t.Fatal("moved back to a closed port")
+	}
+}
+
+func TestReturnTo(t *testing.T) {
+	for config, want := range map[Config]string{
+		{ServerURL: "https://dg:8444", MovedFrom: "https://dg.example:9443"}: "https://dg.example:9443",
+		{ServerURL: "https://dg:8444"}:                                       "https://dg:8443",
+		{ServerURL: "https://dg:8443"}:                                       "",
+		{ServerURL: "https://dg"}:                                            "",
+	} {
+		if got := returnTo(config); got != want {
+			t.Errorf("returnTo(%+v) = %q, want %q", config, got, want)
+		}
+	}
+}

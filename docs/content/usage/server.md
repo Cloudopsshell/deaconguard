@@ -9,7 +9,7 @@ The server hosts the dashboard, stores results, evaluates packages against the a
 sudo deaconguard setup server
 ```
 
-Setup creates the first dashboard account, enables and starts the `deaconguard-server` service on port 8443, gives this machine an agent of its own, and prints the dashboard's addresses, the certificate's fingerprint, and what runs on the machine. Running it again keeps the existing accounts and settings.
+Setup creates the first dashboard account, enables and starts the `deaconguard-server` service on port 8443 for the dashboard and port 8444 for agents, gives this machine an agent of its own, and prints the dashboard's addresses, the certificate's fingerprint, and what runs on the machine. Running it again keeps the existing accounts and settings.
 
 ## The server's own machine
 
@@ -30,7 +30,7 @@ These options work with `deaconguard setup server`, and the install script passe
 | Option | Use |
 | --- | --- |
 | `--listen ADDRESS:PORT` | Listen elsewhere than `0.0.0.0:8443`. |
-| `--agent-listen ADDRESS:PORT` | Give agents a port of their own, such as `0.0.0.0:8444`, that serves only the agent API, so the dashboard's port can be limited to people. Agents from 0.11.0 move to it by themselves; older ones keep using 8443. `off` removes it. See [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port). |
+| `--agent-listen ADDRESS:PORT\|off` | The agents' own port, which serves only the agent API, so the dashboard's port can be limited to people. From 1.9.0 it is `0.0.0.0:8444` unless you give another, or `off` to have agents share the dashboard's port; setup remembers the choice. Agents from 0.11.0 move to it by themselves; older ones keep using 8443. See [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port). |
 | `--tls-cert FILE --tls-key FILE` | Use your own certificate. Use absolute paths; the `deaconguard` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again. |
 | `--admin-user NAME --admin-password-file FILE` | Create the first account without prompts, for automation. Delete the file afterwards. |
 | `--no-agent` | Give this machine no agent. It is then not scanned as root, and later runs remember the choice. |

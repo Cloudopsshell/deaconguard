@@ -22,6 +22,33 @@ spec:
     - name: agents
       port: {{ .Values.server.service.agentPort }}
       targetPort: agents
+{{- if .Values.server.agentService.enabled }}
+---
+# The agent port alone, for agents outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "deaconguard.fullname" . }}-agents
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  {{- with .Values.server.agentService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.server.agentService.type }}
+  selector:
+    {{- include "deaconguard.selector" $selector | nindent 4 }}
+  {{- with .Values.server.agentService.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+    - name: agents
+      port: {{ .Values.server.agentService.port }}
+      targetPort: agents
+{{- end }}
 ---
 # One server: its data is one SQLite database, on a volume of its own.
 apiVersion: apps/v1
@@ -86,6 +113,14 @@ spec:
               value: {{ .Values.server.admin.username | quote }}
             - name: DEACONGUARD_ADMIN_PASSWORD_FILE
               value: /run/secrets/deaconguard-admin/{{ .Values.server.admin.secretKey }}
+            # For the message while it waits for that secret, and for the
+            # agent address the dashboard suggests.
+            - name: DEACONGUARD_ADMIN_SECRET
+              value: {{ include "deaconguard.adminSecret" . | quote }}
+            - name: DEACONGUARD_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: DEACONGUARD_CLUSTER_AGENT_URL
+              value: "https://{{ include "deaconguard.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.server.service.agentPort }}"
           ports:
             - name: dashboard
               containerPort: 8443

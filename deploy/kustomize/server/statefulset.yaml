@@ -36,6 +36,15 @@ spec:
               value: admin
             - name: DEACONGUARD_ADMIN_PASSWORD_FILE
               value: /run/secrets/deaconguard-admin/password
+            # For the message while it waits for that secret, and for the
+            # agent address the dashboard suggests; change them with the
+            # namespace.
+            - name: DEACONGUARD_ADMIN_SECRET
+              value: deaconguard-admin
+            - name: DEACONGUARD_NAMESPACE
+              value: deaconguard
+            - name: DEACONGUARD_CLUSTER_AGENT_URL
+              value: https://deaconguard.deaconguard.svc:8444
           ports:
             - name: dashboard
               containerPort: 8443

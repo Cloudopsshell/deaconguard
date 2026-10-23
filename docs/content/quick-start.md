@@ -29,7 +29,7 @@ The DeaconGuard server is running. Open the dashboard and sign in:
 Certificate public key (SHA-256): 5Qf7450fYjqub77irpmvRGyNK-HhiYE-GCAEBIYleEs
 
 What runs on this machine:
-  deaconguard-server  the dashboard and API on port 8443, as the deaconguard user, without root
+  deaconguard-server  the dashboard on port 8443 and the agent API on port 8444, as the deaconguard user, without root
   deaconguard-agent   scans this machine as root and reports to this server; listens on nothing
 ```
 
@@ -38,7 +38,7 @@ Open one of the addresses and sign in. The server uses a self-signed certificate
 The server's own machine is already on the **Hosts** page, marked **This server**. Click **Scan now** to scan it, or **Run audit** for a full check graded A to F (see [Server audits](./usage/audits.md)).
 
 :::tip Firewall and two-step sign-in
-Don't expose port 8443 to the internet: only allow it from the networks your administrators and agents are in. After signing in, turn on two-step sign-in under **My account**, and add accounts for your team on **Accounts** with the [role](./usage/accounts.md#roles) each needs. See [Securing the dashboard](./security/securing-the-dashboard.md).
+Don't expose ports 8443 and 8444 to the internet: allow 8443, the dashboard, only from your administrators' networks, and 8444, which agents use, only from your machines' networks. After signing in, turn on two-step sign-in under **My account**, and add accounts for your team on **Accounts** with the [role](./usage/accounts.md#roles) each needs. See [Securing the dashboard](./security/securing-the-dashboard.md).
 :::
 
 ## 2. Enroll another machine

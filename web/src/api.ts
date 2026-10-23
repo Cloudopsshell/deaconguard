@@ -63,6 +63,8 @@ export interface Capabilities {
   agents: boolean;
   /** The port of the server's agent-only listener, if it has one. */
   agent_port?: string;
+  /** The agents' address inside a Kubernetes cluster, set by the Helm chart. */
+  cluster_agent_url?: string;
 }
 
 /** Admins manage accounts and machines, operators run scans, viewers see results. */
@@ -911,7 +913,7 @@ export function logDownloadUrl(filters: LogFilters) {
 
 /** How the previous run of the server ended. */
 export interface ServerStop {
-  kind: "stopped" | "reboot" | "out_of_memory" | "crashed" | "killed" | "unknown";
+  kind: "stopped" | "reboot" | "out_of_memory" | "crashed" | "killed" | "start_failed" | "unknown";
   message: string;
   started_at: string;
   /** When the next run found out; close to the restart. */

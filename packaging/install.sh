@@ -75,7 +75,7 @@ Environment: DEACONGUARD_TOKEN (the agent's enrollment token) and
 DEACONGUARD_VERSION (same as --version).
 
 Setup options are passed to `deaconguard setup server` or `deaconguard setup agent`:
-  server: --listen ADDRESS:PORT  --agent-listen ADDRESS:PORT  --tls-cert FILE --tls-key FILE
+  server: --listen ADDRESS:PORT  --agent-listen ADDRESS:PORT|off (default 0.0.0.0:8444)  --tls-cert FILE --tls-key FILE
           --admin-user NAME  --admin-password-file FILE
           --no-agent (do not scan this machine as root)  --with-agent
   agent:  --token-file FILE  --force

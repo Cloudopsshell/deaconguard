@@ -40,6 +40,19 @@ server:
     dashboardPort: 8443
     # Agents only. In the cluster: https://SERVICE.NAMESPACE.svc:8444
     agentPort: 8444
+  # A Service of its own for the agent port, for agents on machines outside
+  # the cluster, such as an internal load balancer, while the dashboard's
+  # port stays inside. Agents need the TLS connection to reach the server
+  # unchanged (their token pins its key), which a TCP load balancer does.
+  agentService:
+    enabled: false
+    type: LoadBalancer
+    # For a private load balancer, such as on EKS:
+    #   service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+    annotations: {}
+    # The networks of the machines whose agents connect, such as 10.0.0.0/16.
+    loadBalancerSourceRanges: []
+    port: 8444
   ingress:
     enabled: false
     className: ""

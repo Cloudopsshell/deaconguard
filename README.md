@@ -26,7 +26,7 @@ One binary does two jobs, and they are kept apart on purpose:
 
 | Component | Runs as | Listens on | Reaches |
 | --- | --- | --- | --- |
-| `deaconguard-server` | `deaconguard` user, no root | `0.0.0.0:8443` (HTTPS) | the distributions' advisory feeds, CISA KEV and EPSS |
+| `deaconguard-server` | `deaconguard` user, no root | `0.0.0.0:8443` for people and `0.0.0.0:8444` for agents (HTTPS) | the distributions' advisory feeds, CISA KEV and EPSS |
 | `deaconguard-agent` | root | nothing | only its server |
 
 Agents enroll once with a token from the server: a one-time token, valid for 24 hours, or a [reusable one](#reusable-tokens) for many machines, such as a Kubernetes cluster's nodes. Machines to scan need no open ports and no internet access, because the server evaluates their packages against the advisories. More on how they trust each other: [Architecture](https://docs.deaconguard.io/architecture).
@@ -173,12 +173,12 @@ Sign in at `https://THIS-MACHINE:8443` as `admin`. To scan the machine Compose r
 
 ```sh
 kubectl create namespace deaconguard --save-config
-kubectl -n deaconguard create secret generic deaconguard-admin --from-literal=password='a-long-password'
+kubectl -n deaconguard create secret generic deaconguard-admin --from-literal=password="$(openssl rand -base64 18)"
 helm install deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard --version X.Y.Z \
   -n deaconguard --set server.admin.existingSecret=deaconguard-admin
 ```
 
-Open the dashboard with `kubectl -n deaconguard port-forward svc/deaconguard 8443:8443`, or an ingress (`server.ingress.*`; set `server.trustedProxies` to the ingress controller's network so sign-in limits and the audit log see each client's address). On the **Agents** page, choose **Enroll a machine**, then **Many machines**, with the server address `https://deaconguard.deaconguard.svc:8444`, and:
+Open the dashboard with `kubectl -n deaconguard port-forward svc/deaconguard 8443:8443`, or an ingress (`server.ingress.*`; set `server.trustedProxies` to the ingress controller's network so sign-in limits and the audit log see each client's address). Without the secret, the server waits for it and says which one to create. On the **Agents** page, choose **Enroll a machine**, then **Many machines**, with the server address `https://deaconguard.deaconguard.svc:8444` (not `127.0.0.1`, which a port-forward puts there), and:
 
 ```sh
 kubectl create namespace deaconguard-agent --save-config
@@ -188,7 +188,7 @@ helm install deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard --
   --set agent.enrollment.existingSecret=deaconguard-enrollment
 ```
 
-Each node enrolls once, by its node name, and keeps its identity in `/var/lib/deaconguard-agent` on the node. The agent reads the node's root filesystem, read-only at `/host`, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent installed on the node.
+Each node enrolls once, by its node name, and keeps its identity in `/var/lib/deaconguard-agent` on the node. The agent reads the node's root filesystem, read-only at `/host`, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent installed on the node. Machines outside the cluster reach the agent port through a private load balancer of its own, `--set server.agentService.enabled=true`, so the dashboard's port stays inside: see [Agents outside the cluster](https://docs.deaconguard.io/installation/kubernetes#agents-outside-the-cluster).
 
 **Kubernetes with Kustomize:** [deploy/kustomize](deploy/kustomize) has the same server and agent, plus an [ingress example](deploy/kustomize/examples/ingress-nginx.yaml): `kubectl apply -k "https://github.com/Cloudopsshell/deaconguard/deploy/kustomize/server?ref=vX.Y.Z"`, and `…/deploy/kustomize/agent?ref=vX.Y.Z`.
 
@@ -239,7 +239,7 @@ The [install script](#install-script) does this for you. After installing the `.
 sudo deaconguard setup server
 ```
 
-It asks for the first dashboard account (the password needs at least 12 characters), enables and starts the `deaconguard-server` service on port 8443, gives this machine an agent of its own (see [How it works](#how-it-works)), and prints the dashboard's addresses, the certificate's fingerprint, and what runs on the machine. Running it again keeps the existing accounts and settings.
+It asks for the first dashboard account (the password needs at least 12 characters), enables and starts the `deaconguard-server` service on port 8443 for the dashboard and 8444 for agents, gives this machine an agent of its own (see [How it works](#how-it-works)), and prints the dashboard's addresses, the certificate's fingerprint, and what runs on the machine. Running it again keeps the existing accounts and settings.
 
 The server's own agent enrolls with the server over `127.0.0.1` and appears on the **Hosts** page as **This server**. On a server set up before 0.9.0, where this machine was added as a host scanned by the server itself (without root, so its results were partial), running setup again moves that host's scans, log entries, and schedules to the agent host.
 
@@ -250,7 +250,7 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 | Option | Use |
 | --- | --- |
 | `--listen ADDRESS:PORT` | Listen elsewhere than `0.0.0.0:8443`. |
-| `--agent-listen ADDRESS:PORT` | Give agents a port of their own, such as `0.0.0.0:8444`, that serves only the agent API, so the dashboard's port can be limited to people. New enrollment tokens point there, and agents from 0.11.0 on 8443 move there by themselves after checking it reaches the same server; older agents keep working on 8443 until upgraded. The **Agents** page shows when every agent has moved. `off` removes it. |
+| `--agent-listen ADDRESS:PORT\|off` | The agents' own port, which serves only the agent API, so the dashboard's port can be limited to people: `0.0.0.0:8444` from 1.9.0 unless you give another, or `off` to have agents share 8443. New enrollment tokens point there, and agents from 0.11.0 on 8443 move there by themselves after checking it reaches the same server; older agents keep working on 8443 until upgraded. The **Agents** page shows when every agent has moved. |
 | `--tls-cert FILE --tls-key FILE` | Use your own certificate. The `deaconguard` user must be able to read both files. Agents enrolled earlier keep working when the new certificate is trusted by their system for the server's name; otherwise enroll them again. |
 | `--admin-user NAME --admin-password-file FILE` | Create the first account without prompts, for automation. Delete the file afterwards. |
 | `--no-agent` | Give this machine no agent. It is then not scanned as root: adding it on the Hosts page has the server scan it without root, with partial coverage. Later runs remember the choice. |
@@ -258,7 +258,7 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 
 Setup saves these settings in `/etc/systemd/system/deaconguard-server.service.d/10-setup.conf`, so package upgrades keep them.
 
-- **Don't expose port 8443 to the internet.** Allow it only from the networks where your admins and agents are, and reach the dashboard over a VPN, Tailscale, an SSH tunnel or AWS Systems Manager port forwarding. With `--agent-listen`, agents use their own port and 8443 only has to reach people. See [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard).
+- **Don't expose ports 8443 and 8444 to the internet.** Allow 8443, the dashboard, only from your admins' networks, and reach it over a VPN, Tailscale, an SSH tunnel or AWS Systems Manager port forwarding. Allow 8444, the agent port, only from your machines' networks. See [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard).
 - **Single sign-on:** under **Settings → Single sign-on**, admins connect an OpenID Connect provider (Microsoft Entra ID, Google, Okta, Keycloak, Authentik and others). Accounts are made at the first sign-in, limited by email domain or group, with roles from groups. See [Single sign-on](https://docs.deaconguard.io/usage/single-sign-on).
 - **Passkeys:** each account can add passkeys under **My account** and sign in with a fingerprint, face or device PIN instead of a password and code. A passkey counts as two-step sign-in. They need the dashboard on a name with a trusted certificate. See [Passkeys](https://docs.deaconguard.io/usage/accounts#passkeys).
 - **Two-step sign-in:** each account turns it on under **My account** with a passkey or any authenticator app (Google or Microsoft Authenticator, Bitwarden, 1Password, Proton Pass, Apple Passwords, Ente Auth, 2FAS, Aegis, and others) and gets 10 one-time recovery codes. Until it is on, the dashboard reminds you. On the **Accounts** page, **Require it** makes it mandatory for every account.
