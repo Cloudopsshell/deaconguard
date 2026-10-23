@@ -20,8 +20,8 @@ One binary does two jobs, and they are kept apart on purpose:
 **The server never scans a machine from inside.** Every machine, the server's own included, is scanned by its own agent. The server itself only reads registry images and, for network targets you add, connects to their ports from the outside. The install script gives the server's machine an agent too.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/docs/architecture-dark.svg">
-  <img src="assets/docs/architecture-light.svg" alt="The server runs without root and serves the dashboard. Every machine, the server's own included, runs an agent as root that asks the server for work and sends back results. The server downloads the distributions' advisories." width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/static/img/architecture-dark.svg">
+  <img src="docs/static/img/architecture-light.svg" alt="The server runs without root and serves the dashboard. Every machine, the server's own included, runs an agent as root that asks the server for work and sends back results. The server downloads the distributions' advisories." width="100%">
 </picture>
 
 | Component | Runs as | Listens on | Reaches |
@@ -58,6 +58,15 @@ On the server:
 ```sh
 curl -fsSL https://get.deaconguard.io | sudo sh -
 ```
+
+The server listens on **8443** for the dashboard (people) and **8444** for agents; no option is needed for that. To give agents another port, or have them share 8443, add `--agent-listen`:
+
+```sh
+curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen 0.0.0.0:9444
+curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen off
+```
+
+Allow 8443 only from your administrators' networks and 8444 from your machines' networks.
 
 On each machine to scan, run the command shown by the server's **Enroll a machine** dialog. It carries the machine's one-time enrollment token:
 
