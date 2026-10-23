@@ -518,7 +518,9 @@ Setup (as root, after installing the .deb or .rpm; install.sh runs these):
                            [--admin-user NAME] [--admin-password-file FILE]
                            [--no-agent | --with-agent]
                                        create the first account, start the server service,
-                                       and an agent that scans this machine as root
+                                       and an agent that scans this machine as root;
+                                       agents get port 8444 unless --agent-listen says
+                                       otherwise (off: they share the dashboard's port)
   deaconguard setup agent [--token-file FILE] [--force]
                                        enroll (asks for the token), start the agent service
 

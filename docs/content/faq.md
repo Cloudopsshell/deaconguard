@@ -23,7 +23,7 @@ A security scanner has to see every process, every system file and the firewall 
 
 ### Should the dashboard be reachable from the internet?
 
-No. Allow port 8443 only from your own networks and reach the dashboard over a VPN, Tailscale, an SSH tunnel or a similar private path, and turn on two-step sign-in. See [Securing the dashboard](./security/securing-the-dashboard.md).
+No. Allow port 8443 only from your own networks (and the agent port, 8444, only from your machines' networks) and reach the dashboard over a VPN, Tailscale, an SSH tunnel or a similar private path, and turn on two-step sign-in. See [Securing the dashboard](./security/securing-the-dashboard.md).
 
 ### Can I give someone read-only access?
 

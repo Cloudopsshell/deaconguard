@@ -36,7 +36,7 @@ The server also runs in a container, with [Docker or Compose](./docker.md) or in
 | From | To | Port | Purpose |
 | --- | --- | --- | --- |
 | Browsers | Server | 8443/tcp | Dashboard |
-| Agents | Server | 8443/tcp, or the [agent port](../security/securing-the-dashboard.md#give-agents-their-own-port) if you set one | Enrollment, receiving scans, sending results |
+| Agents | Server | 8444/tcp, the [agent port](../security/securing-the-dashboard.md#give-agents-their-own-port); 8443/tcp on a server without one | Enrollment, receiving scans, sending results |
 | Server | Distribution advisory feeds ([hosts](../supported-distributions.md#feed-hosts)) | 443/tcp | Security data, and Fedora's release dates |
 | Server | `www.cisa.gov`, `epss.empiricalsecurity.com` | 443/tcp | [Exploit data](../usage/vulnerabilities.md): CISA KEV and EPSS |
 | Server | `api.osv.dev` | 443/tcp | [Application libraries](../usage/libraries-and-sbom.md), when that check runs: only library names and versions are sent |

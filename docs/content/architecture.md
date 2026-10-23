@@ -11,7 +11,7 @@ import ThemedImage from '@theme/ThemedImage';
 
 <div className="architecture-figure">
   <ThemedImage
-    alt="The server runs without root and serves the dashboard. Every machine, the server's own included, runs an agent as root that asks the server for work and sends back results. The server downloads the distributions' advisories."
+    alt="The server runs without root and serves the dashboard. Every machine, the server's own included, runs an agent as root that asks the server for work and sends back results: people use port 8443, agents port 8444. The server downloads the distributions' advisories."
     sources={{ light: '/img/architecture-light.svg', dark: '/img/architecture-dark.svg' }}
   />
 </div>
@@ -22,7 +22,7 @@ import ThemedImage from '@theme/ThemedImage';
 
 | Component | Runs as | Listens on | Reaches |
 | --- | --- | --- | --- |
-| `deaconguard-server` | the `deaconguard` user, **no root**; systemd's `NoNewPrivileges` keeps it from ever gaining root, even through sudo | `0.0.0.0:8443` (HTTPS), and optionally an [agent-only port](./security/securing-the-dashboard.md#give-agents-their-own-port) | the distributions' advisory feeds, CISA KEV and EPSS |
+| `deaconguard-server` | the `deaconguard` user, **no root**; systemd's `NoNewPrivileges` keeps it from ever gaining root, even through sudo `0.0.0.0:8443` (HTTPS) for the dashboard, and `0.0.0.0:8444` for the [agents](./security/securing-the-dashboard.md#give-agents-their-own-port) | the distributions' advisory feeds, CISA KEV and EPSS |
 | `deaconguard-agent` | **root**, so every check sees other users' processes, protected files and firewall rules | nothing | only its server, over HTTPS |
 
 </div>
@@ -30,6 +30,19 @@ import ThemedImage from '@theme/ThemedImage';
 Why split them: the server is the part an attacker on your network can reach, so it holds no root. The parts with root, the agents, accept no connections at all; they ask their server for work. The [install script](./installation/install-script.md) gives the server's own machine an agent too, enrolled over `127.0.0.1`, and the dashboard marks that host **This server**.
 
 In a container, the same split holds: the server's image runs as a non-root user with no capabilities, and an agent in a container, such as one pod of a [Kubernetes DaemonSet](./installation/kubernetes.md), runs as root with only the capabilities its checks need. It mounts its host's root filesystem read-only and runs each check chrooted there, with the host's own tools, so it reports on the host, not the container.
+
+## How agents reach the server
+
+People open the dashboard on port **8443**; agents connect to port **8444**, which serves only the agent API, so each can be allowed from different networks (see [which port agents use](./security/securing-the-dashboard.md#give-agents-their-own-port) with each way of installing). An agent connects to the address in its enrollment token, so that address must lead to the server from the agent's machine:
+
+| Agent | Server address in its token |
+| --- | --- |
+| On the server's own machine | `https://127.0.0.1:8443`, which the install script uses for it, or `127.0.0.1:8444` |
+| On another machine | the server's address on that network, such as `https://10.0.1.5:8444`; preferably a private one |
+| In the same Kubernetes cluster | the Service: `https://deaconguard.deaconguard.svc:8444` |
+| Outside the cluster | a private load balancer for the agent port: see [Kubernetes](./installation/kubernetes.md#agents-outside-the-cluster) |
+
+`127.0.0.1` and `localhost` only ever lead to the agent's own machine: a token with them works only for an agent next to the server. **Enroll a machine** warns about them.
 
 You can leave the server's machine without an agent (`--no-agent`). It is then not scanned as root: adding it on the Hosts page has the server scan it without root, and its results show partial coverage.
 
@@ -39,7 +52,7 @@ One binary, `deaconguard`, provides every role:
 
 | Role | Service | Listens on | Data |
 | --- | --- | --- | --- |
-| Server | `deaconguard-server` | `0.0.0.0:8443` (HTTPS) | `/var/lib/deaconguard/` |
+| Server | `deaconguard-server` | `0.0.0.0:8443` (dashboard) and `0.0.0.0:8444` (agents), HTTPS | `/var/lib/deaconguard/` |
 | Agent | `deaconguard-agent` | nothing | `/etc/deaconguard/agent.json` |
 | Local mode | `deaconguard serve` | `127.0.0.1:7480` (HTTP) | `~/.local/share/deaconguard/` |
 

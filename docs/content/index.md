@@ -41,7 +41,7 @@ One binary does two jobs, and they are kept apart on purpose:
 
 | Component | Runs as | Listens on | Reaches |
 | --- | --- | --- | --- |
-| `deaconguard-server` | the `deaconguard` user, no root | `0.0.0.0:8443` (HTTPS) | the distributions' advisory feeds |
+| `deaconguard-server` | the `deaconguard` user, no root | `0.0.0.0:8443` for people, `0.0.0.0:8444` for agents (HTTPS) | the distributions' advisory feeds |
 | `deaconguard-agent` | root | nothing | only its server |
 
 </div>

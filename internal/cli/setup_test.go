@@ -86,3 +86,32 @@ func TestSetupNeedsRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestChooseAgentListen(t *testing.T) {
+	free := func(string) bool { return true }
+	busy := func(string) bool { return false }
+	cases := []struct {
+		name, requested, saved string
+		wasOff                 bool
+		listen                 string
+		free                   func(string) bool
+		want                   string
+		off                    bool
+		note                   string
+	}{
+		{"new server", "", "", false, "0.0.0.0:8443", free, "0.0.0.0:8444", false, "port of their own"},
+		{"upgrade without one", "", "", false, "0.0.0.0:8443", free, "0.0.0.0:8444", false, "move to it by themselves"},
+		{"kept", "", "0.0.0.0:9444", false, "0.0.0.0:8443", free, "0.0.0.0:9444", false, ""},
+		{"asked for", "10.0.0.5:8444", "", true, "0.0.0.0:8443", free, "10.0.0.5:8444", false, ""},
+		{"turned off now", "off", "0.0.0.0:8444", false, "0.0.0.0:8443", free, "", true, ""},
+		{"turned off before", "", "", true, "0.0.0.0:8443", free, "", true, ""},
+		{"dashboard on loopback", "", "", false, "127.0.0.1:8443", free, "", false, ""},
+		{"port taken", "", "", false, "0.0.0.0:8443", busy, "", false, "in use"},
+	}
+	for _, c := range cases {
+		got, off, note := chooseAgentListen(c.requested, c.saved, c.wasOff, c.listen, c.free)
+		if got != c.want || off != c.off || (c.note == "") != (note == "") || !strings.Contains(note, c.note) {
+			t.Errorf("%s: %q, %v, %q", c.name, got, off, note)
+		}
+	}
+}

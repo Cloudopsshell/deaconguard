@@ -35,13 +35,13 @@ What the file sets up:
 | Data | the `data` volume, at `/home/nonroot` (`DEACONGUARD_HOME`): the database, the certificate and the feed cache |
 | Hardening | read-only root filesystem, no Linux capabilities, `no-new-privileges` |
 
-Keep ports 8443 and 8444 away from the internet: see [Securing the dashboard](../security/securing-the-dashboard.md).
+Keep ports 8443 and 8444 away from the internet: see [Securing the dashboard](../security/securing-the-dashboard.md). `"8443:8443"` and `"8444:8444"` publish them on **every address of the host**, so other machines can reach them; that is how agents on other machines connect to 8444. Docker writes its own firewall rules for published ports, which `ufw` and firewalld don't filter, so limit them with a firewall in front of the host, such as a cloud security group. If no agent outside the host connects, publish the agent port on loopback only: `"127.0.0.1:8444:8444"`.
 
 ### Scan the Docker host too
 
 The `agent` service, in the `agent` profile, scans the machine Compose runs on, not its container:
 
-1. On the **Agents** page, choose **Enroll a machine**. As the server address, use one the host reaches, such as `https://127.0.0.1:8444` (the agent shares the host's network). Create the token.
+1. On the **Agents** page, choose **Enroll a machine**. As the server address, use `https://127.0.0.1:8444`, and create the token. That works here because the agent runs with `network_mode: host`: its `127.0.0.1` is the Docker host's, where Compose publishes the server's port 8444. For agents on other machines, use the host's address instead, such as `https://10.0.1.5:8444`.
 2. Save it next to `compose.yaml`:
 
    ```bash

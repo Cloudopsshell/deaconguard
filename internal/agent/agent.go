@@ -46,6 +46,10 @@ type Config struct {
 	// Cluster is the name of the Kubernetes cluster a cluster agent checks,
 	// from inside it; empty for a machine's agent.
 	Cluster string `json:"cluster,omitempty"`
+	// MovedFrom is the address the agent used before it moved to the
+	// server's port for agents, which it goes back to if that port stops
+	// answering, such as after setup server --agent-listen off.
+	MovedFrom string `json:"moved_from,omitempty"`
 }
 
 // ClusterName is $DEACONGUARD_AGENT_CLUSTER: when set, the agent checks the
@@ -190,7 +194,7 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 	}
 	backoff := time.Duration(0)
 	connected := false
-	var lastMove time.Time
+	var lastMove, failingSince time.Time
 	for ctx.Err() == nil {
 		if backoff > 0 {
 			select {
@@ -218,11 +222,26 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 			return ErrRemoved
 		case err != nil:
 			connected = false
+			if failingSince.IsZero() {
+				failingSince = time.Now()
+			}
+			// The agent port stopped answering: the address the agent came
+			// from may still lead to the server.
+			if returnTo(config) != "" && time.Since(failingSince) >= moveBackAfter {
+				back, backClient, backErr := moveBack(ctx, config, path)
+				if backErr == nil {
+					log.info("%s stopped answering; moved back to %s", config.ServerURL, back.ServerURL)
+					config, client, backoff, failingSince = back, backClient, 0, time.Time{}
+					continue
+				}
+				log.warn("%s stopped answering, and %s doesn't either: %v", config.ServerURL, returnTo(config), backErr)
+				failingSince = time.Now()
+			}
 			backoff = min(max(2*backoff, 5*time.Second), time.Minute)
 			log.warn("Cannot reach the server, retrying in %s: %v", backoff, err)
 			continue
 		}
-		backoff = 0
+		backoff, failingSince = 0, time.Time{}
 		if !connected {
 			connected = true
 			log.info("Connected to %s; waiting for scans", config.ServerURL)
@@ -384,6 +403,9 @@ func moveToPort(ctx context.Context, config Config, port, path string) (Config, 
 	parsed.Host = net.JoinHostPort(parsed.Hostname(), port)
 	moved := config
 	moved.ServerURL = parsed.String()
+	if moved.MovedFrom == "" {
+		moved.MovedFrom = config.ServerURL
+	}
 	movedClient, err := newClient(moved)
 	if err != nil {
 		return Config{}, nil, err
@@ -397,6 +419,49 @@ func moveToPort(ctx context.Context, config Config, port, path string) (Config, 
 		}
 	}
 	return moved, movedClient, nil
+}
+
+// returnTo is where an agent on the agent port goes back to: the address it
+// moved from, or, for agents that moved before they recorded it (1.8 and
+// earlier), the same host on the dashboard's default port. The pinned key
+// keeps either from reaching another server.
+func returnTo(config Config) string {
+	if config.MovedFrom != "" {
+		return config.MovedFrom
+	}
+	parsed, err := url.Parse(config.ServerURL)
+	if err != nil || parsed.Port() == "" || parsed.Port() == "8443" {
+		return ""
+	}
+	parsed.Host = net.JoinHostPort(parsed.Hostname(), "8443")
+	return parsed.String()
+}
+
+// moveBackAfter is how long the agent port has to fail before the agent
+// tries the address it came from.
+const moveBackAfter = 2 * time.Minute
+
+// moveBack returns to the address the agent used before it moved to the
+// agent port, if the server answers there with the same key, and saves it.
+func moveBack(ctx context.Context, config Config, path string) (Config, *client, error) {
+	back := config
+	back.ServerURL, back.MovedFrom = returnTo(config), ""
+	if back.ServerURL == "" {
+		return Config{}, nil, errors.New("no address to go back to")
+	}
+	backClient, err := newClient(back)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	if err := backClient.call(ctx, http.MethodGet, agentapi.PathHello, nil, nil, 15*time.Second); err != nil {
+		return Config{}, nil, err
+	}
+	if path != "" {
+		if err := saveConfig(path, back); err != nil {
+			return Config{}, nil, fmt.Errorf("save the address: %w", err)
+		}
+	}
+	return back, backClient, nil
 }
 
 func newClient(config Config) (*client, error) {
