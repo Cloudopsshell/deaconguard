@@ -138,3 +138,19 @@ func TestRecordStopNeedsSystemd(t *testing.T) {
 		t.Fatal("recorded a stop without SERVICE_RESULT")
 	}
 }
+
+func TestAStartThatFailedSaysWhy(t *testing.T) {
+	directory := t.TempDir()
+	run, _, err := Start(directory, "1.9.0", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run.Failed(time.Now(), "listen tcp 0.0.0.0:8444: address already in use"); err != nil {
+		t.Fatal(err)
+	}
+	_, stop, err := Start(directory, "1.9.0", time.Now())
+	if err != nil || stop == nil || stop.Kind != KindStartFailed || !stop.Unexpected() ||
+		stop.Message != "The DeaconGuard server couldn't start: listen tcp 0.0.0.0:8444: address already in use" {
+		t.Fatalf("stop = %+v, %v", stop, err)
+	}
+}

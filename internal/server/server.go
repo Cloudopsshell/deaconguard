@@ -15,6 +15,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"os"
 	"path"
 	"sort"
 	"strconv"
@@ -628,10 +629,15 @@ type capabilitiesResponse struct {
 	// AgentPort is the port of a listener only for agents, if the server has
 	// one; new enrollment tokens should point there.
 	AgentPort string `json:"agent_port,omitempty"`
+	// ClusterAgentURL is the agent address inside a Kubernetes cluster, which
+	// the Helm chart sets, for when the dashboard is opened through a
+	// port-forward, whose loopback address no agent could use.
+	ClusterAgentURL string `json:"cluster_agent_url,omitempty"`
 }
 
 func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
-	response := capabilitiesResponse{LocalScanning: true, Hostname: local.Hostname(), Username: local.Username(), Agents: s.network, AgentPort: s.agentPort}
+	response := capabilitiesResponse{LocalScanning: true, Hostname: local.Hostname(), Username: local.Username(), Agents: s.network, AgentPort: s.agentPort,
+		ClusterAgentURL: os.Getenv("DEACONGUARD_CLUSTER_AGENT_URL")}
 	if err := s.localAvailable(); err != nil {
 		response.LocalScanning, response.LocalReason = false, err.Error()
 	}

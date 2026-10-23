@@ -7,11 +7,11 @@ description: Where DeaconGuard keeps its files, and the ports it uses.
 
 | Port | Who listens | Used by |
 | --- | --- | --- |
-| 8443/tcp | Server (HTTPS) | Browsers, and agents unless they have their own port |
-| Your choice, such as 8444/tcp | Server (HTTPS), only with `--agent-listen`; serves the agent API alone | Agents |
+| 8443/tcp | Server (HTTPS): the dashboard and its API | Browsers, and agents when the server has no agent port |
+| 8444/tcp | Server (HTTPS): the agent API alone; on by default with the install script from 1.9.0, the Helm chart, Kustomize and Compose; `--agent-listen` changes or turns it off | Agents |
 | 7480/tcp | Local mode, on `127.0.0.1` only (HTTP) | Your browser on the same machine |
 
-Agents listen on nothing.
+Agents listen on nothing. Which port agents use with each way of installing: [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port).
 
 ## Files
 
