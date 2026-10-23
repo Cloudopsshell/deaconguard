@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-23
+
+### Fixed
+
+- **Docs:** the README showed the architecture diagram from before 1.9.0, with the dashboard and agents both on 8443; it now uses the same diagrams as the docs, with 8443 for people and 8444 for agents. Next to the install command, the README, Quick start and Install script pages say which ports the server listens on, and show `--agent-listen` to change the agent port or turn it off. No change to DeaconGuard itself.
+
 ## [1.9.0] - 2026-10-23
 
 ### Added
@@ -174,7 +180,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.7.0...v1.8.0
