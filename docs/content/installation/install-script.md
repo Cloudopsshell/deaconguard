@@ -15,6 +15,15 @@ The installer adds a system package and a service, so run it with `sudo` as show
 curl -fsSL https://get.deaconguard.io | sudo sh -
 ```
 
+The server listens on **8443** for the dashboard (people) and **8444** for agents; no option is needed for that. To give agents another port, or have them share 8443, add `--agent-listen`:
+
+```bash
+curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen 0.0.0.0:9444
+curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen off
+```
+
+See [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port). Allow 8443 only from your administrators' networks and 8444 from your machines' networks.
+
 ## Agent
 
 Run the command from the dashboard's **Enroll a machine** dialog. It carries the machine's enrollment token:

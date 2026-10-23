@@ -18,6 +18,8 @@ On the machine that will host the dashboard:
 curl -fsSL https://get.deaconguard.io | sudo sh -
 ```
 
+The server listens on port **8443** for the dashboard and **8444** for agents; no option is needed. To choose another agent port, or keep one port for both, see [Give agents their own port](./security/securing-the-dashboard.md#give-agents-their-own-port).
+
 The script checks and installs the package, then asks you for the first dashboard account. The password needs at least 12 characters. It also gives this machine an agent of its own, so the server's own machine is scanned as root like every other one (see [How it works](./index.md#how-it-works)). When it finishes it prints the dashboard's addresses, the server certificate's fingerprint, and what runs on the machine:
 
 ```text
