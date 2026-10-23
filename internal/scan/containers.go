@@ -13,6 +13,7 @@ import (
 	"deaconguard/internal/advisory"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/containers"
+	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/osv"
 	"deaconguard/internal/scanner"
 )
@@ -162,6 +163,12 @@ func evaluateContainers(result *checks.Result, progress *reporter) {
 			total += count
 		}
 	}
+	incomplete := 0
+	for _, container := range result.Containers {
+		if container.Error != "" {
+			incomplete++
+		}
+	}
 	counted := fmt.Sprintf("%d running containers", len(result.Containers)-stopped)
 	if stopped > 0 {
 		counted = fmt.Sprintf("%d containers, %d running", len(result.Containers), len(result.Containers)-stopped)
@@ -169,6 +176,13 @@ func evaluateContainers(result *checks.Result, progress *reporter) {
 	result.Summary = fmt.Sprintf("%s: %d vulnerabilities, %d to fix in %d containers", counted, total, len(all), vulnerableContainers)
 	if exploitedTotal > 0 {
 		result.Summary += fmt.Sprintf(", %d known to be exploited", exploitedTotal)
+	}
+	if incomplete > 0 {
+		result.Summary += fmt.Sprintf("; %d couldn't be fully checked", incomplete)
+		result.Notes = append(result.Notes, fmt.Sprintf("%d containers couldn't be fully checked, so they may have vulnerabilities not counted here: each says why.", incomplete))
+		if result.Status == checks.StatusCompleted {
+			result.Status = checks.StatusPartial
+		}
 	}
 }
 
@@ -223,7 +237,23 @@ func evaluateContainer(container *checks.ContainerResult, inventory *containers.
 			kernel = "unknown"
 		}
 		report, err := scanPackages(inventory.OSRelease, inventory.DPKGStatus, inventory.RPMQuery, inventory.APKInstalled, kernel, nil, time.Now().UTC())
-		if err != nil {
+		if retired, ok := lifecycle.RetiredRelease(inventory.OSRelease, time.Now().UTC()); err != nil && ok {
+			// An ended release has no advisories to check against: what to
+			// fix is the release itself.
+			life := retired.Lifecycle
+			container.OS, container.Lifecycle, container.Packages = retired.Name, &life, packageCount(inventory)
+			container.Notes = append(container.Notes, "OS packages not checked: "+retired.Explain())
+			container.Severity["HIGH"]++
+			container.Fixable++
+			container.FixableSeverity["HIGH"]++
+			findings = append(findings, ranked{finding: checks.Finding{
+				Rule: EndOfLifeRule, Severity: "HIGH", Evidence: container.Image,
+				Title:     fmt.Sprintf("%s: %s is end of life", container.Name, retired.Name),
+				Detail:    retired.Explain() + " Rebuild the image on a supported base image.",
+				Container: container.Name, Image: container.Image, Source: "os", Package: retired.Distribution, Version: retired.Version,
+				Ecosystem: retired.Name, Summary: "End of life: no security fixes for this release", Fixed: retired.Upgrade, Fixable: true,
+			}, rank: severityRank("HIGH"), fixable: true})
+		} else if err != nil {
 			container.Error = "Packages not checked: " + err.Error()
 		} else {
 			packages = &report
@@ -273,7 +303,11 @@ func evaluateContainer(container *checks.ContainerResult, inventory *containers.
 		libs := checks.Result{Status: checks.StatusCompleted, Libraries: inventory.Libraries}
 		osv.Evaluate(&libs, osv.NewClient(), &http.Client{Timeout: 60 * time.Second}, time.Now().UTC())
 		if libs.Status == checks.StatusFailed {
-			container.Notes = append(container.Notes, libs.Error)
+			// Not checked is not clean: the check is marked partial.
+			if container.Error != "" {
+				container.Error += "; "
+			}
+			container.Error += "Libraries not checked: " + libs.Error
 		}
 		for _, f := range libs.Findings {
 			container.Severity[f.Severity]++
@@ -317,6 +351,29 @@ func evaluateContainer(container *checks.ContainerResult, inventory *containers.
 	}
 	container.Findings = toFix
 	return findings, packages
+}
+
+// EndOfLifeRule is the finding for a container or image whose release has
+// ended (lifecycle.RetiredRelease).
+const EndOfLifeRule = "DG-EOL-001"
+
+// packageCount counts the packages in a container's package database.
+func packageCount(inventory *containers.Inventory) int {
+	switch {
+	case inventory.DPKGStatus != "":
+		return strings.Count("\n"+inventory.DPKGStatus, "\nPackage: ")
+	case inventory.APKInstalled != "":
+		return strings.Count("\n"+inventory.APKInstalled, "\nP:")
+	case inventory.RPMQuery != "":
+		count := 0
+		for _, line := range strings.Split(inventory.RPMQuery, "\n") {
+			if strings.TrimSpace(line) != "" {
+				count++
+			}
+		}
+		return count
+	}
+	return 0
 }
 
 func severityRank(severity string) int {

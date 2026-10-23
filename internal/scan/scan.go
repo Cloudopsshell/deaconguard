@@ -13,6 +13,7 @@ import (
 
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
+	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/local"
 	"deaconguard/internal/osv"
 	"deaconguard/internal/platform"
@@ -94,6 +95,11 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 	}
 	detected, err := platform.Detect(osRelease)
 	if err != nil {
+		// An ended release isn't scanned; say so, and what to upgrade to,
+		// rather than only that it is unsupported.
+		if retired, ok := lifecycle.RetiredRelease(osRelease, time.Now().UTC()); ok {
+			err = errors.New(retired.Explain())
+		}
 		progress.endPhase(checks.StatusFailed, err.Error())
 		return nil, err
 	}
