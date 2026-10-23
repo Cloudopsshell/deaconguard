@@ -8,6 +8,19 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **End-of-life releases in containers and images:** a container or image on a release that has ended, such as Debian 10 or 11, Alpine before 3.18, CentOS Linux, CentOS Stream 8, Amazon Linux 2, openSUSE Leap before 15.6 or Fedora before 40, gets a high finding, `DG-EOL-001`, with the release, when it ended and what to rebuild on, an **End of life** badge, and a count in the **End-of-life OS** tile. Before, it only said "Packages not checked: unsupported Debian release", and a container with no vulnerable libraries looked as if it had nothing to fix. A machine on such a release still isn't scanned, but the error now says when the release ended and what to upgrade to.
+
+### Changed
+
+- An image scan with `--fail-on high` (or lower) now fails on an image whose release has ended.
+
+### Fixed
+
+- The **Running containers** check is **partial**, not complete, when a container's packages or libraries couldn't be checked, such as when the server can't reach the advisory feeds or OSV. Before, those containers were counted as having 0 vulnerabilities. The summary and each container say what wasn't checked.
+- A server test failed in the days around a daylight saving change: it expected a daily schedule's next run exactly 24 hours later in UTC.
+
 ## [1.8.0] - 2026-10-22
 
 ### Added

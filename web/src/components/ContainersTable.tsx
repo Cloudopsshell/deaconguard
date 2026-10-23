@@ -8,6 +8,11 @@ import { Card, CardHeader, ErrorMessage, SeverityBadge, Table, Td, Th, cx } from
 
 const runtimeName: Record<string, string> = { docker: "Docker", podman: "Podman", cri: "containerd / CRI-O" };
 
+/** Whether a container runs a release that has ended, which the server reports as one finding instead of checking its packages. */
+export function endOfLife(container: ContainerResult) {
+  return [...(container.vulnerabilities ?? []), ...(container.findings ?? [])].some((finding) => finding.rule === "DG-EOL-001");
+}
+
 /** Whether a container's files were read: running or paused when the agent looked (agents before 1.8.0 sent no state). */
 export function scanned(container: ContainerResult) {
   return !container.state || container.state === "running" || container.state === "paused";
@@ -184,7 +189,10 @@ function ContainerRow({ container, open }: { container: ContainerResult; open: (
         {isScanned ? (
           <>
             {container.os ? (
-              <div className="whitespace-nowrap">{container.packages} packages</div>
+              <div className="whitespace-nowrap">
+                {container.packages} packages
+                {endOfLife(container) && <span className="text-amber-700 dark:text-amber-400"> (not checked)</span>}
+              </div>
             ) : container.error ? (
               <div className="text-amber-700 dark:text-amber-400" title={container.error}>
                 OS packages not checked
