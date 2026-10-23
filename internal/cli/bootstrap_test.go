@@ -1,14 +1,21 @@
 package cli
 
 import (
+	"bytes"
+	"crypto/tls"
+	"errors"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"deaconguard/internal/agentapi"
 	"deaconguard/internal/store"
+	"deaconguard/internal/tlscert"
 )
 
 func TestBootstrapAdminFromFile(t *testing.T) {
@@ -54,6 +61,64 @@ func TestBootstrapAdminNeedsPassword(t *testing.T) {
 	t.Setenv("DEACONGUARD_ADMIN_USER", "")
 	if err := bootstrapAdmin(io.Discard); err != nil {
 		t.Fatalf("no user set: %v", err)
+	}
+}
+
+// A secret that doesn't exist yet makes the server wait for it, serving a
+// page that says so and answers health checks, rather than exit.
+func TestServerWaitsForTheFirstAccountsPassword(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
+	secret := filepath.Join(t.TempDir(), "password")
+	t.Setenv("DEACONGUARD_ADMIN_USER", "admin")
+	t.Setenv("DEACONGUARD_ADMIN_PASSWORD_FILE", secret)
+	t.Setenv("DEACONGUARD_ADMIN_SECRET", "deaconguard-admin")
+	t.Setenv("DEACONGUARD_NAMESPACE", "deaconguard")
+	if err := bootstrapAdmin(io.Discard); !errors.Is(err, errAdminPasswordMissing) {
+		t.Fatalf("a missing file must mean waiting: %v", err)
+	}
+	certificate, _, err := tlscert.Ensure(t.TempDir(), "localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, _ := net.Listen("tcp", "127.0.0.1:0")
+	address := listener.Addr().String()
+	listener.Close()
+	var output bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- waitForAdmin(address, certificate, &output) }()
+
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	var version, page *http.Response
+	for range 50 {
+		if version, err = client.Get("https://" + address + "/api/version"); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err != nil || version.StatusCode != http.StatusOK {
+		t.Fatalf("health check while waiting: %v %v", version, err)
+	}
+	if page, err = client.Get("https://" + address + "/"); err != nil || page.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("page while waiting: %v %v", page, err)
+	}
+	body, _ := io.ReadAll(page.Body)
+	if !strings.Contains(string(body), "kubectl -n deaconguard create secret generic deaconguard-admin --from-literal=password=") {
+		t.Errorf("the page should say how to create the secret: %s", body)
+	}
+
+	if err := os.WriteFile(secret, []byte("Correct-Horse-9-battery\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the server didn't notice the password")
+	}
+	if users, _ := store.ListUsers(); len(users) != 1 || !strings.Contains(output.String(), "Created the first account, admin") {
+		t.Fatalf("users = %+v, output %q", users, output.String())
 	}
 }
 

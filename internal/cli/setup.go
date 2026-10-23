@@ -293,12 +293,17 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 	if options.listen != "" {
 		listen = options.listen
 	}
-	switch options.agentListen {
-	case "":
-	case "off":
-		agentListen = ""
-	default:
-		agentListen = options.agentListen
+	_, offErr := os.Stat(noAgentPortMarker)
+	agentListen, turnedOff, agentNote := chooseAgentListen(options.agentListen, agentListen, offErr == nil, listen, portFree)
+	if turnedOff {
+		err = os.WriteFile(noAgentPortMarker, []byte("Agents share the dashboard's port. Run deaconguard setup server --agent-listen 0.0.0.0:8444 to give them their own.\n"), 0o600)
+	} else if agentListen != "" {
+		if err = os.Remove(noAgentPortMarker); errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("save the agent port setting: %w", err)
 	}
 	if options.certificate != "" {
 		certificate, key = options.certificate, options.key
@@ -368,12 +373,57 @@ func setupServer(options serverSetup, output, diagnostics io.Writer) error {
 		_, agentPort, _ = net.SplitHostPort(agentListen)
 	}
 	describeServerMachine(output, port, agentPort, state)
+	if agentNote != "" {
+		fmt.Fprintf(output, "\n%s\n", agentNote)
+	}
 	if agentPort != "" {
 		fmt.Fprintf(output, "\nAdd other machines on the dashboard's Agents page, and turn on two-step sign-in\nunder My account. Agents use port %s; allow it from your machines' networks. Allow\nport %s, the dashboard, only from your administrators' networks, never the internet.\nSee https://docs.deaconguard.io/security/securing-the-dashboard\n", agentPort, port)
 		return nil
 	}
 	fmt.Fprintf(output, "\nAdd other machines on the dashboard's Agents page, and turn on two-step sign-in\nunder My account. Don't expose port %s to the internet: only allow it from the\nnetworks of your administrators and agents. See\nhttps://docs.deaconguard.io/security/securing-the-dashboard\n", port)
 	return nil
+}
+
+// defaultAgentListen is the agents' own port, from 1.9.0: people use the
+// dashboard's port, 8443, and agents this one, as with the Helm chart and
+// Compose.
+const defaultAgentListen = "0.0.0.0:8444"
+
+// noAgentPortMarker records that agents are to share the dashboard's port
+// (--agent-listen off), so a later upgrade doesn't give them one.
+var noAgentPortMarker = filepath.Join(store.SystemDataDir, "no-agent-port")
+
+// chooseAgentListen decides the agents' port: the one asked for now
+// (requested: an address, "off", or nothing), else the one an earlier setup
+// saved, else none if it was turned off before, else the default, if the
+// dashboard is on the network and the port is free. turnedOff says to record
+// "off"; note says what changed, for the output.
+func chooseAgentListen(requested, saved string, wasOff bool, listen string, free func(string) bool) (agentListen string, turnedOff bool, note string) {
+	switch {
+	case requested == "off":
+		return "", true, ""
+	case requested != "":
+		return requested, false, ""
+	case saved != "":
+		return saved, false, ""
+	case wasOff:
+		return "", true, ""
+	case isLoopbackListen(listen):
+		return "", false, ""
+	case !free(defaultAgentListen):
+		return "", false, "Port 8444 is in use, so agents share the dashboard's port. To give them a port of their own: sudo deaconguard setup server --agent-listen 0.0.0.0:PORT"
+	}
+	return defaultAgentListen, false, "Agents use a port of their own, 8444, apart from the dashboard. Agents enrolled before move to it by themselves, and stay on 8443 if they can't reach it. To keep one port for both: sudo deaconguard setup server --agent-listen off"
+}
+
+// portFree reports whether nothing listens on address yet.
+func portFree(address string) bool {
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return false
+	}
+	listener.Close()
+	return true
 }
 
 // What the server's own machine runs besides the server.

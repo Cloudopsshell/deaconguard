@@ -35,6 +35,7 @@ const (
 	KindOutOfMemory = "out_of_memory" // the kernel stopped it for lack of memory
 	KindCrashed     = "crashed"       // DeaconGuard crashed; Detail holds the report
 	KindKilled      = "killed"        // ended by a signal or an error exit
+	KindStartFailed = "start_failed"  // couldn't start; Message says why
 	KindUnknown     = "unknown"       // ended without a clean stop, cause not recorded
 )
 
@@ -64,6 +65,8 @@ type state struct {
 	Version   string     `json:"version"`
 	StartedAt time.Time  `json:"started_at"`
 	StoppedAt *time.Time `json:"stopped_at,omitempty"`
+	// Failed is why the run couldn't start, when it couldn't.
+	Failed string `json:"failed,omitempty"`
 	// Systemd is how systemd saw the process end, from ExecStopPost.
 	Systemd *systemdResult `json:"systemd,omitempty"`
 }
@@ -123,6 +126,16 @@ func (r *Run) Stopped(now time.Time) error {
 	return r.save()
 }
 
+// Failed records that the run couldn't start, and why, so the next run says
+// so instead of guessing.
+func (r *Run) Failed(now time.Time, reason string) error {
+	at := now.UTC()
+	r.state.StoppedAt, r.state.Failed = &at, reason
+	debug.SetCrashOutput(nil, debug.CrashOptions{})
+	r.crash.Close()
+	return r.save()
+}
+
 func (r *Run) save() error { return writeState(r.directory, r.state) }
 
 // RecordSystemdResult stores how systemd saw the run end, from the variables
@@ -161,6 +174,9 @@ func explain(old state, bootID string, crash []byte, now time.Time) Stop {
 		}
 	}
 	switch {
+	case old.Failed != "":
+		stop.Kind = KindStartFailed
+		stop.Message = "The DeaconGuard server couldn't start: " + old.Failed
 	case report != "":
 		stop.Kind, stop.Detail = KindCrashed, report
 		stop.Message = "The DeaconGuard server crashed: " + firstLine(report)

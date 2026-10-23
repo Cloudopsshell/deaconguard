@@ -8,6 +8,21 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Helm: a Service for agents outside the cluster.** `server.agentService.enabled=true` adds `deaconguard-agents`, a `LoadBalancer` with only the agent port, 8444, with its own annotations (such as an internal load balancer) and `loadBalancerSourceRanges`, so machines outside the cluster can enroll while the dashboard's port stays inside.
+- **Enroll a machine warns about loopback addresses.** A server address of `127.0.0.1`, `localhost` or `::1` gets a warning that only an agent on the server's own machine can reach it, and `deaconguard token create` says the same. With the Helm chart or Kustomize, a dashboard opened through `kubectl port-forward` suggests the cluster's agent address, `https://deaconguard.deaconguard.svc:8444`, instead of `127.0.0.1`.
+
+### Changed
+
+- **Agents get a port of their own, 8444, with the install script too,** as with the Helm chart, Kustomize and Compose: people use 8443, agents 8444, on every install. A new server listens on both. Upgrading a server set up by the install script adds 8444, unless you chose another agent port, chose `--agent-listen off`, or something else uses 8444; 8443 keeps answering agents, and each agent moves to 8444 by itself once it can reach it. Allow 8444 from your machines' networks. To keep one port: `sudo deaconguard setup server --agent-listen off`, which later upgrades remember.
+
+### Fixed
+
+- **A Kubernetes server without its admin secret waits for it** instead of restarting in a loop: it serves a page, and logs, saying which secret to create, keeps the health checks passing, and creates the first account once the secret is mounted.
+- An agent that moved to the agent port goes back to the address it came from (or the same host on 8443) when that port has stopped answering for two minutes, as after `--agent-listen off`, and moves to it again if it returns. Before, it kept trying the closed port.
+- A server that couldn't start records why, and the dashboard's notice says so (**The server couldn't start**: the reason) instead of guessing that the machine ran out of memory.
+
 ## [1.8.1] - 2026-10-23
 
 ### Added

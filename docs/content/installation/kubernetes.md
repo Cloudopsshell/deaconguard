@@ -25,13 +25,17 @@ oci://ghcr.io/cloudopsshell/charts/deaconguard
 ```bash
 kubectl create namespace deaconguard --save-config
 kubectl label namespace deaconguard pod-security.kubernetes.io/enforce=restricted
-kubectl -n deaconguard create secret generic deaconguard-admin --from-literal=password='a-long-password'
+kubectl -n deaconguard create secret generic deaconguard-admin --from-literal=password="$(openssl rand -base64 18)"
 helm install deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
   --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" \
   -n deaconguard --set server.admin.existingSecret=deaconguard-admin
 ```
 
-The server creates the account `admin` with that password on its first start, and ignores the secret once any account exists. Open the dashboard:
+The server creates the account `admin` with that password on its first start, and ignores the secret once any account exists. Read the password with `kubectl -n deaconguard get secret deaconguard-admin -o jsonpath='{.data.password}' | base64 -d`, and change it under **My account** after signing in.
+
+If you install the chart before creating the secret, the server waits for it rather than failing: its page and its log say which secret to create, and it starts within a minute or so of the secret appearing. If it hasn't after two minutes, delete the pod (`kubectl -n deaconguard delete pod deaconguard-0`) so it mounts the secret.
+
+Open the dashboard:
 
 ```bash
 kubectl -n deaconguard port-forward svc/deaconguard 8443:8443
@@ -41,11 +45,13 @@ and go to `https://127.0.0.1:8443`. The certificate is self-signed until you [gi
 
 ### 2. A reusable token
 
-On the **Agents** page, choose **Enroll a machine**, then **Many machines**. As the server address, use the Service's agent port:
+On the **Agents** page, choose **Enroll a machine**, then **Many machines**. As the server address, use the Service's agent port, which the dialog fills in when you opened the dashboard through `port-forward`:
 
 ```text
 https://deaconguard.deaconguard.svc:8444
 ```
+
+Not `https://127.0.0.1:8444`: through a port-forward, `127.0.0.1` is your own computer, and in an agent's pod or on another machine it is that pod or machine, so the agent would never reach the server. The dialog warns about loopback addresses.
 
 Give the token a name, such as the cluster's, pick how long it lasts, and create it. Or, from the command line:
 
@@ -96,6 +102,7 @@ The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs
 | `server.tls.existingSecret` | `""` | A `kubernetes.io/tls` secret to serve instead of the self-signed certificate |
 | `server.persistence.size`, `.storageClass`, `.existingClaim` | `5Gi`, the default class, none | The database's volume |
 | `server.service.type`, `.annotations`, `.dashboardPort`, `.agentPort` | `ClusterIP`, none, `8443`, `8444` | The Service |
+| `server.agentService.enabled`, `.type`, `.annotations`, `.loadBalancerSourceRanges`, `.port` | off, `LoadBalancer`, none, none, `8444` | A Service with only the agent port, for [agents outside the cluster](#agents-outside-the-cluster) |
 | `server.ingress.enabled`, `.className`, `.annotations`, `.hosts`, `.tls` | off | An Ingress for the dashboard |
 | `server.resources` | 100m CPU, 256 MiB requested; 1 GiB limit | The server needs about 450 MB while it checks an Ubuntu machine's packages |
 | `agent.enabled` | `false` | Install the agent DaemonSet |
@@ -144,13 +151,34 @@ A node's first pod enrolls with the token. If the server is replaced, say reinst
 
 Don't run the DaemonSet on nodes that already have the agent installed as a package: each would enroll as its own host.
 
+## Agents outside the cluster
+
+Machines outside the cluster, such as virtual machines with the [install script](./install-script.md)'s agent, need a network path to the agent port, 8444. The Service is `ClusterIP`, inside the cluster only. Give the agent port a **private load balancer of its own**, so the dashboard's port stays inside:
+
+```bash
+helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
+  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard --reuse-values \
+  --set server.agentService.enabled=true \
+  --set 'server.agentService.loadBalancerSourceRanges={10.0.0.0/16}'
+kubectl -n deaconguard get svc deaconguard-agents
+```
+
+That adds the Service `deaconguard-agents`, a `LoadBalancer` with only port 8444. Create the machines' tokens with its address, such as `https://10.0.12.34:8444`.
+
+- **Keep it private.** On EKS, annotate it as internal: `--set-string 'server.agentService.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internal'`; GKE and AKS have their own internal annotations. `loadBalancerSourceRanges` limits it to your machines' networks.
+- **k3s** answers a `LoadBalancer` Service with ServiceLB, which opens the port on the nodes' addresses and has no private mode: limit 8444 with the cloud's firewall or security group to your machines' addresses, and use the nodes' private address in tokens.
+- **Through an Ingress:** possible, but needs care. Agents check the server's certificate against the key in their token, or accept one their machine trusts for the server's name. So either pass the TLS connection through unchanged (Traefik's `IngressRouteTCP` with `passthrough: true`; ingress-nginx's `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, with passthrough turned on in the controller), or end TLS at the Ingress with a certificate the machines trust for its name. For the latter, allow request bodies of 80 MB (an agent's results can be that large; ingress-nginx allows 1 MB by default: `nginx.ingress.kubernetes.io/proxy-body-size: 80m`), and set `server.trustedProxies` to the ingress controller's network.
+- **NodePort** works for a test cluster; in production, prefer the load balancer above.
+
+Agents inside the cluster keep using `https://deaconguard.deaconguard.svc:8444`.
+
 ## Certificates and ingress
 
 The server serves HTTPS itself. By default it creates a self-signed certificate on its first start, kept on its volume; agents trust it through the fingerprint in their token, and browsers warn about it once.
 
 - **An Ingress for the dashboard:** set `server.ingress.*`, or start from the Kustomize example. The backend speaks HTTPS, so ingress-nginx needs `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`. Set `server.trustedProxies` to the ingress controller's pod network, such as `10.42.0.0/16`, and limit who can reach it, for example with `nginx.ingress.kubernetes.io/whitelist-source-range`.
 - **Your own certificate on the server:** put it in a `kubernetes.io/tls` secret and set `server.tls.existingSecret`. Agents accept the certificate whose key's fingerprint is in their token, or one their node trusts for the server's name. cert-manager gives a certificate a new key at each renewal by default, which agents enrolled before then don't know: set `privateKey.rotationPolicy: Never` on the Certificate, or keep the self-signed certificate on the server and put the trusted one on the Ingress.
-- Agents always connect to the Service's port 8444 directly, never through the Ingress.
+- The dashboard's Ingress is for people. Agents use port 8444: inside the cluster through the Service, outside through the [agent load balancer](#agents-outside-the-cluster).
 
 ## Commands
 

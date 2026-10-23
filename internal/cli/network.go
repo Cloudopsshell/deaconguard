@@ -37,7 +37,7 @@ const (
 	metaServerPin = "server_pin"
 )
 
-func runServe(arguments []string, output io.Writer) error {
+func runServe(arguments []string, output io.Writer) (serveErr error) {
 	listen, agentListen, certificatePath, keyPath := defaultListen, "", "", ""
 	var proxies []string
 	if configured := os.Getenv("DEACONGUARD_TRUSTED_PROXIES"); configured != "" {
@@ -78,6 +78,21 @@ func runServe(arguments []string, output io.Writer) error {
 		}
 	}
 	run := startRun(output)
+	// A run that couldn't start says why, so the next one doesn't guess.
+	defer func() {
+		switch {
+		case run == nil:
+		case errors.Is(serveErr, errStoppedWhileWaiting):
+			serveErr = nil
+			if err := run.Stopped(time.Now()); err != nil {
+				fmt.Fprintf(output, "Warning: cannot record the stop: %v\n", err)
+			}
+		case serveErr != nil:
+			if err := run.Failed(time.Now(), serveErr.Error()); err != nil {
+				fmt.Fprintf(output, "Warning: cannot record why the server couldn't start: %v\n", err)
+			}
+		}
+	}()
 	if server.IsLoopback(listen) && certificatePath == "" {
 		handler, err := server.New(web.Files(), nil)
 		if err != nil {
@@ -104,7 +119,11 @@ func runServe(arguments []string, output io.Writer) error {
 		return err
 	}
 	pin := agentapi.PublicKeyPin(certificate.Leaf)
-	if err := bootstrapAdmin(output); err != nil {
+	if err := bootstrapAdmin(output); errors.Is(err, errAdminPasswordMissing) {
+		if err := waitForAdmin(listen, certificate, output); err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 	handler, err := server.NewNetwork(web.Files(), nil, pin)
@@ -463,6 +482,9 @@ func runToken(arguments []string, output io.Writer) error {
 		fmt.Fprintln(output, encoded)
 		return nil
 	}
+	if loopbackURL(serverURL) {
+		fmt.Fprintf(output, "Note: %s is a loopback address, so only an agent on this machine can reach it. For other machines, use an address they reach; on Kubernetes, the Service, such as https://deaconguard.deaconguard.svc:8444.\n\n", serverURL)
+	}
 	if token.Reusable {
 		fmt.Fprintf(output, "Reusable enrollment token, for any number of machines until %s:\n\n  %s\n\n", token.ExpiresAt, encoded)
 		fmt.Fprintln(output, "Keep it secret: anyone with it can enroll a machine. Revoke it in the dashboard when you no longer need it.")
@@ -632,6 +654,9 @@ func bootstrapAdmin(output io.Writer) error {
 	var password []byte
 	if path := os.Getenv("DEACONGUARD_ADMIN_PASSWORD_FILE"); path != "" {
 		contents, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%w: %s", errAdminPasswordMissing, path)
+		}
 		if err != nil {
 			return fmt.Errorf("read DEACONGUARD_ADMIN_PASSWORD_FILE: %w", err)
 		}
@@ -649,6 +674,69 @@ func bootstrapAdmin(output io.Writer) error {
 	store.Audit("server", "user.add", username, "admin; first account, from the environment", "")
 	fmt.Fprintf(output, "Created the first account, %s, from the environment.\n", username)
 	return nil
+}
+
+// errAdminPasswordMissing: DEACONGUARD_ADMIN_PASSWORD_FILE names a file that
+// isn't there yet, such as a Kubernetes secret not created yet.
+var errAdminPasswordMissing = errors.New("the first account's password file doesn't exist yet")
+
+// errStoppedWhileWaiting: the server was stopped while it waited for the
+// first account's password.
+var errStoppedWhileWaiting = errors.New("stopped while waiting for the first account's password")
+
+// waitForAdmin waits for the first account's password file to appear, as a
+// Kubernetes secret does once it is created, and creates the account. Until
+// then it serves a page on the dashboard's port that says what is missing,
+// which also answers the health checks, so the pod isn't restarted in a loop.
+func waitForAdmin(listen string, certificate tls.Certificate, output io.Writer) error {
+	path := os.Getenv("DEACONGUARD_ADMIN_PASSWORD_FILE")
+	secret, key := os.Getenv("DEACONGUARD_ADMIN_SECRET"), filepath.Base(path)
+	namespace := os.Getenv("DEACONGUARD_NAMESPACE")
+	message := fmt.Sprintf("Waiting for the first account's password in %s.", path)
+	if secret != "" && namespace != "" {
+		message += fmt.Sprintf(" Create it with:\n  kubectl -n %s create secret generic %s --from-literal=%s=\"$(openssl rand -base64 18)\"\n"+
+			"The server starts by itself once the secret is mounted, usually within a minute. If it hasn't after two minutes, delete the pod: kubectl -n %s delete pod %s",
+			namespace, secret, key, namespace, local.Hostname())
+	}
+	listener, err := net.Listen("tcp", listen)
+	if err != nil {
+		return err
+	}
+	page := &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/version" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"version":%q,"waiting_for_first_account":true}`, buildinfo.Version)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, "DeaconGuard isn't ready: it has no account yet.\n\n%s\n", message)
+	})}
+	go page.Serve(tls.NewListener(listener, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}))
+	defer page.Close()
+	fmt.Fprintln(output, message)
+	store.Log(store.LogServer, "", store.LogWarning, message)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	said := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return errStoppedWhileWaiting
+		case <-ticker.C:
+			err := bootstrapAdmin(output)
+			if !errors.Is(err, errAdminPasswordMissing) {
+				return err
+			}
+			if time.Since(said) >= time.Minute {
+				fmt.Fprintln(output, message)
+				said = time.Now()
+			}
+		}
+	}
 }
 
 // enrollToken is the enrollment token in the environment, if any: in the file

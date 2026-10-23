@@ -14,6 +14,7 @@ const titles: Record<ServerStop["kind"], string> = {
   out_of_memory: "The server ran out of memory",
   crashed: "The server crashed",
   killed: "The server was stopped",
+  start_failed: "The server couldn't start",
   unknown: "The server stopped unexpectedly",
 };
 

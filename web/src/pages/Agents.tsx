@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Plus, RadioTower } from "lucide-react";
+import { Check, Copy, KeyRound, Plus, RadioTower, TriangleAlert } from "lucide-react";
 import { useCan } from "../lib/role";
 import { api, type EnrollmentToken, type HostSummary, type NewEnrollmentToken } from "../api";
 import {
@@ -342,7 +342,16 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
   // With a port only for agents, tokens point there, not at the dashboard's port.
   const agentPort = capabilities.data?.agent_port;
   const [edited, setEdited] = useState<string | null>(null);
-  const serverUrl = edited ?? (agentPort ? `${window.location.protocol}//${window.location.hostname}:${agentPort}` : window.location.origin);
+  const clusterUrl = capabilities.data?.cluster_agent_url;
+  // Through a port-forward the dashboard is on a loopback address, which no
+  // other machine or pod can use: suggest the cluster's address instead.
+  const suggested =
+    clusterUrl && isLoopbackHost(window.location.hostname)
+      ? clusterUrl
+      : agentPort
+        ? `${window.location.protocol}//${window.location.hostname}:${agentPort}`
+        : window.location.origin;
+  const serverUrl = edited ?? suggested;
   const setServerUrl = setEdited;
   const [reusable, setReusable] = useState(false);
   const [days, setDays] = useState(30);
@@ -470,6 +479,21 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
             required
             data-autofocus
           />
+          {loopbackUrl(serverUrl) && (
+            <p className="-mt-2 flex gap-2 text-xs text-amber-800 dark:text-amber-300" role="note">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              <span>
+                This is a loopback address: only an agent on the server&apos;s own machine can reach it. For other machines, use an address they can reach
+                {clusterUrl ? (
+                  <>
+                    ; inside this Kubernetes cluster, <span className="font-mono">{clusterUrl}</span>.
+                  </>
+                ) : (
+                  "."
+                )}
+              </span>
+            </p>
+          )}
           <ErrorMessage error={create.error} />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={close}>
@@ -562,4 +586,18 @@ function CopyBlock({ text, label }: { text: string; label: string }) {
       </button>
     </div>
   );
+}
+
+function isLoopbackHost(host: string) {
+  const bare = host.replace(/^\[|\]$/g, "");
+  return bare === "localhost" || bare === "::1" || /^127\./.test(bare);
+}
+
+/** Whether a server URL points at a loopback address, which only the server's own machine can use. */
+function loopbackUrl(value: string) {
+  try {
+    return isLoopbackHost(new URL(value).hostname);
+  } catch {
+    return false;
+  }
 }

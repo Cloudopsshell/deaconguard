@@ -7,6 +7,8 @@ Check the installed version with `deaconguard version`, and read the [changelog]
 
 **Upgrade the server first, then its agents.** An agent from the previous release keeps working with a newer server while you upgrade.
 
+**Upgrading an install-script server to 1.9.0** gives agents their own port, 8444, unless you had chosen one or `--agent-listen off`, or something else uses 8444. Port 8443 keeps answering agents. Each agent moves to 8444 by itself once it can reach it; until your firewall allows 8444 from your machines, they stay on 8443 and keep working. See [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port). To keep one port: `sudo deaconguard setup server --agent-listen off`.
+
 | Installed with | Upgrade |
 | --- | --- |
 | Install script | Run `curl -fsSL https://get.deaconguard.io \| sudo sh -` again on the server, then on each agent. On an enrolled agent it upgrades the agent and keeps its enrollment. For a specific release: `curl -fsSL https://get.deaconguard.io \| DEACONGUARD_VERSION=@RELEASE@ sudo -E sh -`. |

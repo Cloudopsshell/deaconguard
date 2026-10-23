@@ -11,13 +11,20 @@ Open the dashboard:
   then https://127.0.0.1:8443 (the certificate is self-signed unless you gave one)
 {{- end }}
 
-Sign in as {{ .Values.server.admin.username }}{{ if not (or .Values.server.admin.existingSecret .Values.server.admin.password) }}, after creating its password:{{ else }}.{{ end }}{{ if not (or .Values.server.admin.existingSecret .Values.server.admin.password) }}
-  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "deaconguard.adminSecret" . }} --from-literal={{ .Values.server.admin.secretKey }}='a-long-password'
-  kubectl -n {{ .Release.Namespace }} rollout restart statefulset/{{ include "deaconguard.fullname" . }}{{ end }}
+Sign in as {{ .Values.server.admin.username }}{{ if not (or .Values.server.admin.existingSecret .Values.server.admin.password) }}, after creating its password. The server waits for it, and starts within a minute of:
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "deaconguard.adminSecret" . }} --from-literal={{ .Values.server.admin.secretKey }}="$(openssl rand -base64 18)"
+Read it back with:
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "deaconguard.adminSecret" . }} -o jsonpath='{.data.{{ .Values.server.admin.secretKey }}}' | base64 -d{{ else }}.{{ end }}
 
 Agents in this cluster reach the server at:
   https://{{ include "deaconguard.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.server.service.agentPort }}
-Use that address when you create a reusable token on the Agents page.
+{{- if .Values.server.agentService.enabled }}
+Agents outside the cluster reach it through the {{ include "deaconguard.fullname" . }}-agents Service, on port {{ .Values.server.agentService.port }}:
+  kubectl -n {{ .Release.Namespace }} get svc {{ include "deaconguard.fullname" . }}-agents
+{{- else }}
+For agents on machines outside the cluster, set server.agentService.enabled=true: a load balancer for the agent port only.
+{{- end }}
+Use the address an agent reaches when you create its token on the Agents page; not 127.0.0.1, which only the server's own pod can use.
 {{- end }}
 {{- if .Values.agent.enabled }}
 
