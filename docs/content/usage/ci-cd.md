@@ -26,7 +26,7 @@ deaconguard image scan shop.tar --fail-on high
 
 ## Failing the build
 
-`--fail-on critical`, `high`, `medium` or `low` makes the command exit with status **4** when the image has a vulnerability at or above that severity, so the pipeline stops. Vulnerabilities with no published severity don't count.
+`--fail-on critical`, `high`, `medium` or `low` makes the command exit with status **4** when the image has a vulnerability at or above that severity, so the pipeline stops. Vulnerabilities with no published severity don't count. An image on a release that has [ended](../supported-distributions.md#releases-that-have-ended), such as Debian 10, has a high finding for it (`DG-EOL-001`), so `--fail-on high` stops it.
 
 `--ignore-unfixed` counts, and reports, only the vulnerabilities an update fixes or attackers are known to use. A vulnerability with no fix yet can't be fixed by rebuilding, so it doesn't fail the build.
 

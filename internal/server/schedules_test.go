@@ -63,8 +63,13 @@ func TestSchedulesStartScansWhenDue(t *testing.T) {
 	if len(skipped) != 1 || !strings.Contains(skipped[0].Message, `Schedule "Nightly" skipped old-01`) {
 		t.Fatalf("skip log = %+v", skipped)
 	}
+	// The next day at 02:30 in Stockholm, which is 23 or 25 hours later
+	// when the clocks change in between.
+	stockholm, _ := time.LoadLocation("Europe/Stockholm")
+	local := next.In(stockholm)
+	nextDay := time.Date(local.Year(), local.Month(), local.Day()+1, 2, 30, 0, 0, stockholm).UTC()
 	after, _ := store.GetSchedule(view.ID)
-	if after.LastRunAt == "" || after.NextRunAt != next.Add(24*time.Hour).Format(time.RFC3339) {
+	if after.LastRunAt == "" || after.NextRunAt != nextDay.Format(time.RFC3339) {
 		t.Fatalf("after the run: last %q, next %q", after.LastRunAt, after.NextRunAt)
 	}
 	// A run that is still queued is not started twice.
