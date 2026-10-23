@@ -105,3 +105,45 @@ func TestEvaluateContainersKeepsEveryVulnerability(t *testing.T) {
 		t.Errorf("summary = %q", result.Summary)
 	}
 }
+
+// A container on an ended release gets an end-of-life finding instead of an
+// error; one whose packages couldn't be checked makes the check partial.
+func TestEvaluateContainersEndOfLifeAndPartial(t *testing.T) {
+	scanPackages = func(osRelease, _, _, _, _ string, _ *http.Client, _ time.Time) (scanner.Report, error) {
+		if strings.Contains(osRelease, "VERSION_ID=10") {
+			return scanner.Report{}, errors.New(`unsupported Debian release "10"`)
+		}
+		return scanner.Report{}, errors.New("advisory feed unavailable")
+	}
+	defer func() { scanPackages = scanner.Scan }()
+	buster := containers.Inventory{OSRelease: "ID=debian\nVERSION_ID=10\nVERSION_CODENAME=buster\n",
+		DPKGStatus: "Package: openssl\nVersion: 1\n\nPackage: zlib1g\nVersion: 1\n\n"}
+	bookworm := containers.Inventory{OSRelease: "ID=debian\nVERSION_ID=12\n", DPKGStatus: "Package: openssl\n"}
+	result := checks.Result{Status: checks.StatusCompleted, Containers: []checks.ContainerResult{
+		{Container: containers.Container{Name: "web", Image: "nginx:1.18", State: "running"}, Inventory: &buster},
+	}}
+	evaluateContainers(&result, &reporter{})
+	web := result.Containers[0]
+	if web.Error != "" || web.OS != "Debian 10 (buster)" || web.Lifecycle == nil || web.Lifecycle.State != lifecycle.Ended || web.Packages != 2 {
+		t.Fatalf("web = %+v", web)
+	}
+	if len(web.Vulnerabilities) != 1 || web.Severity["HIGH"] != 1 || web.Fixable != 1 || len(web.Findings) != 1 {
+		t.Fatalf("an end-of-life finding to fix: %+v", web)
+	}
+	eol := web.Vulnerabilities[0]
+	if eol.Rule != EndOfLifeRule || eol.Source != "os" || eol.Package != "debian" || eol.Version != "10 (buster)" || !eol.Fixable ||
+		eol.Fixed == "" || !strings.Contains(eol.Detail, "reached end of life on 30 June 2024") || eol.Container != "web" {
+		t.Errorf("finding = %+v", eol)
+	}
+	if result.Status != checks.StatusCompleted {
+		t.Errorf("an end-of-life container was fully checked: status %s", result.Status)
+	}
+
+	result = checks.Result{Status: checks.StatusCompleted, Containers: []checks.ContainerResult{
+		{Container: containers.Container{Name: "api", Image: "python:3.11", State: "running"}, Inventory: &bookworm},
+	}}
+	evaluateContainers(&result, &reporter{})
+	if result.Status != checks.StatusPartial || !strings.Contains(result.Summary, "1 couldn't be fully checked") || result.Containers[0].Error == "" {
+		t.Errorf("unchecked packages must not look clean: %s, %q, %+v", result.Status, result.Summary, result.Containers[0])
+	}
+}

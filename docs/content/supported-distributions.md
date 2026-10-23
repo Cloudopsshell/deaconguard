@@ -52,6 +52,13 @@ The dashboard lists hosts past regular support. The hosts list and each host's p
 - **RHEL 10** isn't enabled yet: no official RHEL 10 feed was present in Red Hat's feed index.
 - **openSUSE Tumbleweed**, **Amazon Linux 2**, and other distributions and releases not listed above. The install script won't set up an agent on them.
 
+### Releases that have ended
+
+Debian 11 and earlier, Alpine before 3.18, CentOS Linux 7 and 8, CentOS Stream 8, Amazon Linux 2, openSUSE Leap before 15.6 and Fedora before 40 no longer get security fixes, so their vendors publish no advisories to check packages against. From 1.8.1, DeaconGuard says so instead of only "unsupported":
+
+- A **container** or **image** on one gets a high finding, `DG-EOL-001`, with the release, the date it ended and the release to rebuild on, and an **End of life** badge. Its libraries are still checked. An image scan with `--fail-on high` fails on it.
+- A **machine** on one isn't scanned; the scan's error says when the release ended and what to upgrade to.
+
 The server itself can run on any of the distributions above except Alpine; only the machines you scan need a supported release.
 
 **Alpine machines:** the install script and packages need systemd, which Alpine doesn't use, so they don't set up an agent there. Run `deaconguard agent enroll` and `deaconguard agent run` from the [release archive](./installation/manual-install.md) under your own OpenRC service, or run the agent's [container image](./installation/docker.md). Alpine is most common inside containers, which DeaconGuard will scan in a coming release.
