@@ -52,6 +52,8 @@ helm upgrade deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard --
 - **Or keep your settings in a file:** `helm get values deaconguard -n deaconguard -o yaml > values.yaml` once, then upgrade with `-f values.yaml` instead. This suits settings kept in Git (Argo CD, Flux).
 - **Not without either:** a `helm upgrade` with neither flag nor file drops your settings, such as the admin secret, for the chart's defaults.
 
+**With Flux, Argo CD or a pipeline** that passes your values file, upgrading is changing the chart's version in Git or in the job: they render the new chart's defaults plus your values every time, so no flag is needed. See [With Flux, Argo CD or a pipeline](./kubernetes.md#with-flux-argo-cd-or-a-pipeline).
+
 ## Kustomize
 
 Apply the new release's manifests (`?ref=v@RELEASE@` for the latest, as in [Kubernetes](./kubernetes.md)), or change `newTag` in your overlay and apply it.
