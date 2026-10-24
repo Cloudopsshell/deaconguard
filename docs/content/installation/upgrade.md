@@ -1,17 +1,23 @@
 ---
 title: Upgrade
-description: Upgrade DeaconGuard servers and agents.
+description: Upgrade DeaconGuard servers and agents, with the install script, packages, Docker Compose, Helm or Kustomize.
 ---
 
-Check the installed version with `deaconguard version`, and read the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) for what changed; any upgrade steps are listed there. [Back up](../usage/backup-and-restore.md) the server's data before upgrading across a minor version, for example from 1.0.x to 1.1.0. Installs of 0.x upgrade to 1.0 the same way.
+These steps are the same for every release. What a particular release changes, and anything to do before upgrading to it, is in its [upgrade notes](../upgrade-notes/index.md).
 
-**Upgrade the server first, then its agents.** An agent from the previous release keeps working with a newer server while you upgrade.
+## Before you upgrade
 
-**Upgrading an install-script server to 1.9.0** gives agents their own port, 8444, unless you had chosen one or `--agent-listen off`, or something else uses 8444. Port 8443 keeps answering agents. Each agent moves to 8444 by itself once it can reach it; until your firewall allows 8444 from your machines, they stay on 8443 and keep working. See [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port). To keep one port: `sudo deaconguard setup server --agent-listen off`.
+1. **Check what you run:** `deaconguard version` on the server, or the version at the bottom of the dashboard's sidebar.
+2. **Read the [upgrade notes](../upgrade-notes/index.md)** of every release between yours and the new one. Most need nothing; some ask you to open a port or upgrade agents.
+3. **[Back up](../usage/backup-and-restore.md#back-up) the server's data.** A release can upgrade the database on its first start, and an earlier release can't open it afterwards (see [Going back to an earlier release](#going-back-to-an-earlier-release)).
+
+**Upgrade the server first, then its agents.** An agent from an earlier release keeps working with a newer server while you upgrade, but a newer agent may send what an older server doesn't understand. You can go straight to the newest release; there's no need to install each one in between.
+
+## Install script and packages
 
 | Installed with | Upgrade |
 | --- | --- |
-| Install script | Run `curl -fsSL https://get.deaconguard.io \| sudo sh -` again on the server, then on each agent. On an enrolled agent it upgrades the agent and keeps its enrollment. For a specific release: `curl -fsSL https://get.deaconguard.io \| DEACONGUARD_VERSION=@RELEASE@ sudo -E sh -`. |
+| Install script | Run `curl -fsSL https://get.deaconguard.io \| sudo sh -` again on the server, then on each agent. On an enrolled agent it upgrades the agent and keeps its enrollment. Settings given to setup earlier, such as `--agent-listen`, are kept. For a specific release: `curl -fsSL https://get.deaconguard.io \| DEACONGUARD_VERSION=@RELEASE@ sudo -E sh -`. |
 | `.deb` / `.rpm` | Repeat the [manual install](./manual-install.md) steps with the new `VERSION`. |
 | Archive | Repeat the archive steps; they replace `/usr/local/bin/deaconguard`. |
 
@@ -40,11 +46,11 @@ Then, only if you installed the [agent DaemonSet](./kubernetes.md#3-the-agents) 
 helm upgrade deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard --version "$VERSION" -n deaconguard-agent --reset-then-reuse-values
 ```
 
-`helm list -A` shows the releases you have. `--reset-then-reuse-values` (Helm 3.14 and later) keeps the settings you installed with, and takes every setting a newer chart adds from that chart. With an older Helm, `--reuse-values` works too, from chart 1.9.2. Or keep your settings in a file (`helm get values deaconguard -n deaconguard -o yaml > values.yaml` once) and upgrade with `-f values.yaml`.
+`helm list -A` shows the releases you have.
 
-:::note Upgrading to 1.9.0 or 1.9.1
-The 1.9.0 and 1.9.1 charts fail with `--reuse-values` from an earlier release (`nil pointer evaluating interface {}.enabled`). Use `--reset-then-reuse-values` or `-f values.yaml` as above, or upgrade straight to 1.9.2 or later, which accepts `--reuse-values` from every earlier release.
-:::
+- **`--reset-then-reuse-values`** (Helm 3.14 and later) keeps the settings you installed with, and takes every setting a newer chart adds from that chart. Use it for every upgrade.
+- **Or keep your settings in a file:** `helm get values deaconguard -n deaconguard -o yaml > values.yaml` once, then upgrade with `-f values.yaml` instead. This suits settings kept in Git (Argo CD, Flux).
+- **Not without either:** a `helm upgrade` with neither flag nor file drops your settings, such as the admin secret, for the chart's defaults.
 
 ## Kustomize
 
@@ -52,8 +58,14 @@ Apply the new release's manifests (`?ref=v@RELEASE@` for the latest, as in [Kube
 
 ## What happens
 
-Upgrading the package restarts the running `deaconguard-server` and `deaconguard-agent` services. The new version upgrades the database on its first start; scans that were running are marked as interrupted.
+Upgrading restarts the server and the agents (the `deaconguard-server` and `deaconguard-agent` services, or their pods). The new release upgrades the database on its first start, if it needs to, and scans that were running are marked as interrupted. Agents reconnect by themselves.
 
-:::warning No downgrades
-Once a newer version has upgraded the database, an older version cannot open it. To go back, restore the backup you took before the upgrade.
-:::
+## Going back to an earlier release
+
+Once a newer release has upgraded the database, an earlier release can't open it, and won't start. Which releases change the database is in the [upgrade notes](../upgrade-notes/index.md) ("Back up: database schema …"). To go back:
+
+1. Stop the server.
+2. Install the earlier release, the same way you installed DeaconGuard.
+3. [Restore](../usage/backup-and-restore.md#restore) the backup you took before upgrading.
+
+Results from after the upgrade are lost; agents need no change. If the new release didn't change the database, installing the earlier release is enough.

@@ -306,7 +306,7 @@ The agent runs the checks and sends back the package list. The server evaluates 
 
 ## Update
 
-Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.md) for what changed; any upgrade steps are listed there. [Back up](#back-up-and-restore) your data before updating across a minor version.
+Check your version with `deaconguard version`, and read the [upgrade notes](https://docs.deaconguard.io/upgrade-notes) of every release since yours: what each changed and anything to do first, for each way of installing ([CHANGELOG.md](CHANGELOG.md) has everything). [Back up](#back-up-and-restore) your data before updating. The steps below are the same for every release.
 
 | Installed with | Update |
 | --- | --- |
