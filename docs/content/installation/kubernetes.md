@@ -277,7 +277,7 @@ That adds the Service `deaconguard-agents`, a `LoadBalancer` with only port 8444
 **Keep it private, and limit who can reach it.** Each provider has its own annotation for an internal load balancer, and its own firewall: [Reaching the agent port](../security/agent-network.md) has the values for your own data centre (k3s ServiceLB, MetalLB), Hetzner, AWS, Azure, Google Cloud, DigitalOcean, Akamai/Linode and Oracle Cloud, and what to do when the machines are in another data centre or only reachable over the internet.
 
 - **Through an Ingress:** possible, but needs care. Agents check the server's certificate against the key in their token, or accept one their machine trusts for the server's name. So either pass the TLS connection through unchanged (Traefik's `IngressRouteTCP` with `passthrough: true`; ingress-nginx's `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, with passthrough turned on in the controller), or end TLS at the Ingress with a certificate the machines trust for its name. For the latter, allow request bodies of 80 MB (an agent's results can be that large; ingress-nginx allows 1 MB by default: `nginx.ingress.kubernetes.io/proxy-body-size: 80m`), and set `server.trustedProxies` to the ingress controller's network.
-- **NodePort** works for a test cluster; in production, prefer the load balancer above.
+- **NodePort** works for a test cluster, or a cluster without a load balancer: set `server.agentService.type=NodePort` and, from chart 1.10.0, a fixed `server.agentService.nodePort`, such as `30444`. In production, prefer a load balancer.
 
 Agents inside the cluster keep using `https://deaconguard.deaconguard.svc:8444`.
 
