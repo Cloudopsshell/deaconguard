@@ -8,6 +8,11 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Helm upgrades with `--reuse-values`** from an earlier release failed with the 1.9.0 and 1.9.1 charts (`nil pointer evaluating interface {}.enabled` at `server.agentService.enabled`), and from 1.4.0 and earlier at `cluster.enabled`: `--reuse-values` renders the new chart with the old release's values, which lack settings added since. The chart now fills in any missing setting from its own defaults (a value you set is kept), so the documented upgrade works from every release, and CI renders the chart that way against every earlier release.
+- **The Upgrade page** now upgrades with `--reset-then-reuse-values`, and upgrades the agent release only if you installed one (`helm list -A` shows them); before, it upgraded `deaconguard-agent` unconditionally, which fails where there is none.
+
 ## [1.9.1] - 2026-10-23
 
 ### Fixed

@@ -1,3 +1,4 @@
+{{- include "deaconguard.withDefaults" . }}
 {{- if .Values.server.enabled }}
 DeaconGuard {{ .Chart.AppVersion }} server is starting.
 

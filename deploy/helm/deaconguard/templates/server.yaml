@@ -1,3 +1,4 @@
+{{- include "deaconguard.withDefaults" . }}
 {{- if .Values.server.enabled }}
 {{- $selector := dict "root" . "component" "server" }}
 apiVersion: v1

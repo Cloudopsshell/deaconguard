@@ -34,7 +34,13 @@ Follow [Semantic Versioning](https://semver.org):
    git push origin vX.Y.Z-rc.1
    ```
 
-   The GitHub release is marked as a pre-release. Install it, check `deaconguard version`, and scan a test machine.
+   The GitHub release is marked as a pre-release. Install it, check `deaconguard version`, and scan a test machine. Then test it **the way the docs tell people to**, starting from the **previous release**, with each command copied from the page as it is written:
+
+   - **Install script:** install the previous release on a test machine, then run the upgrade command from [Upgrade](docs/content/installation/upgrade.md) and [Install script](docs/content/installation/install-script.md), with an agent from another machine enrolled.
+   - **Helm:** install the previous release's chart as [Kubernetes](docs/content/installation/kubernetes.md) did, the server and the agent DaemonSet as releases of their own, then run every `helm upgrade` on the Upgrade page, word for word (with the candidate's version). CI's **Helm upgrade** job renders the chart as `--reuse-values` does against every earlier release; this is the real thing.
+   - **Compose and Kustomize:** follow their upgrade steps the same way.
+
+   A command that fails as written is a release blocker, even if another way works: fix the chart, the script or the page, and tag the next candidate.
 4. **Tag the release** from the same commit once the candidate works:
 
    ```sh
@@ -43,6 +49,7 @@ Follow [Semantic Versioning](https://semver.org):
    ```
 
 5. **Check the release** on GitHub: the notes and the assets, including `install.sh` and `checksums.txt.sigstore.json`. The workflow verifies the signature before it finishes.
+6. **Check what people read**, once the website has rebuilt for the release (hourly, or run its Build workflow): `get.deaconguard.io/stable.txt`, the pages the release changed on docs.deaconguard.io, the homepage at deaconguard.io if the release changes what it describes (its own PR, in the website repository, merged after the release), and the README on GitHub, diagrams included.
 
 A tag that fails the workflow can be deleted with `git push --delete origin TAG` and `git tag -d TAG` before retrying; delete the draft or failed release on GitHub first. Never reuse a version number that users may already have installed; publish the next patch version instead.
 
