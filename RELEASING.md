@@ -24,7 +24,16 @@ Follow [Semantic Versioning](https://semver.org):
    sh scripts/prepare-release.sh X.Y.Z
    ```
 
-   It moves the Unreleased entries into `## [X.Y.Z] - YYYY-MM-DD`, updates the comparison links, and runs `scripts/set-version.sh X.Y.Z`, which writes the version into the Compose file, the Kustomize manifests and the Helm chart. Don't edit those versions by hand: CI checks the files agree, and the release workflow stops if they don't match the tag. Commit, push and open the release pull request.
+   It moves the Unreleased entries into `## [X.Y.Z] - YYYY-MM-DD`, updates the comparison links, and runs `scripts/set-version.sh X.Y.Z`, which writes the version into the Compose file, the Kustomize manifests and the Helm chart. Don't edit those versions by hand: CI checks the files agree, and the release workflow stops if they don't match the tag.
+
+   Then add the release's **upgrade notes**, in the same pull request:
+
+   - `docs/content/upgrade-notes/vX-Y/vX-Y-Z.md`, laid out like the others: What's new, Before you upgrade, Kubernetes (Helm and Kustomize), Install script and packages, Docker Compose, Known issues. A section with nothing to do says so. Keep it to what people must know or do; the changelog has the rest.
+   - its row at the top of the table in `docs/content/upgrade-notes/index.md`, and its entry, first in its line, in `docs/sidebars.js` (a new minor line gets a category of its own).
+   - when a new minor line makes eleven, remove the oldest line's pages, rows and category.
+   - if a known issue turns up after a release, add it to that release's page, with the release that fixes it.
+
+   `node scripts/check-docs.mjs` (CI's **Docs** job) fails when a release of the last ten minor lines has no notes page or row, or an older line still has one. Commit, push and open the release pull request.
 2. **Merge** the branch into `main` through a pull request once the CI checks pass and it is approved.
 3. **Tag a release candidate** from `main` to test the pipeline without affecting users:
 
