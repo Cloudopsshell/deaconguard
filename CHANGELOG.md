@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-10-24
+
 ### Fixed
 
 - **Helm upgrades with `--reuse-values`** from an earlier release failed with the 1.9.0 and 1.9.1 charts (`nil pointer evaluating interface {}.enabled` at `server.agentService.enabled`), and from 1.4.0 and earlier at `cluster.enabled`: `--reuse-values` renders the new chart with the old release's values, which lack settings added since. The chart now fills in any missing setting from its own defaults (a value you set is kept), so the documented upgrade works from every release, and CI renders the chart that way against every earlier release.
@@ -185,7 +187,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.2...HEAD
+[1.9.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.8.0...v1.8.1
