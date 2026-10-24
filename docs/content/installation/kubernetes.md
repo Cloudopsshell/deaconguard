@@ -261,7 +261,7 @@ Don't run the DaemonSet on nodes that already have the agent installed as a pack
 
 ## Agents outside the cluster
 
-Machines outside the cluster, such as virtual machines with the [install script](./install-script.md)'s agent, need a network path to the agent port, 8444. The Service is `ClusterIP`, inside the cluster only. Give the agent port a **private load balancer of its own**, so the dashboard's port stays inside:
+Machines outside the cluster, such as virtual machines with the [install script](./install-script.md)'s agent, need a network path to the agent port, 8444. The Service is `ClusterIP`, inside the cluster only. Give the agent port a **load balancer of its own**, so the dashboard's port stays inside:
 
 ```bash
 helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
@@ -271,10 +271,10 @@ helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
 kubectl -n deaconguard get svc deaconguard-agents
 ```
 
-That adds the Service `deaconguard-agents`, a `LoadBalancer` with only port 8444. Create the machines' tokens with its address, such as `https://10.0.12.34:8444`.
+That adds the Service `deaconguard-agents`, a `LoadBalancer` with only port 8444. Create the machines' tokens with its address, such as `https://10.0.12.34:8444`. `loadBalancerSourceRanges` is the list of client addresses allowed to connect; empty allows everyone.
 
-- **Keep it private.** On EKS, annotate it as internal: `--set-string 'server.agentService.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internal'`; GKE and AKS have their own internal annotations. `loadBalancerSourceRanges` limits it to your machines' networks.
-- **k3s** answers a `LoadBalancer` Service with ServiceLB, which opens the port on the nodes' addresses and has no private mode: limit 8444 with the cloud's firewall or security group to your machines' addresses, and use the nodes' private address in tokens.
+**Keep it private, and limit who can reach it.** Each provider has its own annotation for an internal load balancer, and its own firewall: [Reaching the agent port](../security/agent-network.md) has the values for your own data centre (k3s ServiceLB, MetalLB), Hetzner, AWS, Azure, Google Cloud, DigitalOcean, Akamai/Linode and Oracle Cloud, and what to do when the machines are in another data centre or only reachable over the internet.
+
 - **Through an Ingress:** possible, but needs care. Agents check the server's certificate against the key in their token, or accept one their machine trusts for the server's name. So either pass the TLS connection through unchanged (Traefik's `IngressRouteTCP` with `passthrough: true`; ingress-nginx's `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, with passthrough turned on in the controller), or end TLS at the Ingress with a certificate the machines trust for its name. For the latter, allow request bodies of 80 MB (an agent's results can be that large; ingress-nginx allows 1 MB by default: `nginx.ingress.kubernetes.io/proxy-body-size: 80m`), and set `server.trustedProxies` to the ingress controller's network.
 - **NodePort** works for a test cluster; in production, prefer the load balancer above.
 

@@ -46,7 +46,7 @@ module.exports = {
     {
       type: 'category',
       label: 'Security',
-      items: ['security/securing-the-dashboard', 'security/verify-a-release', 'security/hardening', 'security/reporting'],
+      items: ['security/securing-the-dashboard', 'security/agent-network', 'security/verify-a-release', 'security/hardening', 'security/reporting'],
     },
     {
       type: 'category',

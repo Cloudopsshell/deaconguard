@@ -66,7 +66,7 @@ curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen 0.0.0.0:944
 curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen off
 ```
 
-Allow 8443 only from your administrators' networks and 8444 from your machines' networks.
+Allow 8443 only from your administrators' networks and 8444 from your machines' networks. For machines in other networks, data centres or clouds, see [Reaching the agent port](https://docs.deaconguard.io/security/agent-network).
 
 On each machine to scan, run the command shown by the server's **Enroll a machine** dialog. It carries the machine's one-time enrollment token:
 
@@ -267,7 +267,7 @@ Open `https://SERVER:8443` and sign in. On its first start, the server creates a
 
 Setup saves these settings in `/etc/systemd/system/deaconguard-server.service.d/10-setup.conf`, so package upgrades keep them.
 
-- **Don't expose ports 8443 and 8444 to the internet.** Allow 8443, the dashboard, only from your admins' networks, and reach it over a VPN, Tailscale, an SSH tunnel or AWS Systems Manager port forwarding. Allow 8444, the agent port, only from your machines' networks. See [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard).
+- **Don't expose ports 8443 and 8444 to the internet.** Allow 8443, the dashboard, only from your admins' networks, and reach it over a VPN, Tailscale, an SSH tunnel or AWS Systems Manager port forwarding. Allow 8444, the agent port, only from your machines' networks. See [Securing the dashboard](https://docs.deaconguard.io/security/securing-the-dashboard) and [Reaching the agent port](https://docs.deaconguard.io/security/agent-network).
 - **Single sign-on:** under **Settings → Single sign-on**, admins connect an OpenID Connect provider (Microsoft Entra ID, Google, Okta, Keycloak, Authentik and others). Accounts are made at the first sign-in, limited by email domain or group, with roles from groups. See [Single sign-on](https://docs.deaconguard.io/usage/single-sign-on).
 - **Passkeys:** each account can add passkeys under **My account** and sign in with a fingerprint, face or device PIN instead of a password and code. A passkey counts as two-step sign-in. They need the dashboard on a name with a trusted certificate. See [Passkeys](https://docs.deaconguard.io/usage/accounts#passkeys).
 - **Two-step sign-in:** each account turns it on under **My account** with a passkey or any authenticator app (Google or Microsoft Authenticator, Bitwarden, 1Password, Proton Pass, Apple Passwords, Ente Auth, 2FAS, Aegis, and others) and gets 10 one-time recovery codes. Until it is on, the dashboard reminds you. On the **Accounts** page, **Require it** makes it mandatory for every account.
