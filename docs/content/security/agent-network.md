@@ -68,6 +68,9 @@ server:
     annotations: {}               # your provider's settings, as below
     loadBalancerSourceRanges:     # who may connect; empty means anyone
       - 10.0.0.0/16
+    externalTrafficPolicy: ""     # Local: the server sees each agent's own address
+    loadBalancerClass: ""         # which load balancer answers, if the cluster has several
+    nodePort: ""                  # a fixed node port (30000-32767) instead of a random one
 ```
 
 ```bash
@@ -82,6 +85,10 @@ The Service is `deaconguard-agents`; its `EXTERNAL-IP` is the address for tokens
 - **`loadBalancerSourceRanges`** is a standard Kubernetes field: the client addresses allowed to connect through the load balancer. It isn't a firewall of its own. Whatever runs the load balancer turns it into one: the cloud's firewall or security group in front of the load balancer (AWS, Azure, GCP, DigitalOcean), or packet filter rules on the nodes (k3s ServiceLB, and kube-proxy on most clusters). Not every provider honours it; the [steps for each provider](#steps-for-each-provider) say which, and what to use instead. Empty (`[]`) allows everyone.
 - **The provider's own firewall still matters.** Set it as well, with the same ranges: it stops traffic before it reaches your network, and it doesn't change when someone edits the Helm values.
 - **Every `LoadBalancer` Service also opens a NodePort** (30000–32767) on each node, which `loadBalancerSourceRanges` doesn't cover. Make sure your nodes' firewall doesn't allow that range from outside.
+- **`externalTrafficPolicy`, `loadBalancerClass` and `nodePort`** (chart 1.10.0 and later) are standard Service settings, left to the cluster's defaults unless you set them:
+  - `externalTrafficPolicy: Local` delivers connections only to the node the server runs on, so the server, its logs and its audit log see each agent's own address rather than a node's. Some load balancers keep the address another way; the provider steps say so.
+  - `loadBalancerClass` picks which load balancer implementation creates the load balancer, when a cluster has more than one, such as MetalLB beside a cloud's own. It can't change once the Service exists.
+  - `nodePort` fixes the node port that every `LoadBalancer` or `NodePort` Service opens, so a firewall rule or a token can name it and it doesn't change when you reinstall.
 - **`server.ingress` is not for agents.** It routes only to the dashboard, 8443.
 
 ### Through an Ingress
@@ -107,6 +114,20 @@ server:
 ```
 
 Then allow 8444 from the same ranges on your perimeter firewall (and the hosts' firewall, if they have one), and don't allow the NodePort range from outside. Machines in another site reach it over your site-to-site VPN.
+
+With MetalLB in layer 2 mode, the server sees connections as coming from the node that holds the address. Add `externalTrafficPolicy: Local` (chart 1.10.0 and later) for each agent's own address.
+
+**Without a load balancer**, a fixed node port (chart 1.10.0 and later) opens the agent port on every node:
+
+```yaml
+server:
+  agentService:
+    enabled: true
+    type: NodePort
+    nodePort: 30444
+```
+
+Enroll with a node's address and that port, such as `https://10.20.0.11:30444`, or a DNS name that points at several nodes, and allow 30444 from your machines' networks. `loadBalancerSourceRanges` doesn't apply to a node port, so the firewall is the only limit.
 
 ### Hetzner Cloud
 
@@ -154,6 +175,7 @@ server:
 
 - The controller puts `loadBalancerSourceRanges` in the load balancer's security group. Without it, the default is `0.0.0.0/0`.
 - `preserve_client_ip` lets the server see each agent's own address rather than the load balancer's.
+- **Chart 1.10.0 and later:** instead of the `aws-load-balancer-type` annotation, you can set `loadBalancerClass: service.k8s.aws/nlb`, the controller's own class. Like the annotation, it can't change once the Service exists.
 - **Other VPCs and accounts:** VPC peering or Transit Gateway, and add their ranges.
 - **Over the internet:** `aws-load-balancer-scheme: internet-facing` with only your machines' addresses in `loadBalancerSourceRanges`. Don't change the scheme of an existing load balancer: set `enabled: false` first.
 
