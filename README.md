@@ -315,7 +315,7 @@ Check your version with `deaconguard version` and read [CHANGELOG.md](CHANGELOG.
 | `.rpm` | Run the [RHEL, Rocky Linux, AlmaLinux, Oracle Linux, Fedora, and Amazon Linux](#rhel-rocky-linux-almalinux-oracle-linux-fedora-and-amazon-linux) steps with the new `VERSION`, or [the SUSE steps](#opensuse-and-suse-linux-enterprise) |
 | Archive | Run the [archive](#other-linux-systems-and-macos) steps with the new `VERSION`; they replace `/usr/local/bin/deaconguard` |
 | Compose | Change the image tag in `compose.yaml` and run `docker compose up -d` |
-| Helm | `helm upgrade` each release with `--version X.Y.Z` and `--reuse-values` |
+| Helm | `helm upgrade` each release you installed with `--version X.Y.Z` and `--reset-then-reuse-values` (Helm 3.14+); see [Upgrade](https://docs.deaconguard.io/installation/upgrade#helm) |
 | Kustomize | Apply the new `?ref=vX.Y.Z`, or change `newTag` in your overlay |
 
 Updating the package restarts running `deaconguard-server` and `deaconguard-agent` services. Stop a foreground `deaconguard serve` before replacing the binary and start it again afterwards. Update the server before its agents. The new version upgrades the database automatically on its first start; scans that were running when it stopped are marked as interrupted. Downgrading is not supported once a newer version has upgraded the database: restore the backup taken before the update instead.

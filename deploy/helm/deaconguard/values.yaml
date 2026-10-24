@@ -1,5 +1,8 @@
 # DeaconGuard: https://docs.deaconguard.io/installation/kubernetes
 #
+# files/defaults.yaml must be a copy of this file (CI checks): the chart fills
+# in settings an upgraded release lacks from it.
+#
 # The server and the agents are usually two releases, in two namespaces: the
 # server runs under the restricted Pod Security Standard, and the agents need
 # privileged, since each reads its node.
