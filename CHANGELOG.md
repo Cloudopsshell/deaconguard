@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Helm:** `server.agentService.externalTrafficPolicy` (`Local` keeps each agent's own address in the server's logs and audit log), `.loadBalancerClass` (which load balancer implementation answers, when a cluster has several) and `.nodePort` (a fixed node port instead of a random one).
+
 ### Changed
 
 - **Documentation:** the Kubernetes page shows how to install and upgrade with Flux (`OCIRepository` and `HelmRelease`), Argo CD (an `Application` from the OCI chart) and CI/CD pipelines (`helm upgrade --install -f`), keeping secrets out of Git.

@@ -103,6 +103,7 @@ The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs
 | `server.persistence.size`, `.storageClass`, `.existingClaim` | `5Gi`, the default class, none | The database's volume |
 | `server.service.type`, `.annotations`, `.dashboardPort`, `.agentPort` | `ClusterIP`, none, `8443`, `8444` | The Service |
 | `server.agentService.enabled`, `.type`, `.annotations`, `.loadBalancerSourceRanges`, `.port` | off, `LoadBalancer`, none, none, `8444` | A Service with only the agent port, for [agents outside the cluster](#agents-outside-the-cluster) |
+| `server.agentService.externalTrafficPolicy`, `.loadBalancerClass`, `.nodePort` | the cluster's defaults | `Local` keeps each agent's own address in the server's logs; the load balancer implementation to use, when there are several; a fixed node port (30000–32767) instead of a random one |
 | `server.ingress.enabled`, `.className`, `.annotations`, `.hosts`, `.tls` | off | An Ingress for the dashboard |
 | `server.resources` | 100m CPU, 256 MiB requested; 1 GiB limit | The server needs about 450 MB while it checks an Ubuntu machine's packages |
 | `agent.enabled` | `false` | Install the agent DaemonSet |
