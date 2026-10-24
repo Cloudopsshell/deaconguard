@@ -1,0 +1,33 @@
+name: Docs tag
+
+# A docs tag (docs-vX.Y.Z.N) publishes documentation changes made after
+# release X.Y.Z without an app release: docs.deaconguard.io builds docs/ from
+# the newest docs tag of the latest release. This checks that the tag is for
+# the latest release and that only documentation changed since it. A failure
+# here means the tag must be deleted: git push --delete origin TAG.
+
+on:
+  push:
+    tags:
+      - "docs-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Documentation only
+    runs-on: [self-hosted, deaconguard]
+    steps:
+      - name: Check out the tag, with the release tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Check the tag
+        run: sh scripts/docs-tag.sh --check "$GITHUB_REF_NAME"

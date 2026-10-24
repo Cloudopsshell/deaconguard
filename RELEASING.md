@@ -62,6 +62,18 @@ Follow [Semantic Versioning](https://semver.org):
 
 A tag that fails the workflow can be deleted with `git push --delete origin TAG` and `git tag -d TAG` before retrying; delete the draft or failed release on GitHub first. Never reuse a version number that users may already have installed; publish the next patch version instead.
 
+## Documentation-only changes
+
+docs.deaconguard.io builds `docs/` from the latest release, so the docs describe what people can install. Changes to the docs merged after a release are published **without an app release** by a docs tag, `docs-vX.Y.Z.N` (revision N of release X.Y.Z's docs):
+
+```sh
+sh scripts/docs-tag.sh --push
+```
+
+It tags `main` with the next revision, `docs-v1.9.2.1`, then `docs-v1.9.2.2`, and so on, and pushes it. The website's next build (hourly, or run its **Build** workflow) publishes the docs from the newest docs tag of the latest release. Nothing else is built or released, and `stable.txt` keeps the release's version.
+
+The script refuses, and the **Docs tag** workflow fails, unless everything changed since the release is documentation: `docs/`, the Markdown files at the top of the repository and the docs scripts. With code changes, release the app instead: its tag publishes the docs too. If the workflow fails on a tag, delete it (`git push --delete origin TAG`).
+
 ## Test the packaging locally
 
 `make release-snapshot` builds all archives and packages into `dist/` without publishing or signing (requires [GoReleaser](https://goreleaser.com)).
