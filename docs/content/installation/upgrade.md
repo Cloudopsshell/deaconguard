@@ -27,13 +27,24 @@ Do the same with `--profile agent` if you run the agent.
 
 ## Helm
 
-Upgrade the server's release, then the agents':
+Upgrade the server's release:
 
 ```bash
 VERSION=$(curl -fsSL https://get.deaconguard.io/stable.txt)   # or the release you want
-helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard --version "$VERSION" -n deaconguard --reuse-values
-helm upgrade deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard --version "$VERSION" -n deaconguard-agent --reuse-values
+helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard --version "$VERSION" -n deaconguard --reset-then-reuse-values
 ```
+
+Then, only if you installed the [agent DaemonSet](./kubernetes.md#3-the-agents) (or the cluster agent) as a release of its own, upgrade it the same way:
+
+```bash
+helm upgrade deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard --version "$VERSION" -n deaconguard-agent --reset-then-reuse-values
+```
+
+`helm list -A` shows the releases you have. `--reset-then-reuse-values` (Helm 3.14 and later) keeps the settings you installed with, and takes every setting a newer chart adds from that chart. With an older Helm, `--reuse-values` works too, from chart 1.9.2. Or keep your settings in a file (`helm get values deaconguard -n deaconguard -o yaml > values.yaml` once) and upgrade with `-f values.yaml`.
+
+:::note Upgrading to 1.9.0 or 1.9.1
+The 1.9.0 and 1.9.1 charts fail with `--reuse-values` from an earlier release (`nil pointer evaluating interface {}.enabled`). Use `--reset-then-reuse-values` or `-f values.yaml` as above, or upgrade straight to 1.9.2 or later, which accepts `--reuse-values` from every earlier release.
+:::
 
 ## Kustomize
 

@@ -81,7 +81,7 @@ The agents check the nodes. To check the cluster too (its workloads, RBAC, names
 ```bash
 kubectl -n deaconguard-agent create secret generic deaconguard-cluster-enrollment --from-literal=token='deaconguard1.…'
 helm upgrade deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard \
-  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard-agent --reuse-values \
+  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard-agent --reset-then-reuse-values \
   --set cluster.enabled=true --set cluster.name=production \
   --set cluster.enrollment.existingSecret=deaconguard-cluster-enrollment
 ```
@@ -157,7 +157,7 @@ Machines outside the cluster, such as virtual machines with the [install script]
 
 ```bash
 helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
-  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard --reuse-values \
+  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard --reset-then-reuse-values \
   --set server.agentService.enabled=true \
   --set 'server.agentService.loadBalancerSourceRanges={10.0.0.0/16}'
 kubectl -n deaconguard get svc deaconguard-agents
