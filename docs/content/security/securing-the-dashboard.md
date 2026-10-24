@@ -5,7 +5,7 @@ description: How to keep the DeaconGuard dashboard away from the internet, and w
 
 The dashboard shows every machine's weaknesses and can start scans on all of them, so it deserves more protection than a password. In order of how much they help:
 
-1. **Don't expose ports 8443 and 8444 to the internet.** Reach the dashboard (8443) over a private network, and allow the [agent port](#give-agents-their-own-port) (8444) only from your machines' networks.
+1. **Don't expose ports 8443 and 8444 to the internet.** Reach the dashboard (8443) over a private network, and allow the [agent port](#give-agents-their-own-port) (8444) only from your machines' networks; for machines in other networks, see [Reaching the agent port](./agent-network.md).
 2. **Turn on two-step sign-in** for every account, best with [passkeys](../usage/accounts.md#passkeys), which can't be phished, and [require it](../usage/accounts.md#require-it-for-everyone).
 3. **Use [single sign-on](../usage/single-sign-on.md)** if you have an identity provider, so people who leave lose access with everything else.
 4. **Keep accounts tidy:** one per person, no shared accounts, the [least role](../usage/accounts.md#roles) each person needs, and remove or disable people who leave.
@@ -27,7 +27,7 @@ Pick whichever fits what you already use:
 
 On AWS, give the server's security group one rule for port 8444 from your VPC's range (for agents) and one for 8443 from your VPN or office range (for people), and nothing from `0.0.0.0/0`. If agents share 8443 (`--agent-listen off`), allow 8443 from both instead.
 
-Enroll agents with the server's **private** address, so they never leave your network to reach it.
+Enroll agents with the server's **private** address, so they never leave your network to reach it. For machines in another network, data centre or cloud, and for Kubernetes and each provider's load balancers, see [Reaching the agent port](./agent-network.md).
 
 ## Give agents their own port
 
