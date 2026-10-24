@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Helm:** `server.agentService.externalTrafficPolicy` (`Local` keeps each agent's own address in the server's logs and audit log), `.loadBalancerClass` (which load balancer implementation answers, when a cluster has several) and `.nodePort` (a fixed node port instead of a random one).
+
 ### Changed
 
 - **Documentation:** a new **Reaching the agent port** page (Security) covers machines outside the server's network: in the same private network, in another data centre or cloud, or over the internet, what `loadBalancerSourceRanges` does, and `server.agentService` values with the firewall steps for your own data centre (k3s ServiceLB, MetalLB), Hetzner, AWS, Azure, Google Cloud, DigitalOcean, Akamai/Linode and Oracle Cloud.
