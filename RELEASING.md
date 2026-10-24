@@ -47,7 +47,18 @@ Follow [Semantic Versioning](https://semver.org):
 
    - **Install script:** install the previous release on a test machine, then run the upgrade command from [Upgrade](docs/content/installation/upgrade.md) and [Install script](docs/content/installation/install-script.md), with an agent from another machine enrolled.
    - **Helm:** install the previous release's chart as [Kubernetes](docs/content/installation/kubernetes.md) did, the server and the agent DaemonSet as releases of their own, then run every `helm upgrade` on the Upgrade page, word for word (with the candidate's version). CI's **Helm upgrade** job renders the chart as `--reuse-values` does against every earlier release; this is the real thing.
-   - **Compose and Kustomize:** follow their upgrade steps the same way.
+   - **Compose and Kustomize:** follow their upgrade steps the same way. Their files at the candidate's tag already name the final image, `X.Y.Z`, which doesn't exist until step 4, so point them at the candidate's image instead. For Compose, set the image tag in `compose.yaml` to `X.Y.Z-rc.N`. For Kustomize, apply an overlay over the candidate's tag:
+
+     ```yaml
+     # kustomization.yaml, one for server and one for agent
+     resources:
+       - https://github.com/Cloudopsshell/deaconguard/deploy/kustomize/server?ref=vX.Y.Z-rc.N
+     images:
+       - name: ghcr.io/cloudopsshell/deaconguard
+         newTag: X.Y.Z-rc.N
+     ```
+
+     A pod that already failed to pull the missing `X.Y.Z` image stays stuck, as with any StatefulSet: delete it (`kubectl -n deaconguard delete pod deaconguard-0`) after applying the overlay.
 
    A command that fails as written is a release blocker, even if another way works: fix the chart, the script or the page, and tag the next candidate.
 4. **Tag the release** from the same commit once the candidate works:
