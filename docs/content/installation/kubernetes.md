@@ -120,6 +120,114 @@ The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs
 | `cluster.admission.enabled`, `.severity` | `false`, `medium` | [Warnings as workloads are applied](../usage/kubernetes.md#warnings-as-workloads-are-applied): a validating webhook in warn mode, with a certificate the chart makes |
 | `server.nodeSelector`, `.tolerations`, `.affinity`, `.podAnnotations`, and the same for `agent` and `cluster` | | Scheduling and annotations |
 
+## With Flux, Argo CD or a pipeline
+
+The chart works the same from GitOps tools and CI/CD pipelines. Keep the values in Git, and keep secrets out of it:
+
+- **The admin password** and **the agents' enrollment token** go in Kubernetes secrets that your secret tool creates, such as Sealed Secrets, SOPS or External Secrets. The values only name them (`server.admin.existingSecret`, `agent.enrollment.existingSecret`). If the chart is applied before the secret exists, the server waits for it and creates the account once the secret is mounted.
+- **To upgrade**, change the chart's version in Git, after reading the [upgrade notes](../upgrade-notes/index.md). These tools render the chart from the new version's defaults plus your values every time, so there is no `--reuse-values` to think about.
+
+The server's values, as on this page:
+
+```yaml
+server:
+  admin:
+    existingSecret: deaconguard-admin
+```
+
+### Flux
+
+Flux takes the chart from GHCR with an `OCIRepository`, and installs it with a `HelmRelease`:
+
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: deaconguard
+  namespace: deaconguard
+spec:
+  interval: 1h
+  url: oci://ghcr.io/cloudopsshell/charts/deaconguard
+  ref:
+    semver: "@RELEASE_MINOR@.x"   # patch releases come by themselves; or tag: "@RELEASE@"
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: deaconguard
+  namespace: deaconguard
+spec:
+  interval: 10m
+  chartRef:
+    kind: OCIRepository
+    name: deaconguard
+  values:
+    server:
+      admin:
+        existingSecret: deaconguard-admin
+```
+
+To move to a new minor release, change `semver` (or `tag`) in Git. The agent DaemonSet is a second `OCIRepository` and `HelmRelease` in the agent's namespace, with the values from [the agents](#3-the-agents) (`server.enabled: false`, `agent.enabled: true`, `agent.enrollment.existingSecret`).
+
+### Argo CD
+
+Argo CD needs GHCR declared as a Helm repository with OCI, once, then an `Application`:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deaconguard-charts
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  name: deaconguard
+  type: helm
+  url: ghcr.io/cloudopsshell/charts
+  enableOCI: "true"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: deaconguard
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/cloudopsshell/charts
+    chart: deaconguard
+    targetRevision: "@RELEASE_MINOR@.*"   # patch releases come by themselves; or "@RELEASE@"
+    helm:
+      valuesObject:
+        server:
+          admin:
+            existingSecret: deaconguard-admin
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: deaconguard
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+```
+
+The chart is public, so the repository needs no credentials. Argo CD renders the chart with `helm template` and applies it, so `helm list` doesn't show the release; Argo CD does. The agent DaemonSet is a second `Application` with the agents' values.
+
+### A pipeline
+
+A CI/CD job (GitHub Actions, GitLab CI, Jenkins…) keeps the values in a file in its repository, and runs one command for the first install and every upgrade:
+
+```bash
+helm upgrade --install deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
+  --version "$VERSION" -n deaconguard --create-namespace -f deaconguard-values.yaml --wait
+```
+
+`-f` applies your file over the new chart's defaults each time, so the job needs neither `--reuse-values` nor `--reset-then-reuse-values`. Pin `VERSION` in the job, or read it from `https://get.deaconguard.io/stable.txt`.
+
 ## With Kustomize
 
 The same server and agent are in [`deploy/kustomize`](https://github.com/Cloudopsshell/deaconguard/tree/main/deploy/kustomize), with the namespaces and their Pod Security labels:
