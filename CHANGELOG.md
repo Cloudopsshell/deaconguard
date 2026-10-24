@@ -10,6 +10,7 @@ upgrade notes.
 
 ### Changed
 
+- **Documentation:** the Kubernetes page shows how to install and upgrade with Flux (`OCIRepository` and `HelmRelease`), Argo CD (an `Application` from the OCI chart) and CI/CD pipelines (`helm upgrade --install -f`), keeping secrets out of Git.
 - **Documentation:** the Upgrade page is the same for every release, and a new **Upgrade notes** section has a page per release, from 1.0.0: what's new, what to do before upgrading, and what applies to Kubernetes, the install script and Docker Compose, and known issues. The docs check requires notes for every release of the last ten minor lines.
 
 ## [1.9.2] - 2026-10-24
