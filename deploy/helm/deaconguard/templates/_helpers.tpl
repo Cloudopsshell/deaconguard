@@ -50,3 +50,27 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s-agent" $name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+withDefaults fills in every setting the release's values lack from
+files/defaults.yaml, a copy of values.yaml (CI checks they match). Helm
+upgrade --reuse-values renders a new chart with the values of the release
+it upgrades, which lack the settings added since; without this, a template
+reading one, such as server.agentService.enabled, fails. Only missing keys
+are added: a value the release set, such as server.enabled=false, is kept.
+Every template includes it first; it prints nothing.
+*/}}
+{{- define "deaconguard.withDefaults" -}}
+{{- include "deaconguard.fill" (list .Values (.Files.Get "files/defaults.yaml" | fromYaml)) -}}
+{{- end -}}
+
+{{- define "deaconguard.fill" -}}
+{{- $values := index . 0 -}}
+{{- range $key, $default := index . 1 -}}
+{{- if not (hasKey $values $key) -}}
+{{- $_ := set $values $key (deepCopy $default) -}}
+{{- else if and (kindIs "map" $default) (kindIs "map" (index $values $key)) -}}
+{{- include "deaconguard.fill" (list (index $values $key) $default) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

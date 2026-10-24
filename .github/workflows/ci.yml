@@ -184,6 +184,26 @@ jobs:
       - name: Pages, sidebar, links, headings and images
         run: node scripts/check-docs.mjs
 
+  helm-upgrade:
+    name: Helm upgrade
+    runs-on: [self-hosted, deaconguard]
+    steps:
+      - name: Check out source, with the release tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      # Renders the chart as helm upgrade --reuse-values does, with each earlier
+      # release's values, for a server, an agent-only and a cluster-agent
+      # release: what the Upgrade page tells people to run.
+      - name: Upgrade every earlier release
+        run: |
+          helm lint deploy/helm/deaconguard
+          sh scripts/check-chart-upgrade.sh
+
   release-config:
     name: Release config
     runs-on: [self-hosted, deaconguard]
