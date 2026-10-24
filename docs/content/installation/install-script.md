@@ -22,7 +22,7 @@ curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen 0.0.0.0:944
 curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen off
 ```
 
-See [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port). Allow 8443 only from your administrators' networks and 8444 from your machines' networks.
+See [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port). Allow 8443 only from your administrators' networks and 8444 from your machines' networks; for machines in another network or data centre, see [Reaching the agent port](../security/agent-network.md).
 
 ## Agent
 
