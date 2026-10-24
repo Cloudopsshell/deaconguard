@@ -56,6 +56,15 @@ server:
     # The networks of the machines whose agents connect, such as 10.0.0.0/16.
     loadBalancerSourceRanges: []
     port: 8444
+    # Local keeps each agent's own address, for the server's logs and audit
+    # log; empty leaves the cluster's default, Cluster.
+    externalTrafficPolicy: ""
+    # Which load balancer implementation answers, when the cluster has more
+    # than one, such as service.k8s.aws/nlb.
+    loadBalancerClass: ""
+    # A fixed node port (30000-32767) instead of a random one, for type
+    # NodePort, or a LoadBalancer whose nodes a firewall must allow.
+    nodePort: ""
   ingress:
     enabled: false
     className: ""
