@@ -4,7 +4,9 @@
 //   - every page is in docs/sidebars.js, and every sidebar entry has a page;
 //   - every link to another page (./page.md, ../dir/page.md#heading) points to
 //     a page that exists, and to a heading on it, if one is named;
-//   - every image under /img/ exists in docs/static/img.
+//   - every image under /img/ exists in docs/static/img;
+//   - every release of the newest 10 minor lines in CHANGELOG.md has upgrade
+//     notes, and older lines have none.
 //
 // Run it from the repository root: node scripts/check-docs.mjs
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -58,7 +60,7 @@ function anchors(text) {
 const all = pages(content);
 const ids = new Set(all.map(id));
 
-// Sidebar entries: strings, and { type: 'doc', id } items.
+// Sidebar entries: strings, { type: 'doc', id } items, and categories' pages.
 const sidebars = createRequire(import.meta.url)(join(root, 'sidebars.js'));
 const listed = new Set();
 (function walk(item) {
@@ -66,6 +68,8 @@ const listed = new Set();
   else if (Array.isArray(item)) item.forEach(walk);
   else if (item && typeof item === 'object') {
     if (item.type === 'doc' && item.id) listed.add(item.id);
+    // A category's own page.
+    if (item.link?.type === 'doc' && item.link.id) listed.add(item.link.id);
     if (item.items) walk(item.items);
     Object.values(item).forEach((value) => Array.isArray(value) && value.forEach(walk));
   }
@@ -103,6 +107,24 @@ for (const path of all) {
   for (const [, src] of text.matchAll(/(?:src|srcSet)="(\/img\/[^"\s]+)"/g)) {
     if (!existsSync(join(root, 'static', src))) problems.push(`${where}: image ${src} is not in docs/static/img`);
   }
+}
+
+// Upgrade notes: every release of the newest 10 minor lines in CHANGELOG.md has
+// a page, upgrade-notes/vX-Y/vX-Y-Z.md, and a row in the index's table; older
+// lines have none (the changelog keeps them).
+const keptLines = 10;
+const released = [...readFileSync('CHANGELOG.md', 'utf8').matchAll(/^## \[(\d+)\.(\d+)\.(\d+)\]/gm)].map((m) => m.slice(1, 4).map(Number));
+const lines = [...new Set(released.map(([major, minor]) => `${major}.${minor}`))]
+  .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+  .slice(0, keptLines);
+const notesIndex = join(content, 'upgrade-notes', 'index.md');
+const notesTable = existsSync(notesIndex) ? readFileSync(notesIndex, 'utf8') : '';
+for (const [major, minor, patch] of released) {
+  const page = `upgrade-notes/v${major}-${minor}/v${major}-${minor}-${patch}`;
+  const kept = lines.includes(`${major}.${minor}`);
+  if (kept && !ids.has(page)) problems.push(`release ${major}.${minor}.${patch} has no upgrade notes: add docs/content/${page}.md (see RELEASING.md)`);
+  if (kept && !notesTable.includes(`(./v${major}-${minor}/v${major}-${minor}-${patch}.md)`)) problems.push(`docs/content/upgrade-notes/index.md has no row for ${major}.${minor}.${patch}`);
+  if (!kept && ids.has(page)) problems.push(`docs/content/${page}.md is older than the last ${keptLines} minor lines: remove it, its row and its sidebar entry`);
 }
 
 if (problems.length) {
