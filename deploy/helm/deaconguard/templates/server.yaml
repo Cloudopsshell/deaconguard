@@ -41,6 +41,12 @@ spec:
   type: {{ .Values.server.agentService.type }}
   selector:
     {{- include "deaconguard.selector" $selector | nindent 4 }}
+  {{- with .Values.server.agentService.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.server.agentService.loadBalancerClass }}
+  loadBalancerClass: {{ . }}
+  {{- end }}
   {{- with .Values.server.agentService.loadBalancerSourceRanges }}
   loadBalancerSourceRanges:
     {{- toYaml . | nindent 4 }}
@@ -49,6 +55,9 @@ spec:
     - name: agents
       port: {{ .Values.server.agentService.port }}
       targetPort: agents
+      {{- with .Values.server.agentService.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
 {{- end }}
 ---
 # One server: its data is one SQLite database, on a volume of its own.
