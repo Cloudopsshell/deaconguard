@@ -93,7 +93,9 @@ The Service is `deaconguard-agents`; its `EXTERNAL-IP` is the address for tokens
 
 ### Through an Ingress
 
-The chart doesn't route agents through an Ingress, and you rarely need to. If you must, pass TLS through unchanged (Traefik's `IngressRouteTCP` with `passthrough: true`, ingress-nginx with `ssl-passthrough`), or end TLS there with a certificate the machines trust for its name. Details: [Agents outside the cluster](../installation/kubernetes.md#agents-outside-the-cluster).
+**With Traefik** (k3s's ingress controller), the chart can do it from 1.11.0: `server.agentRoute` adds an `IngressRouteTCP` that passes TLS through unchanged, so agents connect to `https://agents.example.com` on port 443, next to your other sites, with no load balancer on 8444. See [With Traefik](../installation/kubernetes.md#with-traefik).
+
+With other controllers, pass TLS through unchanged (ingress-nginx with `ssl-passthrough`), or end TLS there with a certificate the machines trust for its name. Details: [Agents outside the cluster](../installation/kubernetes.md#agents-outside-the-cluster).
 
 ## Steps for each provider
 
@@ -103,7 +105,7 @@ Each gives the `server.agentService` values, then what to set in the provider. R
 
 The cluster needs something that answers `LoadBalancer` Services:
 
-- **k3s** has **ServiceLB** built in. It opens 8444 on the nodes' own addresses, and honours `loadBalancerSourceRanges`. Use a node's private address in tokens, or a DNS name for several. To keep it to some nodes, label them `svccontroller.k3s.cattle.io/enablelb=true`.
+- **k3s** has **ServiceLB** built in. It opens 8444 on the nodes' own addresses, and honours `loadBalancerSourceRanges`. Use a node's private address in tokens, or a DNS name for several. To keep it to some nodes, label them `svccontroller.k3s.cattle.io/enablelb=true`. To bring agents in through k3s's Traefik on port 443 instead, next to your other sites, see [Through an Ingress](#through-an-ingress).
 - **MetalLB or kube-vip** gives the Service an address from a pool you set aside. Pick a pool on your private network. They don't filter clients themselves; kube-proxy applies `loadBalancerSourceRanges` on the nodes.
 
 ```yaml

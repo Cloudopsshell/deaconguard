@@ -105,6 +105,8 @@ The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs
 | `server.agentService.enabled`, `.type`, `.annotations`, `.loadBalancerSourceRanges`, `.port` | off, `LoadBalancer`, none, none, `8444` | A Service with only the agent port, for [agents outside the cluster](#agents-outside-the-cluster) |
 | `server.agentService.externalTrafficPolicy`, `.loadBalancerClass`, `.nodePort` | the cluster's defaults | `Local` keeps each agent's own address in the server's logs; the load balancer implementation to use, when there are several; a fixed node port (30000–32767) instead of a random one |
 | `server.ingress.enabled`, `.className`, `.annotations`, `.hosts`, `.tls` | off | An Ingress for the dashboard |
+| `server.ingress.traefik.enabled`, `.allowSourceRanges`, `.middlewares` | off, none, none | With Traefik (chart 1.11.0 and later): the ServersTransport and Service annotations Traefik needs to reach the dashboard, an IP allow list, and other middlewares; see [With Traefik](#with-traefik) |
+| `server.agentRoute.enabled`, `.host`, `.entryPoints` | off, none, `[websecure]` | Agents outside the cluster through Traefik on port 443, with TLS passed through (chart 1.11.0 and later); see [With Traefik](#with-traefik) |
 | `server.resources` | 100m CPU, 256 MiB requested; 1 GiB limit | The server needs about 450 MB while it checks an Ubuntu machine's packages |
 | `agent.enabled` | `false` | Install the agent DaemonSet |
 | `agent.enrollment.existingSecret`, `.secretKey` | `""`, `token` | The secret with the reusable token |
@@ -276,7 +278,8 @@ That adds the Service `deaconguard-agents`, a `LoadBalancer` with only port 8444
 
 **Keep it private, and limit who can reach it.** Each provider has its own annotation for an internal load balancer, and its own firewall: [Reaching the agent port](../security/agent-network.md) has the values for your own data centre (k3s ServiceLB, MetalLB), Hetzner, AWS, Azure, Google Cloud, DigitalOcean, Akamai/Linode and Oracle Cloud, and what to do when the machines are in another data centre or only reachable over the internet.
 
-- **Through an Ingress:** possible, but needs care. Agents check the server's certificate against the key in their token, or accept one their machine trusts for the server's name. So either pass the TLS connection through unchanged (Traefik's `IngressRouteTCP` with `passthrough: true`; ingress-nginx's `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, with passthrough turned on in the controller), or end TLS at the Ingress with a certificate the machines trust for its name. For the latter, allow request bodies of 80 MB (an agent's results can be that large; ingress-nginx allows 1 MB by default: `nginx.ingress.kubernetes.io/proxy-body-size: 80m`), and set `server.trustedProxies` to the ingress controller's network.
+- **Through Traefik on port 443:** set `server.agentRoute` (chart 1.11.0 and later): see [With Traefik](#with-traefik).
+- **Through another Ingress:** possible, but needs care. Agents check the server's certificate against the key in their token, or accept one their machine trusts for the server's name. So either pass the TLS connection through unchanged (Traefik's `IngressRouteTCP` with `passthrough: true`; ingress-nginx's `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, with passthrough turned on in the controller), or end TLS at the Ingress with a certificate the machines trust for its name. For the latter, allow request bodies of 80 MB (an agent's results can be that large; ingress-nginx allows 1 MB by default: `nginx.ingress.kubernetes.io/proxy-body-size: 80m`), and set `server.trustedProxies` to the ingress controller's network.
 - **NodePort** works for a test cluster, or a cluster without a load balancer: set `server.agentService.type=NodePort` and, from chart 1.10.0, a fixed `server.agentService.nodePort`, such as `30444`. In production, prefer a load balancer.
 
 Agents inside the cluster keep using `https://deaconguard.deaconguard.svc:8444`.
@@ -287,7 +290,56 @@ The server serves HTTPS itself. By default it creates a self-signed certificate 
 
 - **An Ingress for the dashboard:** set `server.ingress.*`, or start from the Kustomize example. The backend speaks HTTPS, so ingress-nginx needs `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`. Set `server.trustedProxies` to the ingress controller's pod network, such as `10.42.0.0/16`, and limit who can reach it, for example with `nginx.ingress.kubernetes.io/whitelist-source-range`.
 - **Your own certificate on the server:** put it in a `kubernetes.io/tls` secret and set `server.tls.existingSecret`. Agents accept the certificate whose key's fingerprint is in their token, or one their node trusts for the server's name. cert-manager gives a certificate a new key at each renewal by default, which agents enrolled before then don't know: set `privateKey.rotationPolicy: Never` on the Certificate, or keep the self-signed certificate on the server and put the trusted one on the Ingress.
-- The dashboard's Ingress is for people. Agents use port 8444: inside the cluster through the Service, outside through the [agent load balancer](#agents-outside-the-cluster).
+- The dashboard's Ingress is for people. Agents use port 8444: inside the cluster through the Service, outside through the [agent load balancer](#agents-outside-the-cluster) or, with Traefik, the [agent route](#with-traefik).
+
+### With Traefik
+
+Traefik, k3s's ingress controller, needs two things to reach the dashboard, which serves HTTPS itself: a `ServersTransport` and annotations on the Service. Without them it answers 404. From chart 1.11.0, `server.ingress.traefik.enabled` creates them, and can limit the dashboard to your addresses. `server.agentRoute` brings agents outside the cluster in on port 443 too, instead of a load balancer on 8444. The chart needs Traefik's CRDs (`traefik.io`), which k3s installs.
+
+```yaml
+server:
+  trustedProxies:
+    - 10.42.0.0/16                    # Traefik's pods (k3s's pod network)
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod   # if you use cert-manager
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    hosts:
+      - host: deaconguard.example.com
+    tls:
+      - secretName: deaconguard-dashboard-tls
+        hosts: [deaconguard.example.com]
+    traefik:
+      enabled: true
+      allowSourceRanges:              # who may open the dashboard; empty allows everyone
+        - 203.0.113.10/32
+  agentRoute:                         # optional: agents on https://agents.example.com
+    enabled: true
+    host: agents.example.com
+```
+
+- **`server.ingress.traefik.enabled`** creates a `ServersTransport` (`<release>-tls`) and points the Service at it, so Traefik connects to the dashboard over HTTPS. It skips checking the server's certificate, which is its own; the connection stays in the cluster.
+- **`allowSourceRanges`** adds an `ipAllowList` middleware (`<release>-allow`). Anyone else gets 403. `middlewares` adds others of your own, as `NAMESPACE-NAME@kubernetescrd`.
+- **`agentRoute`** adds an `IngressRouteTCP` that passes TLS through unchanged, matched by the name agents connect to, so they still check the server's own key. Point a DNS name at Traefik and create tokens with `https://agents.example.com`, on port 443. Turn `server.agentService` off if you used it.
+- **Traefik must see client addresses.** Otherwise every request seems to come from the node: the allow list can't tell people apart, sign-in limits apply to everyone at once, and the audit log shows one address. Set `externalTrafficPolicy: Local` on Traefik's own Service. On k3s:
+
+  ```yaml
+  apiVersion: helm.cattle.io/v1
+  kind: HelmChartConfig
+  metadata:
+    name: traefik
+    namespace: kube-system
+  spec:
+    valuesContent: |-
+      service:
+        spec:
+          externalTrafficPolicy: Local
+  ```
+
+  Apply it with `kubectl apply -f`; k3s redeploys Traefik. Check it in the dashboard: the **Audit log** should show your own address for your sign-in.
+- With a Cloudflare DNS record, keep it **DNS only**: Cloudflare's proxy ends TLS, which `agentRoute` can't pass through.
 
 ## Commands
 
