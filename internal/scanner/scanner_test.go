@@ -24,7 +24,7 @@ func response(body string) *http.Response {
 // leaves the findings unmarked.
 func exploitData(request *http.Request) (*http.Response, bool) {
 	switch request.URL.String() {
-	case advisory.KEVSource, advisory.EPSSSource:
+	case advisory.KEVSource, advisory.KEVMirror, advisory.EPSSSource:
 		return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, true
 	}
 	return nil, false
