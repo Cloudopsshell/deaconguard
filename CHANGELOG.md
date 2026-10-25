@@ -8,9 +8,15 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-10-25
+
 ### Fixed
 
 - **Exploit data on cloud servers:** when CISA's site refuses the Known Exploited Vulnerabilities download, as it does for some cloud providers' addresses such as Hetzner's (HTTP 403), the server takes the same catalog from CISA's copy on GitHub (`cisagov/kev-data`). Before, findings lost their "known exploited" marks there. Allow `raw.githubusercontent.com` if the server's outbound traffic is limited.
+
+### Changed
+
+- **Documentation:** the Kubernetes page's **With Traefik** section has steps for k3s/RKE2, Traefik's own Helm chart and a load balancer in front; **Agents outside the cluster** compares the agent Service and the agent route, and explains `externalTrafficPolicy` for agents; a **Troubleshooting** section covers the dashboard and agents. The README gives agents' default port as 8444.
 
 ## [1.11.0] - 2026-10-25
 
@@ -215,7 +221,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.1...HEAD
+[1.11.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.2...v1.10.0
 [1.9.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.1...v1.9.2
