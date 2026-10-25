@@ -264,25 +264,47 @@ Don't run the DaemonSet on nodes that already have the agent installed as a pack
 
 ## Agents outside the cluster
 
-Machines outside the cluster, such as virtual machines with the [install script](./install-script.md)'s agent, need a network path to the agent port, 8444. The Service is `ClusterIP`, inside the cluster only. Give the agent port a **load balancer of its own**, so the dashboard's port stays inside:
+Machines outside the cluster, such as virtual machines with the [install script](./install-script.md)'s agent, need a network path to the agent port. The server's Service is `ClusterIP`, inside the cluster only, so give agents a way in of their own. The dashboard stays inside either way:
+
+| | Agent Service (any cluster) | Agent route (Traefik, chart 1.11.0 and later) |
+| --- | --- | --- |
+| Agents connect to | `https://ADDRESS:8444`, a load balancer of its own | `https://agents.example.com`, port 443, next to your other sites |
+| Set | `server.agentService` | `server.agentRoute`: see [With Traefik](#with-traefik) |
+| Who may connect | `loadBalancerSourceRanges`, and your firewall | your firewall |
+| The Hosts page shows each agent | from its own address, with `externalTrafficPolicy: Local` | from Traefik's address |
+
+Agents inside the cluster keep using `https://deaconguard.deaconguard.svc:8444`.
+
+### With the agent Service
+
+```yaml
+# agent-service.yaml
+server:
+  agentService:
+    enabled: true
+    externalTrafficPolicy: Local      # record each agent's own address
+    loadBalancerSourceRanges:         # the agents' addresses; empty allows everyone
+      - 203.0.113.10/32
+```
 
 ```bash
 helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
   --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard --reset-then-reuse-values \
-  --set server.agentService.enabled=true \
-  --set 'server.agentService.loadBalancerSourceRanges={10.0.0.0/16}'
+  -f agent-service.yaml
 kubectl -n deaconguard get svc deaconguard-agents
 ```
 
-That adds the Service `deaconguard-agents`, a `LoadBalancer` with only port 8444. Create the machines' tokens with its address, such as `https://10.0.12.34:8444`. `loadBalancerSourceRanges` is the list of client addresses allowed to connect; empty allows everyone.
+That adds the Service `deaconguard-agents`, a `LoadBalancer` with only port 8444. Its `EXTERNAL-IP` is the address for the machines' tokens, such as `https://203.0.113.50:8444`, or point a DNS name at it.
 
-**Keep it private, and limit who can reach it.** Each provider has its own annotation for an internal load balancer, and its own firewall: [Reaching the agent port](../security/agent-network.md) has the values for your own data centre (k3s ServiceLB, MetalLB), Hetzner, AWS, Azure, Google Cloud, DigitalOcean, Akamai/Linode and Oracle Cloud, and what to do when the machines are in another data centre or only reachable over the internet.
+- **`loadBalancerSourceRanges`** is the list of addresses allowed to connect: your agents' public addresses, or your private network's range. A machine whose address isn't on it can't enroll (`context deadline exceeded`). Find a machine's public address with `curl -s https://api.ipify.org` on it. Limit 8444 in your provider's firewall too, and keep the NodePort range (30000–32767) closed there: `loadBalancerSourceRanges` doesn't cover it.
+- **`externalTrafficPolicy: Local`** keeps each agent's own address. Without it, the cluster may rewrite connections to a node's address, and every host shows as `from 10.42.0.1` or another cluster address. It is the agent Service's own setting, separate from your ingress controller's, which covers the dashboard. Set it with one node, MetalLB or a cloud load balancer. With k3s's ServiceLB on several nodes, every node still accepts agents, but only those that connect to the node running the server pod are recorded with their own address; the others show ServiceLB's address on their node. Point the agents' address (or its DNS name) at the server's node for their own addresses. After changing it, restart the agents that were already connected (`sudo systemctl restart deaconguard-agent`): a connection opened before keeps the old address.
+- **Keep it private.** Each provider has its own annotation for an internal load balancer, and its own firewall: [Reaching the agent port](../security/agent-network.md) has the values for your own data centre (k3s ServiceLB, MetalLB), Hetzner, AWS, Azure, Google Cloud, DigitalOcean, Akamai/Linode and Oracle Cloud, and what to do when the machines are in another data centre or only reachable over the internet.
 
-- **Through Traefik on port 443:** set `server.agentRoute` (chart 1.11.0 and later): see [With Traefik](#with-traefik).
-- **Through another Ingress:** possible, but needs care. Agents check the server's certificate against the key in their token, or accept one their machine trusts for the server's name. So either pass the TLS connection through unchanged (Traefik's `IngressRouteTCP` with `passthrough: true`; ingress-nginx's `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, with passthrough turned on in the controller), or end TLS at the Ingress with a certificate the machines trust for its name. For the latter, allow request bodies of 80 MB (an agent's results can be that large; ingress-nginx allows 1 MB by default: `nginx.ingress.kubernetes.io/proxy-body-size: 80m`), and set `server.trustedProxies` to the ingress controller's network.
-- **NodePort** works for a test cluster, or a cluster without a load balancer: set `server.agentService.type=NodePort` and, from chart 1.10.0, a fixed `server.agentService.nodePort`, such as `30444`. In production, prefer a load balancer.
+### Other ways in
 
-Agents inside the cluster keep using `https://deaconguard.deaconguard.svc:8444`.
+- **Through Traefik on port 443:** `server.agentRoute`; see [With Traefik](#with-traefik). Traefik passes TLS through and connects to the server itself, so the Hosts page shows Traefik's address for those agents.
+- **Through another Ingress:** possible, but needs care. Agents check the server's certificate against the key in their token, or accept one their machine trusts for the server's name. So either pass the TLS connection through unchanged (ingress-nginx's `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, with passthrough turned on in the controller), or end TLS at the Ingress with a certificate the machines trust for its name. For the latter, allow request bodies of 80 MB (an agent's results can be that large; ingress-nginx allows 1 MB by default: `nginx.ingress.kubernetes.io/proxy-body-size: 80m`), and set `server.trustedProxies` to the ingress controller's network.
+- **Without a load balancer:** `server.agentService.type=NodePort` and, from chart 1.10.0, a fixed `server.agentService.nodePort`, such as `30444`, open the agent port on every node. Enroll with a node's address and that port. `loadBalancerSourceRanges` doesn't apply to a node port, so your firewall is the only limit. Fine for a test cluster; in production, prefer a load balancer.
 
 ## Certificates and ingress
 
@@ -337,6 +359,8 @@ Unless Traefik sees each client's own address, every request seems to come from 
 | [Behind another load balancer](#behind-another-load-balancer) (HAProxy, F5, a cloud NLB) | PROXY protocol on the load balancer and Traefik | Your pod network | Yours |
 
 Check it: sign in, then open **Audit log**. Your sign-in should show your own address, not a `10.x` or other cluster address.
+
+This is about **Traefik's** Service, which carries the dashboard and your other sites. Agents on the [agent Service](#with-the-agent-service) (port 8444) don't pass through Traefik: that Service has its own setting, `server.agentService.externalTrafficPolicy`. Set both if you use both.
 
 ##### k3s or RKE2
 
@@ -394,14 +418,17 @@ ports:
 
 On k3s, put the same `ports:` block in the `HelmChartConfig`'s `valuesContent`. Turn it on at both ends together: while the load balancer sends PROXY headers and Traefik doesn't expect them, every connection through it fails. Traefik reads the header only from the addresses in `trustedIPs`; connections from elsewhere work as before. On AWS, the load balancer controller turns PROXY protocol on with `service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"` on Traefik's Service.
 
-#### Troubleshooting
+## Troubleshooting
 
 | You see | Cause | Fix |
 | --- | --- | --- |
-| **404** on the dashboard | `ingress.traefik.enabled` is off, or a `router.middlewares` annotation names a middleware that doesn't exist | Turn it on; remove hand-written Traefik annotations from `server.service` and `server.ingress` |
-| **403** for everyone, you included | Traefik doesn't see client addresses | [Keep client addresses](#traefik-must-see-client-addresses) |
-| The **Audit log** shows `10.x` addresses | The same | The same |
+| **404** on the dashboard | `server.ingress.traefik.enabled` is off, or a `router.middlewares` annotation names a middleware that doesn't exist | Turn it on; remove hand-written Traefik annotations from `server.service` and `server.ingress` |
+| **403** on the dashboard, for everyone, you included | Traefik doesn't see client addresses | [Keep client addresses](#traefik-must-see-client-addresses) |
+| The **Audit log** shows `10.x` addresses for sign-ins | The same | The same |
 | **403** from your address only | It isn't in `allowSourceRanges` | Add it; find it with `curl -s https://api.ipify.org` |
+| An agent's enrollment fails with `context deadline exceeded` | The machine's address isn't in `server.agentService.loadBalancerSourceRanges`, or a firewall blocks 8444 | Add its public address to both. On the machine, `curl -sk -o /dev/null -w '%{http_code}\n' https://ADDRESS:8444/agent/v1/job` prints `401` once it gets through; run the install command again |
+| A host shows **from 10.42.0.1** (or another cluster address) | The agent Service rewrites addresses, or the agent's connection is older than the change | Set `server.agentService.externalTrafficPolicy: Local`, then `sudo systemctl restart deaconguard-agent` on the machine |
+| A host shows **Traefik's address**, with `agentRoute` | Expected: Traefik passes TLS through and connects to the server itself | Use the agent Service if you need each agent's address |
 | Agents can't connect through `agentRoute` | A proxied (orange) Cloudflare record, or a wrong entry point | Make the record DNS only; set `agentRoute.entryPoints` to your HTTPS entry point |
 
 For a 404, Traefik's log names the missing object: `kubectl -n kube-system logs deploy/traefik` on k3s, or with your Traefik release's namespace.
