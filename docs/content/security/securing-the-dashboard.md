@@ -88,7 +88,7 @@ deaconguard serve --listen 0.0.0.0:8443 --trusted-proxy 10.42.0.0/16
 
 `--trusted-proxy` can be given more than once; `DEACONGUARD_TRUSTED_PROXIES` takes a comma-separated list, and the Helm chart's `server.trustedProxies` a list. For a request from a trusted proxy, the server takes the client's address from `X-Forwarded-For`: the last address in it that isn't a trusted proxy, so a client can't choose its own by sending the header. From anywhere else, it ignores the header.
 
-Make sure the proxy sets `X-Forwarded-For`; most do. Agents connect to the server directly, not through the proxy.
+Make sure the proxy sets `X-Forwarded-For`; most do. Your proxy must see clients' own addresses too: behind a cloud or k3s load balancer, that means `externalTrafficPolicy: Local` on the proxy's Service. With Traefik on Kubernetes, the Helm chart can set up the Ingress and an IP allow list for you: see [With Traefik](../installation/kubernetes.md#with-traefik). Agents connect to the server directly, not through the proxy.
 
 ## What DeaconGuard does not do
 
