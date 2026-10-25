@@ -43,7 +43,7 @@ jobs:
           path-to-document: https://github.com/Cloudopsshell/deaconguard/blob/main/CLA.md
           path-to-signatures: signatures/version1/cla.json
           branch: cla-signatures
-          allowlist: wilsonvj,dependabot[bot],github-actions[bot]
+          allowlist: shellctl,dependabot[bot],github-actions[bot]
           signed-commit-message: "$contributorName signed the CLA in $owner/$repo"
           create-file-commit-message: "Start the CLA signature list"
           custom-notsigned-prcomment: >-
