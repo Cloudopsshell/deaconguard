@@ -8,10 +8,17 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-25
+
 ### Added
 
 - **Helm, with Traefik:** `server.ingress.traefik.enabled` creates the `ServersTransport` and Service annotations Traefik needs to reach the dashboard (without them it answers 404), and `.allowSourceRanges` an IP allow list for it. `server.agentRoute` brings agents outside the cluster in through Traefik on port 443 with TLS passed through, instead of a load balancer on 8444. Both are off by default.
 - **Documentation:** a **With Traefik** section on the Kubernetes page, including the `externalTrafficPolicy: Local` setting Traefik needs to see client addresses.
+
+### Changed
+
+- Updated lucide-react (dashboard icons) and the release workflow's cosign installer (3.10.1, cosign 2.6.1).
+- The maintainer's GitHub account is now `shellctl` (CLA allowlist and MAINTAINERS.md).
 
 ## [1.10.0] - 2026-10-24
 
@@ -204,7 +211,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.2...v1.10.0
 [1.9.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.0...v1.9.1
