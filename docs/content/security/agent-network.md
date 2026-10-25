@@ -68,7 +68,7 @@ server:
     annotations: {}               # your provider's settings, as below
     loadBalancerSourceRanges:     # who may connect; empty means anyone
       - 10.0.0.0/16
-    externalTrafficPolicy: ""     # Local: the server sees each agent's own address
+    externalTrafficPolicy: Local  # record each agent's own address
     loadBalancerClass: ""         # which load balancer answers, if the cluster has several
     nodePort: ""                  # a fixed node port (30000-32767) instead of a random one
 ```
@@ -86,14 +86,14 @@ The Service is `deaconguard-agents`; its `EXTERNAL-IP` is the address for tokens
 - **The provider's own firewall still matters.** Set it as well, with the same ranges: it stops traffic before it reaches your network, and it doesn't change when someone edits the Helm values.
 - **Every `LoadBalancer` Service also opens a NodePort** (30000–32767) on each node, which `loadBalancerSourceRanges` doesn't cover. Make sure your nodes' firewall doesn't allow that range from outside.
 - **`externalTrafficPolicy`, `loadBalancerClass` and `nodePort`** (chart 1.10.0 and later) are standard Service settings, left to the cluster's defaults unless you set them:
-  - `externalTrafficPolicy: Local` delivers connections only to the node the server runs on, so the server, its logs and its audit log see each agent's own address rather than a node's. Some load balancers keep the address another way; the provider steps say so.
+  - `externalTrafficPolicy: Local` delivers connections only to the node the server runs on, so the server sees each agent's own address rather than a node's (`from 10.42.0.1` on the Hosts page). It's the agent Service's own setting, separate from your ingress controller's. With k3s's ServiceLB on several nodes, agents that connect to another node work, but show that node's ServiceLB address; see [With the agent Service](../installation/kubernetes.md#with-the-agent-service). Restart agents that were already connected after changing it.
   - `loadBalancerClass` picks which load balancer implementation creates the load balancer, when a cluster has more than one, such as MetalLB beside a cloud's own. It can't change once the Service exists.
   - `nodePort` fixes the node port that every `LoadBalancer` or `NodePort` Service opens, so a firewall rule or a token can name it and it doesn't change when you reinstall.
 - **`server.ingress` is not for agents.** It routes only to the dashboard, 8443.
 
 ### Through an Ingress
 
-**With Traefik** (k3s's ingress controller), the chart can do it from 1.11.0: `server.agentRoute` adds an `IngressRouteTCP` that passes TLS through unchanged, so agents connect to `https://agents.example.com` on port 443, next to your other sites, with no load balancer on 8444. See [With Traefik](../installation/kubernetes.md#with-traefik).
+**With Traefik** (k3s's ingress controller), the chart can do it from 1.11.0: `server.agentRoute` adds an `IngressRouteTCP` that passes TLS through unchanged, so agents connect to `https://agents.example.com` on port 443, next to your other sites, with no load balancer on 8444. The server then sees Traefik's address for those agents. See [With Traefik](../installation/kubernetes.md#with-traefik).
 
 With other controllers, pass TLS through unchanged (ingress-nginx with `ssl-passthrough`), or end TLS there with a certificate the machines trust for its name. Details: [Agents outside the cluster](../installation/kubernetes.md#agents-outside-the-cluster).
 
@@ -105,19 +105,20 @@ Each gives the `server.agentService` values, then what to set in the provider. R
 
 The cluster needs something that answers `LoadBalancer` Services:
 
-- **k3s** has **ServiceLB** built in. It opens 8444 on the nodes' own addresses, and honours `loadBalancerSourceRanges`. Use a node's private address in tokens, or a DNS name for several. To keep it to some nodes, label them `svccontroller.k3s.cattle.io/enablelb=true`. To bring agents in through k3s's Traefik on port 443 instead, next to your other sites, see [Through an Ingress](#through-an-ingress).
+- **k3s** has **ServiceLB** built in. It opens 8444 on the nodes' own addresses, and honours `loadBalancerSourceRanges`, also with `externalTrafficPolicy: Local`. Use a node's private address in tokens, or a DNS name for several. To keep it to some nodes, label them `svccontroller.k3s.cattle.io/enablelb=true`. To bring agents in through k3s's Traefik on port 443 instead, next to your other sites, see [Through an Ingress](#through-an-ingress).
 - **MetalLB or kube-vip** gives the Service an address from a pool you set aside. Pick a pool on your private network. They don't filter clients themselves; kube-proxy applies `loadBalancerSourceRanges` on the nodes.
 
 ```yaml
 server:
   agentService:
     enabled: true
+    externalTrafficPolicy: Local          # each agent's own address
     loadBalancerSourceRanges: [10.20.0.0/16]
 ```
 
 Then allow 8444 from the same ranges on your perimeter firewall (and the hosts' firewall, if they have one), and don't allow the NodePort range from outside. Machines in another site reach it over your site-to-site VPN.
 
-With MetalLB in layer 2 mode, the server sees connections as coming from the node that holds the address. Add `externalTrafficPolicy: Local` (chart 1.10.0 and later) for each agent's own address.
+Without `externalTrafficPolicy: Local`, the server sees connections as coming from a node (with MetalLB in layer 2 mode, the node that holds the address). With k3s's ServiceLB on several nodes, agents show their own address only when they connect to the server's node; see [With the agent Service](../installation/kubernetes.md#with-the-agent-service).
 
 **Without a load balancer**, a fixed node port (chart 1.10.0 and later) opens the agent port on every node:
 
@@ -139,7 +140,10 @@ Enroll with a node's address and that port, such as `https://10.20.0.11:30444`, 
 server:
   agentService:
     enabled: true
-    loadBalancerSourceRanges: [10.0.0.0/16, 203.0.113.10/32]
+    externalTrafficPolicy: Local          # each agent's own address
+    loadBalancerSourceRanges:
+      - 203.0.113.10/32                   # your servers' public addresses
+      - 10.0.0.0/16                       # your Hetzner network, if you use one
 ```
 
 - **Machines in Hetzner:** attach them and the k3s server to the same **Hetzner network**, and enroll with the k3s server's private address. Hetzner Cloud Firewalls don't filter traffic inside a private network, so the network itself is the boundary.
