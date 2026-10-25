@@ -1,0 +1,52 @@
+{{- include "deaconguard.withDefaults" . }}
+{{- $fullname := include "deaconguard.fullname" . }}
+{{- if and .Values.server.enabled .Values.server.ingress.enabled .Values.server.ingress.traefik.enabled }}
+# Traefik reaches the dashboard over HTTPS: the server's certificate is its
+# own (self-signed unless server.tls is set), and the connection stays in
+# the cluster.
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: {{ $fullname }}-tls
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  insecureSkipVerify: true
+{{- with .Values.server.ingress.traefik.allowSourceRanges }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-allow
+  labels:
+    {{- include "deaconguard.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  ipAllowList:
+    sourceRange:
+      {{- toYaml . | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- if and .Values.server.enabled .Values.server.agentRoute.enabled }}
+---
+# Agents through Traefik with TLS passed through: they still check the
+# server's own key.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ $fullname }}-agents
+  labels:
+    {{- include "deaconguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  entryPoints:
+    {{- toYaml .Values.server.agentRoute.entryPoints | nindent 4 }}
+  routes:
+    - match: HostSNI(`{{ required "server.agentRoute.host is required" .Values.server.agentRoute.host }}`)
+      services:
+        - name: {{ $fullname }}
+          port: {{ .Values.server.service.agentPort }}
+  tls:
+    passthrough: true
+{{- end }}

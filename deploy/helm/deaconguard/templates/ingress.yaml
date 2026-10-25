@@ -7,7 +7,22 @@ metadata:
   labels:
     {{- include "deaconguard.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
-  {{- with .Values.server.ingress.annotations }}
+  {{- $annotations := deepCopy (.Values.server.ingress.annotations | default dict) }}
+  {{- $traefik := .Values.server.ingress.traefik }}
+  {{- if $traefik.enabled }}
+  {{- $middlewares := list }}
+  {{- if $traefik.allowSourceRanges }}
+  {{- $middlewares = append $middlewares (printf "%s-%s-allow@kubernetescrd" .Release.Namespace (include "deaconguard.fullname" .)) }}
+  {{- end }}
+  {{- $middlewares = concat $middlewares ($traefik.middlewares | default list) }}
+  {{- with index $annotations "traefik.ingress.kubernetes.io/router.middlewares" }}
+  {{- $middlewares = append $middlewares . }}
+  {{- end }}
+  {{- with $middlewares }}
+  {{- $_ := set $annotations "traefik.ingress.kubernetes.io/router.middlewares" (join "," .) }}
+  {{- end }}
+  {{- end }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
