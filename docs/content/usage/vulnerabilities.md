@@ -15,7 +15,7 @@ The server downloads two public sources at most every 12 hours, keeps them in it
 | [EPSS](https://www.first.org/epss/), by FIRST | For every CVE, the chance of it being exploited in the next 30 days, updated daily. | **EPSS 42%**; **likely exploited** from 10% |
 | The distribution's own feed | The CVSS v3 base score and vector, where the distribution publishes them: Ubuntu, Red Hat and SUSE do; the others don't. | **CVSS 7.5** |
 
-The server needs HTTPS access to `www.cisa.gov` and `epss.empiricalsecurity.com` for this; see [Requirements](../installation/requirements.md#network). Agents send nothing more than before.
+The server needs HTTPS access to `www.cisa.gov` and `epss.empiricalsecurity.com` for this. CISA's site refuses downloads from some cloud providers' addresses, such as Hetzner's; the server then takes the same catalog from CISA's copy on GitHub (`raw.githubusercontent.com/cisagov/kev-data`), so allow that host too; see [Requirements](../installation/requirements.md#network). Agents send nothing more than before.
 
 When a source can't be downloaded and isn't cached, the scan says so under **Exploit data**, and its vulnerabilities are not marked either way: missing data is never shown as "not exploited". Scans made before 0.16.0 have no exploit data; the dashboard says how many hosts are waiting for their next scan.
 

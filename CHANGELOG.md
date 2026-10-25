@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exploit data on cloud servers:** when CISA's site refuses the Known Exploited Vulnerabilities download, as it does for some cloud providers' addresses such as Hetzner's (HTTP 403), the server takes the same catalog from CISA's copy on GitHub (`cisagov/kev-data`). Before, findings lost their "known exploited" marks there. Allow `raw.githubusercontent.com` if the server's outbound traffic is limited.
+
 ## [1.11.0] - 2026-10-25
 
 ### Added
