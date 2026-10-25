@@ -8,6 +8,11 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Helm, with Traefik:** `server.ingress.traefik.enabled` creates the `ServersTransport` and Service annotations Traefik needs to reach the dashboard (without them it answers 404), and `.allowSourceRanges` an IP allow list for it. `server.agentRoute` brings agents outside the cluster in through Traefik on port 443 with TLS passed through, instead of a load balancer on 8444. Both are off by default.
+- **Documentation:** a **With Traefik** section on the Kubernetes page, including the `externalTrafficPolicy: Local` setting Traefik needs to see client addresses.
+
 ## [1.10.0] - 2026-10-24
 
 ### Added

@@ -5,7 +5,8 @@
 # values.yaml, so a template that reads a setting added since must still
 # render. For each release tag with a chart, this renders the chart here with
 # that release's values.yaml, as Helm does, for a server, an agent-only and a
-# cluster-agent release, and checks what comes out.
+# cluster-agent release, and with the Traefik options, and checks what comes
+# out.
 #
 # Needs helm and the release tags (git fetch --tags).
 set -eu
@@ -55,6 +56,13 @@ for release in $releases; do
 		expect "$release server" 'kind: DaemonSet' absent || ok=no
 	render "$release server with agent Service" "$values" --set server.agentService.enabled=true &&
 		expect "$release server with agent Service" 'name: deaconguard-agents$' present || ok=no
+	render "$release server with Traefik" "$values" --set server.ingress.enabled=true \
+		--set 'server.ingress.hosts[0].host=deaconguard.example.com' --set server.ingress.traefik.enabled=true \
+		--set 'server.ingress.traefik.allowSourceRanges={192.0.2.0/24}' \
+		--set server.agentRoute.enabled=true --set server.agentRoute.host=agents.example.com &&
+		expect "$release server with Traefik" 'kind: ServersTransport' present &&
+		expect "$release server with Traefik" 'deaconguard-allow@kubernetescrd' present &&
+		expect "$release server with Traefik" 'kind: IngressRouteTCP' present || ok=no
 	render "$release agent only" "$values" --set server.enabled=false --set agent.enabled=true \
 		--set agent.enrollment.existingSecret=deaconguard-enrollment &&
 		expect "$release agent only" 'kind: DaemonSet' present &&

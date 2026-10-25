@@ -74,6 +74,26 @@ server:
     # - secretName: deaconguard-tls
     #   hosts: [deaconguard.example.com]
     tls: []
+    # Traefik, such as k3s's: the chart creates what Traefik needs to reach
+    # the dashboard, which serves HTTPS itself (a ServersTransport and the
+    # Service's annotations), and an IP allow list. Needs Traefik's CRDs
+    # (traefik.io). Set trustedProxies to Traefik's pod network too.
+    traefik:
+      enabled: false
+      # Who may open the dashboard, such as 203.0.113.10/32; empty allows
+      # everyone. Traefik must see client addresses: its own Service needs
+      # externalTrafficPolicy: Local.
+      allowSourceRanges: []
+      # Other Traefik middlewares for the dashboard, as
+      # NAMESPACE-NAME@kubernetescrd.
+      middlewares: []
+  # Agents outside the cluster through Traefik on port 443, instead of
+  # agentService: an IngressRouteTCP that passes TLS through unchanged, so
+  # agents still check the server's own key. Tokens then use https://HOST.
+  agentRoute:
+    enabled: false
+    host: ""
+    entryPoints: [websecure]
   resources:
     requests:
       cpu: 100m

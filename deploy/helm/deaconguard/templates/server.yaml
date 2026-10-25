@@ -8,7 +8,12 @@ metadata:
   labels:
     {{- include "deaconguard.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
-  {{- with .Values.server.service.annotations }}
+  {{- $annotations := deepCopy (.Values.server.service.annotations | default dict) }}
+  {{- if and .Values.server.ingress.enabled .Values.server.ingress.traefik.enabled }}
+  {{- $_ := set $annotations "traefik.ingress.kubernetes.io/service.serversscheme" "https" }}
+  {{- $_ := set $annotations "traefik.ingress.kubernetes.io/service.serverstransport" (printf "%s-%s-tls@kubernetescrd" .Release.Namespace (include "deaconguard.fullname" .)) }}
+  {{- end }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
