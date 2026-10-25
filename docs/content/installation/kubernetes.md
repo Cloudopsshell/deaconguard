@@ -294,12 +294,12 @@ The server serves HTTPS itself. By default it creates a self-signed certificate 
 
 ### With Traefik
 
-Traefik, k3s's ingress controller, needs two things to reach the dashboard, which serves HTTPS itself: a `ServersTransport` and annotations on the Service. Without them it answers 404. From chart 1.11.0, `server.ingress.traefik.enabled` creates them, and can limit the dashboard to your addresses. `server.agentRoute` brings agents outside the cluster in on port 443 too, instead of a load balancer on 8444. The chart needs Traefik's CRDs (`traefik.io`), which k3s installs.
+Traefik needs two things to reach the dashboard, which serves HTTPS itself: a `ServersTransport` and annotations on the Service. Without them it answers 404. From chart 1.11.0, `server.ingress.traefik.enabled` creates them, and can limit the dashboard to your addresses; `server.agentRoute` brings agents outside the cluster in on port 443 too, instead of a load balancer on 8444. This works with any Traefik 3 that has its CRDs (`traefik.io`). One step differs by how Traefik is installed, [keeping client addresses](#traefik-must-see-client-addresses); the rest is the same everywhere:
 
 ```yaml
 server:
   trustedProxies:
-    - 10.42.0.0/16                    # Traefik's pods (k3s's pod network)
+    - 10.42.0.0/16                    # your pod network: see the table below
   ingress:
     enabled: true
     className: traefik
@@ -318,28 +318,93 @@ server:
   agentRoute:                         # optional: agents on https://agents.example.com
     enabled: true
     host: agents.example.com
+    entryPoints: [websecure]          # your Traefik's HTTPS entry point
 ```
 
-- **`server.ingress.traefik.enabled`** creates a `ServersTransport` (`<release>-tls`) and points the Service at it, so Traefik connects to the dashboard over HTTPS. It skips checking the server's certificate, which is its own; the connection stays in the cluster.
-- **`allowSourceRanges`** adds an `ipAllowList` middleware (`<release>-allow`). Anyone else gets 403. `middlewares` adds others of your own, as `NAMESPACE-NAME@kubernetescrd`.
-- **`agentRoute`** adds an `IngressRouteTCP` that passes TLS through unchanged, matched by the name agents connect to, so they still check the server's own key. Point a DNS name at Traefik and create tokens with `https://agents.example.com`, on port 443. Turn `server.agentService` off if you used it.
-- **Traefik must see client addresses.** Otherwise every request seems to come from the node: the allow list can't tell people apart, sign-in limits apply to everyone at once, and the audit log shows one address. Set `externalTrafficPolicy: Local` on Traefik's own Service. On k3s:
+- **`server.ingress.traefik.enabled`** creates a `ServersTransport` (`<release>-tls`) and points the Service at it, so Traefik connects to the dashboard over HTTPS. It skips checking the server's certificate, which is its own; the connection stays in the cluster. Don't add these annotations by hand as well.
+- **`allowSourceRanges`** adds an `ipAllowList` middleware (`<release>-allow`). Anyone else gets 403. `middlewares` adds others of your own, as `NAMESPACE-NAME@kubernetescrd`; don't name the allow list in a `router.middlewares` annotation yourself.
+- **`trustedProxies`** is the network of Traefik's pods, so the server believes the client address Traefik passes on.
+- **`agentRoute`** adds an `IngressRouteTCP` that passes TLS through unchanged, matched by the name agents connect to, so they still check the server's own key. Point a DNS name at Traefik and create tokens with `https://agents.example.com`, on port 443. Turn `server.agentService` off if you used it. With Cloudflare, keep the record **DNS only**: its proxy ends TLS, which the route can't pass through.
 
-  ```yaml
-  apiVersion: helm.cattle.io/v1
-  kind: HelmChartConfig
-  metadata:
-    name: traefik
-    namespace: kube-system
+#### Traefik must see client addresses
+
+Unless Traefik sees each client's own address, every request seems to come from a node: the allow list blocks everyone (403), sign-in limits apply to everyone at once, and the audit log shows one address. How to keep the address depends on how Traefik is installed:
+
+| Your Traefik | What to change | `trustedProxies` | Entry point |
+| --- | --- | --- | --- |
+| [k3s or RKE2's own](#k3s-or-rke2) | A `HelmChartConfig` in `kube-system` | `10.42.0.0/16` | `websecure` |
+| [Installed from Traefik's Helm chart](#traefiks-own-helm-chart) (on-premise, MetalLB, cloud) | Your Traefik values: `service.spec.externalTrafficPolicy: Local` | Your pod network, such as `10.244.0.0/16` (Flannel) or `192.168.0.0/16` (Calico) | `websecure`, or yours |
+| [Behind another load balancer](#behind-another-load-balancer) (HAProxy, F5, a cloud NLB) | PROXY protocol on the load balancer and Traefik | Your pod network | Yours |
+
+Check it: sign in, then open **Audit log**. Your sign-in should show your own address, not a `10.x` or other cluster address.
+
+##### k3s or RKE2
+
+k3s installs Traefik itself; change its Service with a `HelmChartConfig`:
+
+```yaml
+# traefik-config.yaml
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local
+```
+
+```bash
+kubectl apply -f traefik-config.yaml
+kubectl -n kube-system get svc traefik -o jsonpath='{.spec.externalTrafficPolicy}{"\n"}'
+```
+
+k3s redeploys Traefik within a minute; the second command then prints `Local`. If you already have a `HelmChartConfig` named `traefik`, add `externalTrafficPolicy: Local` to its `valuesContent` instead. It applies to all your sites, which then see their visitors' addresses too.
+
+##### Traefik's own Helm chart
+
+When you installed Traefik yourself, with its chart (`oci://ghcr.io/traefik/helm/traefik`), set it in your Traefik values and upgrade that release:
+
+```yaml
+# your Traefik values
+service:
   spec:
-    valuesContent: |-
-      service:
-        spec:
-          externalTrafficPolicy: Local
-  ```
+    externalTrafficPolicy: Local
+```
 
-  Apply it with `kubectl apply -f`; k3s redeploys Traefik. Check it in the dashboard: the **Audit log** should show your own address for your sign-in.
-- With a Cloudflare DNS record, keep it **DNS only**: Cloudflare's proxy ends TLS, which `agentRoute` can't pass through.
+```bash
+helm upgrade traefik oci://ghcr.io/traefik/helm/traefik -n traefik --reuse-values -f traefik-values.yaml
+```
+
+With `Local`, only nodes that run a Traefik pod take the traffic: MetalLB announces the address from those nodes, and cloud load balancers send to those. Run Traefik on more than one node (`replicas: 2`, or `deployment.kind: DaemonSet`) so a node going down doesn't take the dashboard with it. Traefik on the host network (`hostNetwork: true`) sees client addresses already and needs no change.
+
+##### Behind another load balancer
+
+A TCP load balancer in front of Traefik (HAProxy, F5, a cloud network load balancer) hides the address itself. Turn on PROXY protocol (version 2) towards Traefik on the load balancer, and tell Traefik to trust it, in your Traefik values:
+
+```yaml
+ports:
+  websecure:
+    proxyProtocol:
+      trustedIPs:
+        - 10.0.0.5/32                 # your load balancer's addresses
+```
+
+On k3s, put the same `ports:` block in the `HelmChartConfig`'s `valuesContent`. Turn it on at both ends together: while the load balancer sends PROXY headers and Traefik doesn't expect them, every connection through it fails. Traefik reads the header only from the addresses in `trustedIPs`; connections from elsewhere work as before. On AWS, the load balancer controller turns PROXY protocol on with `service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"` on Traefik's Service.
+
+#### Troubleshooting
+
+| You see | Cause | Fix |
+| --- | --- | --- |
+| **404** on the dashboard | `ingress.traefik.enabled` is off, or a `router.middlewares` annotation names a middleware that doesn't exist | Turn it on; remove hand-written Traefik annotations from `server.service` and `server.ingress` |
+| **403** for everyone, you included | Traefik doesn't see client addresses | [Keep client addresses](#traefik-must-see-client-addresses) |
+| The **Audit log** shows `10.x` addresses | The same | The same |
+| **403** from your address only | It isn't in `allowSourceRanges` | Add it; find it with `curl -s https://api.ipify.org` |
+| Agents can't connect through `agentRoute` | A proxied (orange) Cloudflare record, or a wrong entry point | Make the record DNS only; set `agentRoute.entryPoints` to your HTTPS entry point |
+
+For a 404, Traefik's log names the missing object: `kubectl -n kube-system logs deploy/traefik` on k3s, or with your Traefik release's namespace.
 
 ## Commands
 
