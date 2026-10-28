@@ -249,7 +249,14 @@ function RepositoryTags({ login, repository, onBack, onDone }: { login: Registry
               value={pattern}
               onChange={(event) => setPattern(event.target.value)}
               placeholder="empty: every tag"
-              hint="A regular expression. ^ and $ anchor it to the whole tag."
+              hint={
+                <>
+                  A regular expression, such as <code>^production-</code>. ^ and $ anchor it to the whole tag.{" "}
+                  <a href="https://docs.deaconguard.io/usage/images#tag-pattern-examples" target="_blank" rel="noreferrer" className="underline">
+                    More examples
+                  </a>
+                </>
+              }
               className="font-mono"
             />
             <Field label="Keep the newest" type="number" min={1} max={20} value={keep} onChange={(event) => setKeep(Number(event.target.value) || 1)} />

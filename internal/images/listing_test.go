@@ -122,3 +122,49 @@ func TestECRAPI(t *testing.T) {
 		t.Fatalf("a refused action: %v", err)
 	}
 }
+
+// TestDocumentedTagPatterns checks the examples in docs/content/usage/images.md.
+func TestDocumentedTagPatterns(t *testing.T) {
+	const sha = "12c8a460dcba7d3950828e52476fe34a7f5a91a3"
+	for _, example := range []struct {
+		pattern      string
+		match, other []string
+	}{
+		{``, []string{"v1.4.2", "latest", sha}, nil},
+		{`^v?\d+\.\d+\.\d+$`, []string{"v1.4.2", "1.4.2"}, []string{"v1.4.2-rc.1", "latest"}},
+		{`^production-`, []string{"production-" + sha + "-1791137998"}, []string{sha, "pre-production-" + sha}},
+		{`^production-[0-9a-f]{40}-\d+$`, []string{"production-" + sha + "-1791137998"}, []string{"production-test", "production-" + sha}},
+		{`^(production|staging)-`, []string{"production-" + sha, "staging-" + sha}, []string{"dev-" + sha}},
+		{`^main-`, []string{"main-4f2a9c1"}, []string{"maintenance-1"}},
+		{`^latest$`, []string{"latest"}, []string{"latest-arm64"}},
+		{`^[0-9a-f]{40}$`, []string{sha}, []string{"production-" + sha}},
+		{`(?i)^production-`, []string{"Production-1"}, nil},
+	} {
+		var tags []TagInfo
+		for _, tag := range append(append([]string{}, example.match...), example.other...) {
+			tags = append(tags, TagInfo{Tag: tag})
+		}
+		matched, err := MatchTags(tags, example.pattern)
+		if err != nil {
+			t.Fatalf("%q: %v", example.pattern, err)
+		}
+		got := map[string]bool{}
+		for _, tag := range matched {
+			got[tag.Tag] = true
+		}
+		for _, tag := range example.match {
+			if !got[tag] {
+				t.Errorf("%q should match %q", example.pattern, tag)
+			}
+		}
+		for _, tag := range example.other {
+			if got[tag] {
+				t.Errorf("%q shouldn't match %q", example.pattern, tag)
+			}
+		}
+	}
+	// RE2 has no look-ahead, as the docs say.
+	if _, err := CompileTagPattern(`^(?!dev-)`); err == nil {
+		t.Error("a look-ahead was accepted")
+	}
+}

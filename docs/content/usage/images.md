@@ -47,6 +47,30 @@ A **watched repository** scans each new image pushed to it, without anyone addin
 - **The first check** scans the newest matching tags at once. After that, a tag that appears, or that is pushed again with a new image, is scanned. **Check now** checks at once.
 - **Newest** is by push time on Amazon ECR. Other registries don't say when a tag was pushed: the first check counts tags by version, and later a tag that appears counts as the newest.
 
+### Tag pattern examples
+
+A pattern is a [regular expression](https://github.com/google/re2/wiki/Syntax) tested against each tag. Anchor it: `^` marks the start of the tag and `$` the end, so `^production-` matches `production-12c8a460…` but not `pre-production-12c8a460…`, and without `^` it would match both.
+
+| You want | Pattern | Matches | Doesn't match |
+| --- | --- | --- | --- |
+| Every tag | *(empty)* | everything | |
+| Releases | `^v?\d+\.\d+\.\d+$` | `v1.4.2`, `1.4.2` | `v1.4.2-rc.1`, `latest` |
+| Only `production-` builds | `^production-` | `production-12c8a460…-1791137998` | `12c8a460…`, `pre-production-12c8a460…` |
+| Exactly `production-<commit>-<time>` | `^production-[0-9a-f]{40}-\d+$` | `production-12c8a460dcba7d3950828e52476fe34a7f5a91a3-1791137998` | `production-test` |
+| Production or staging builds | `^(production\|staging)-` | `production-…`, `staging-…` | `dev-…` |
+| Main-branch builds | `^main-` | `main-4f2a9c1` | `maintenance-1` |
+| One moving tag | `^latest$` | `latest` | `latest-arm64` |
+| A commit SHA alone | `^[0-9a-f]{40}$` | `12c8a460dcba7d3950828e52476fe34a7f5a91a3` | `production-12c8a460…` |
+
+RE2 has no look-ahead, so "every tag except `dev-`" can't be written as one pattern: list the prefixes you do want instead, such as `^(production|staging)-`. Upper and lower case differ; `(?i)` at the start ignores case.
+
+**One pattern or several watches?** Several kinds of tags can be watched in two ways:
+
+- **One watch, with `|`**, such as `^(production|staging)-`: one list of the newest matching tags, so **Keep the newest 5** keeps the 5 newest of both kinds together.
+- **Several watches on the same repository**, one per pattern: each keeps its own newest tags, such as the newest 5 `production-` builds and the newest 2 `staging-` builds. Browse the repository again and watch it with another pattern.
+
+A tag matched by two watches is added and scanned once.
+
 The images a watch adds are listed under **Images** like any other, marked "Added by a watched repository", and their scans say `watch: repository added` or `watch: new push of TAG`. Changing a watch's pattern starts it afresh. Removing a watch keeps the images it added, no longer watched. When a check fails, the watch says why, with the whole message under **Show all**, until a check works or the registry's login is saved again.
 
 New known exploited and critical vulnerabilities in an image, and failed scans, are sent to the [notification](./notifications.md) channels subscribed to those events, as for hosts.
