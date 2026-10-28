@@ -253,7 +253,13 @@ func (c *Client) get(ctx context.Context, ref Reference, path, accept string) (*
 
 func (c *Client) request(ctx context.Context, method string, ref Reference, path, accept string) (*http.Response, error) {
 	address := fmt.Sprintf("%s://%s/v2/%s%s", c.Scheme, ref.Registry, ref.Repository, path)
-	key := ref.Registry + "/" + ref.Repository
+	return c.send(ctx, method, address, ref.Registry, ref.String(), "repository:"+ref.Repository+":pull", accept)
+}
+
+// send makes a request to a registry, logging in for scope when the
+// registry asks. what names the image or registry in errors.
+func (c *Client) send(ctx context.Context, method, address, registry, what, scope, accept string) (*http.Response, error) {
+	key := registry + "/" + scope
 	for attempt := 0; attempt < 2; attempt++ {
 		request, err := http.NewRequestWithContext(ctx, method, address, nil)
 		if err != nil {
@@ -279,7 +285,7 @@ func (c *Client) request(ctx context.Context, method string, ref Reference, path
 		response.Body.Close()
 		switch {
 		case response.StatusCode == http.StatusUnauthorized && attempt == 0 && challenge != "":
-			authorization, err := c.login(ctx, ref, challenge)
+			authorization, err := c.login(ctx, registry, what, scope, challenge)
 			if err != nil {
 				return nil, err
 			}
@@ -290,29 +296,29 @@ func (c *Client) request(ctx context.Context, method string, ref Reference, path
 			c.tokens[key] = authorization
 			c.mu.Unlock()
 		case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
-			return nil, fmt.Errorf("%s: %w", ref, ErrUnauthorized)
+			return nil, fmt.Errorf("%s: %w", what, ErrUnauthorized)
 		case response.StatusCode == http.StatusNotFound:
-			return nil, fmt.Errorf("%s: not found in the registry (or it's private and needs a login)", ref)
+			return nil, fmt.Errorf("%s: not found in the registry (or it's private and needs a login)", what)
 		case response.StatusCode == http.StatusTooManyRequests:
-			return nil, fmt.Errorf("%s: the registry is rate-limiting requests; try again later, or add a login for it", ref)
+			return nil, fmt.Errorf("%s: the registry is rate-limiting requests; try again later, or add a login for it", what)
 		default:
-			return nil, fmt.Errorf("%s: the registry answered %s", ref, response.Status)
+			return nil, fmt.Errorf("%s: the registry answered %s", what, response.Status)
 		}
 	}
-	return nil, fmt.Errorf("%s: %w", ref, ErrUnauthorized)
+	return nil, fmt.Errorf("%s: %w", what, ErrUnauthorized)
 }
 
-// login answers a WWW-Authenticate challenge.
-func (c *Client) login(ctx context.Context, ref Reference, challenge string) (string, error) {
+// login answers a WWW-Authenticate challenge, for scope.
+func (c *Client) login(ctx context.Context, registry, what, scope, challenge string) (string, error) {
 	credentials, haveLogin := Credentials{}, false
 	if c.Credentials != nil {
-		credentials, haveLogin = c.Credentials(ref.Registry)
+		credentials, haveLogin = c.Credentials(registry)
 	}
 	scheme, params := parseChallenge(challenge)
 	switch strings.ToLower(scheme) {
 	case "basic":
 		if !haveLogin {
-			return "", fmt.Errorf("%s: %w", ref, ErrUnauthorized)
+			return "", fmt.Errorf("%s: %w", what, ErrUnauthorized)
 		}
 		request, _ := http.NewRequest(http.MethodGet, "http://x", nil)
 		request.SetBasicAuth(credentials.Username, credentials.Password)
@@ -321,9 +327,9 @@ func (c *Client) login(ctx context.Context, ref Reference, challenge string) (st
 		if !haveLogin {
 			credentials = Credentials{}
 		}
-		return c.bearerToken(ctx, ref.String(), ref.Registry, params, "repository:"+ref.Repository+":pull", credentials)
+		return c.bearerToken(ctx, what, registry, params, scope, credentials)
 	}
-	return "", fmt.Errorf("%s: the registry asks for a %q login, which DeaconGuard doesn't support", ref, scheme)
+	return "", fmt.Errorf("%s: the registry asks for a %q login, which DeaconGuard doesn't support", what, scheme)
 }
 
 // bearerToken gets a token from the login service a Bearer challenge names,

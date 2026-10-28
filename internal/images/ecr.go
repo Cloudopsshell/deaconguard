@@ -49,32 +49,9 @@ func ECRToken(ctx context.Context, client *http.Client, registry, endpoint, keyI
 			endpoint = "https://api.ecr." + region + ".amazonaws.com.cn/"
 		}
 	}
-	body := []byte("{}")
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	answer, err := ecrCall(ctx, client, registry, endpoint, region, keyID, secret, "GetAuthorizationToken", []byte("{}"), now)
 	if err != nil {
 		return Credentials{}, time.Time{}, err
-	}
-	request.Header.Set("Content-Type", "application/x-amz-json-1.1")
-	request.Header.Set("X-Amz-Target", "AmazonEC2ContainerRegistry_V20150921.GetAuthorizationToken")
-	request.Header.Set("User-Agent", buildinfo.UserAgent())
-	signV4(request, body, keyID, secret, region, "ecr", now)
-	response, err := client.Do(request)
-	if err != nil {
-		return Credentials{}, time.Time{}, fmt.Errorf("get an ECR login for %s: %w", registry, err)
-	}
-	defer response.Body.Close()
-	answer, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if response.StatusCode != http.StatusOK {
-		var failure struct {
-			Type    string `json:"__type"`
-			Message string `json:"message"`
-		}
-		json.Unmarshal(answer, &failure)
-		reason := strings.TrimSpace(failure.Type + ": " + failure.Message)
-		if failure.Type == "" {
-			reason = response.Status
-		}
-		return Credentials{}, time.Time{}, fmt.Errorf("%s: %w (AWS answered %s)", registry, ErrUnauthorized, reason)
 	}
 	var result struct {
 		AuthorizationData []struct {
@@ -95,6 +72,142 @@ func ECRToken(ctx context.Context, client *http.Client, registry, endpoint, keyI
 		expires = now.Add(12 * time.Hour)
 	}
 	return Credentials{Username: user, Password: password}, expires, nil
+}
+
+// ecrCall calls one action of the ECR API with an AWS access key, and
+// returns its answer, or AWS's reason for refusing.
+func ecrCall(ctx context.Context, client *http.Client, registry, endpoint, region, keyID, secret, action string, body []byte, now time.Time) ([]byte, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/x-amz-json-1.1")
+	request.Header.Set("X-Amz-Target", "AmazonEC2ContainerRegistry_V20150921."+action)
+	request.Header.Set("User-Agent", buildinfo.UserAgent())
+	signV4(request, body, keyID, secret, region, "ecr", now)
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("call ECR's %s for %s: %w", action, registry, err)
+	}
+	defer response.Body.Close()
+	answer, _ := io.ReadAll(io.LimitReader(response.Body, 16<<20))
+	if response.StatusCode != http.StatusOK {
+		var failure struct {
+			Type    string `json:"__type"`
+			Message string `json:"message"`
+		}
+		json.Unmarshal(answer, &failure)
+		reason := strings.TrimSpace(failure.Type + ": " + failure.Message)
+		if failure.Type == "" {
+			reason = response.Status
+		}
+		return nil, fmt.Errorf("%s: %w (AWS answered %s to %s)", registry, ErrUnauthorized, reason, action)
+	}
+	return answer, nil
+}
+
+// ECRAPI lists repositories and images with the ECR API, which, unlike the
+// registry API, also says when each image was pushed. Its key needs
+// ecr:DescribeRepositories and ecr:DescribeImages.
+type ECRAPI struct {
+	Client             *http.Client
+	Registry, Endpoint string
+	KeyID, Secret      string
+}
+
+func (api ECRAPI) call(ctx context.Context, action string, request any, into any) error {
+	region, ok := ECRRegion(api.Registry)
+	if !ok {
+		return fmt.Errorf("%s is not an Amazon ECR registry host", api.Registry)
+	}
+	endpoint := api.Endpoint
+	if endpoint == "" {
+		endpoint = "https://api.ecr." + region + ".amazonaws.com/"
+		if strings.HasSuffix(api.Registry, ".cn") {
+			endpoint = "https://api.ecr." + region + ".amazonaws.com.cn/"
+		}
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	answer, err := ecrCall(ctx, api.Client, api.Registry, endpoint, region, api.KeyID, api.Secret, action, body, time.Now())
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(answer, into); err != nil {
+		return fmt.Errorf("%s: unreadable answer to %s: %w", api.Registry, action, err)
+	}
+	return nil
+}
+
+// account is the AWS account an ECR registry host belongs to.
+func (api ECRAPI) account() string {
+	account, _, _ := strings.Cut(api.Registry, ".")
+	return account
+}
+
+// Repositories lists the registry's repositories.
+func (api ECRAPI) Repositories(ctx context.Context) ([]string, error) {
+	var names []string
+	token := ""
+	for len(names) < maxListed {
+		request := map[string]any{"registryId": api.account(), "maxResults": 1000}
+		if token != "" {
+			request["nextToken"] = token
+		}
+		var page struct {
+			Repositories []struct {
+				Name string `json:"repositoryName"`
+			} `json:"repositories"`
+			NextToken string `json:"nextToken"`
+		}
+		if err := api.call(ctx, "DescribeRepositories", request, &page); err != nil {
+			return nil, err
+		}
+		for _, repository := range page.Repositories {
+			names = append(names, repository.Name)
+		}
+		if token = page.NextToken; token == "" {
+			break
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// Tags lists a repository's tagged images, with their digests and push
+// times.
+func (api ECRAPI) Tags(ctx context.Context, repository string) ([]TagInfo, error) {
+	var tags []TagInfo
+	token := ""
+	for len(tags) < maxListed {
+		request := map[string]any{"registryId": api.account(), "repositoryName": repository, "maxResults": 1000, "filter": map[string]string{"tagStatus": "TAGGED"}}
+		if token != "" {
+			request["nextToken"] = token
+		}
+		var page struct {
+			Images []struct {
+				Digest   string   `json:"imageDigest"`
+				Tags     []string `json:"imageTags"`
+				PushedAt float64  `json:"imagePushedAt"`
+			} `json:"imageDetails"`
+			NextToken string `json:"nextToken"`
+		}
+		if err := api.call(ctx, "DescribeImages", request, &page); err != nil {
+			return nil, err
+		}
+		for _, image := range page.Images {
+			pushed := time.Unix(int64(image.PushedAt), 0).UTC()
+			for _, tag := range image.Tags {
+				tags = append(tags, TagInfo{Tag: tag, Digest: image.Digest, PushedAt: pushed})
+			}
+		}
+		if token = page.NextToken; token == "" {
+			break
+		}
+	}
+	return tags, nil
 }
 
 // signV4 signs a request with AWS Signature Version 4.

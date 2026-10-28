@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Boxes, CheckCircle2, Eye, Flame, KeyRound, Pencil, Play, Plug, Plus, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, Boxes, CheckCircle2, Eye, Flame, FolderSearch, KeyRound, Pencil, Play, Plug, Plus, Trash2, XCircle } from "lucide-react";
 import { api, type RegistryImage, type RegistryLogin, type RegistryLoginCheck, type RegistryLoginInput } from "../api";
 import { Button, Card, CardHeader, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, SeverityCountsInline, StatusBadge, Table, Td, Th } from "../components/ui";
 import { timeAgo } from "../lib/format";
 import { useRefreshAll } from "../lib/hooks";
 import { useCan } from "../lib/role";
+import { BrowseRegistryDialog, WatchedRepositories } from "./Repositories";
 
 /** The platforms an image can be checked for, as the server accepts them. */
 export const platforms = ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/386", "linux/ppc64le", "linux/s390x"];
@@ -86,6 +87,7 @@ export function Images() {
                       {image.latest?.os && ` · ${image.latest.os}`}
                     </div>
                     <WatchState image={image} />
+                    {image.repository_watch_id && <div className="text-xs text-slate-500 dark:text-slate-400">Added by a watched repository</div>}
                   </Td>
                   <Td>
                     {image.latest ? (
@@ -123,10 +125,27 @@ export function Images() {
           </Table>
         </Card>
       )}
+      <WatchedRepositories />
       {isAdmin && <RegistryLogins />}
       {adding && <AddImageDialog onClose={() => setAdding(false)} />}
       {deleting && <DeleteImageDialog image={deleting} onClose={() => setDeleting(null)} />}
     </>
+  );
+}
+
+/** A message shown in two lines, with Show all for the rest, so a long error can be read whole. */
+export function ExpandableText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 110;
+  return (
+    <span className="min-w-0 break-words" title={long && !open ? text : undefined}>
+      <span className={open || !long ? "" : "line-clamp-2"}>{text}</span>
+      {long && (
+        <button type="button" onClick={() => setOpen(!open)} className="mt-0.5 block text-xs font-medium underline underline-offset-2 opacity-80 hover:opacity-100">
+          {open ? "Show less" : "Show all"}
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -137,7 +156,7 @@ export function WatchState({ image }: { image: RegistryImage }) {
     return (
       <div className="mt-1 flex items-start gap-1 text-xs text-amber-700 dark:text-amber-400" title={image.watch_error}>
         <AlertTriangle className="mt-px size-3 shrink-0" aria-hidden />
-        <span className="line-clamp-2">Can't check for new builds: {image.watch_error}</span>
+        <ExpandableText text={`Can't check for new builds: ${image.watch_error}`} />
       </div>
     );
   return (
@@ -153,9 +172,9 @@ function ImageCounts({ image }: { image: RegistryImage }) {
   if (!latest || latest.status === "queued" || latest.status === "running") return <span className="text-sm text-slate-500 dark:text-slate-400">—</span>;
   if (latest.status === "failed")
     return (
-      <span className="line-clamp-2 max-w-56 text-sm break-words text-red-700 dark:text-red-400" title={latest.error}>
-        {latest.error}
-      </span>
+      <div className="max-w-72 text-sm text-red-700 dark:text-red-400">
+        <ExpandableText text={latest.error ?? ""} />
+      </div>
     );
   return (
     <div className="space-y-1">
@@ -277,6 +296,7 @@ function RegistryLogins() {
   const logins = useQuery({ queryKey: ["registry-logins"], queryFn: api.registryLogins });
   const [editing, setEditing] = useState<RegistryLogin | "new" | null>(null);
   const [deleting, setDeleting] = useState<RegistryLogin | null>(null);
+  const [browsing, setBrowsing] = useState<RegistryLogin | null>(null);
   // Results of checking logins, by login ID, until the page is left.
   const [checks, setChecks] = useState<Record<string, RegistryLoginCheck | "checking">>({});
   const check = async (id: string) => {
@@ -294,7 +314,7 @@ function RegistryLogins() {
       <Card>
         <CardHeader
           title="Registry logins"
-          description="For private images. Use a read-only token where the registry offers one: DeaconGuard only pulls. A login is used for every image in its registry."
+          description="For private images, with a read-only token: DeaconGuard only pulls. Browse a login's registry to scan its images or watch a repository for new pushes."
           action={
             <Button variant="secondary" onClick={() => setEditing("new")}>
               <KeyRound className="size-4" /> Add login
@@ -333,6 +353,14 @@ function RegistryLogins() {
                     <div className="flex justify-end gap-2">
                       <Button
                         variant="secondary"
+                        onClick={() => setBrowsing(login)}
+                        aria-label={`Browse ${login.registry}`}
+                        title="List this registry's repositories and tags, to scan an image or watch a repository"
+                      >
+                        <FolderSearch className="size-4" /> Browse
+                      </Button>
+                      <Button
+                        variant="secondary"
                         onClick={() => check(login.id)}
                         loading={checks[login.id] === "checking"}
                         aria-label={`Check the login for ${login.registry}`}
@@ -356,6 +384,7 @@ function RegistryLogins() {
       </Card>
       {editing && <RegistryLoginDialog login={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={(saved) => check(saved.id)} />}
       {deleting && <DeleteLoginDialog login={deleting} onClose={() => setDeleting(null)} />}
+      {browsing && <BrowseRegistryDialog login={browsing} onClose={() => setBrowsing(null)} />}
     </div>
   );
 }
@@ -435,7 +464,8 @@ function RegistryLoginDialog({ login, onClose, onSaved }: { login: RegistryLogin
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               DeaconGuard exchanges it for ECR's 12-hour registry password when it needs one. Give the key's user read access only:{" "}
               <span className="font-mono">ecr:GetAuthorizationToken</span>, <span className="font-mono">ecr:BatchGetImage</span> and{" "}
-              <span className="font-mono">ecr:GetDownloadUrlForLayer</span>, or <span className="font-mono">AmazonEC2ContainerRegistryReadOnly</span>.
+              <span className="font-mono">ecr:GetDownloadUrlForLayer</span> to scan, and <span className="font-mono">ecr:DescribeRepositories</span> and{" "}
+              <span className="font-mono">ecr:DescribeImages</span> to browse and watch repositories; or <span className="font-mono">AmazonEC2ContainerRegistryReadOnly</span>.
             </p>
           )}
         </fieldset>

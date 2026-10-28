@@ -740,6 +740,46 @@ export interface RegistryLogin {
 
 export type RegistryLoginKind = "basic" | "ecr";
 
+/** A repository whose new pushes are scanned: each image whose tag matches the pattern, for the newest `keep` matching tags. */
+export interface RepositoryWatch {
+  id: string;
+  registry: string;
+  repository: string;
+  /** A regular expression (RE2); empty matches every tag. */
+  tag_pattern: string;
+  platform: string;
+  keep: number;
+  checked_at?: string;
+  watch_error?: string;
+  created_by: string;
+  created_at: string;
+  /** How many images it added. */
+  images: number;
+}
+
+export interface RepositoryWatchInput {
+  registry: string;
+  repository: string;
+  tag_pattern: string;
+  platform: string;
+  keep: number;
+}
+
+/** What a registry login can see: its repositories, unless the registry won't list them. */
+export interface RepositoryListing {
+  registry: string;
+  repositories: string[];
+  listed: boolean;
+  message?: string;
+}
+
+/** A repository's tags, newest first, and which ones a tag pattern matches. */
+export interface TagListing {
+  repository: string;
+  matched: number;
+  tags: { tag: string; digest?: string; pushed_at?: string; matches: boolean; reference: string }[];
+}
+
 /** The result of logging in to a registry with a saved login. */
 export interface RegistryLoginCheck {
   /** "ok": the registry accepted it; "unchecked": the registry didn't ask for a login. */
@@ -785,6 +825,8 @@ export interface RegistryImage {
   checked_at?: string;
   /** Why the last check for a new build failed. */
   watch_error?: string;
+  /** The repository watch that added it, if one did. */
+  repository_watch_id?: string;
   created_by: string;
   created_at: string;
   latest?: ImageScan;
@@ -1199,6 +1241,14 @@ export const api = {
   updateRegistryLogin: (id: string, input: RegistryLoginInput) => request<RegistryLogin>("PATCH", `/api/registry-logins/${id}`, input),
   deleteRegistryLogin: (id: string) => request<null>("DELETE", `/api/registry-logins/${id}`),
   checkRegistryLogin: (id: string) => request<RegistryLoginCheck>("POST", `/api/registry-logins/${id}/check`),
+  browseRepositories: (loginID: string) => request<RepositoryListing>("GET", `/api/registry-logins/${loginID}/repositories`),
+  browseTags: (loginID: string, repository: string, pattern: string) =>
+    request<TagListing>("GET", `/api/registry-logins/${loginID}/tags?${new URLSearchParams({ repository, pattern })}`),
+  repositoryWatches: () => request<RepositoryWatch[]>("GET", "/api/repository-watches"),
+  addRepositoryWatch: (input: RepositoryWatchInput) => request<RepositoryWatch>("POST", "/api/repository-watches", input),
+  updateRepositoryWatch: (id: string, tag_pattern: string, keep: number) => request<RepositoryWatch>("PATCH", `/api/repository-watches/${id}`, { tag_pattern, keep }),
+  deleteRepositoryWatch: (id: string) => request<null>("DELETE", `/api/repository-watches/${id}`),
+  checkRepositoryWatch: (id: string) => request<RepositoryWatch>("POST", `/api/repository-watches/${id}/check`),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   setAutoScanContainers: (hostId: string, on: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { auto_scan_containers: on }),

@@ -58,7 +58,7 @@ export function Card({ className, children }: { className?: string; children: Re
 export function CardHeader({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-      <div>
+      <div className="min-w-64 flex-1 basis-0">
         <h2 className="text-base font-semibold">{title}</h2>
         {description && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{description}</p>}
       </div>

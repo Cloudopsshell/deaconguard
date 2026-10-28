@@ -51,11 +51,14 @@ func tagDigest(ctx context.Context, client *images.Client, ref images.Reference)
 type imageScanner struct {
 	read      readImageFunc
 	tagDigest tagDigestFunc
-	// checkLogin logs in to a registry with a saved login; tests replace it.
-	checkLogin func(ctx context.Context, client *images.Client, registry string) error
-	wake       chan struct{}
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
+	// checkLogin logs in to a registry with a saved login; tests replace it,
+	// and listRepositories and listTags.
+	checkLogin       func(ctx context.Context, client *images.Client, registry string) error
+	listRepositories listRepositoriesFunc
+	listTags         listTagsFunc
+	wake             chan struct{}
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
 	// http and ecrEndpoint reach the ECR API; tests point them elsewhere.
 	http        *http.Client
 	ecrEndpoint string
@@ -75,6 +78,7 @@ func newImageScanner() *imageScanner {
 		checkLogin: func(ctx context.Context, client *images.Client, registry string) error {
 			return client.CheckLogin(ctx, registry)
 		},
+		listRepositories: listRepositories, listTags: listTags,
 		http: &http.Client{Timeout: 30 * time.Second}, ecrTokens: map[string]ecrToken{}}
 }
 
@@ -91,6 +95,7 @@ func (s *Server) startImageScanner() {
 		defer ticker.Stop()
 		for {
 			s.checkWatchedImages(ctx, time.Now())
+			s.checkRepositoryWatches(ctx, time.Now())
 			s.runQueuedImageScans(ctx)
 			select {
 			case <-ctx.Done():
@@ -608,6 +613,13 @@ func (s *Server) recheckImagesIn(registry string) {
 	for _, image := range list {
 		if ref, err := images.ParseReference(image.Reference); err == nil && ref.Registry == registry {
 			if store.RecheckImage(image.ID) == nil {
+				due = true
+			}
+		}
+	}
+	if watches, err := store.RepositoryWatches(); err == nil {
+		for _, watch := range watches {
+			if watch.Registry == registry && store.RecheckRepositoryWatch(watch.ID) == nil {
 				due = true
 			}
 		}

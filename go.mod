@@ -6,7 +6,7 @@ require (
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/klauspost/compress v1.20.3
 	github.com/xuri/excelize/v2 v2.11.1-0.20261011032807-402e3bdd9eae
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
