@@ -1,5 +1,5 @@
-import { useEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Clock, KeyRound, Loader2, X, XCircle } from "lucide-react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock, KeyRound, Loader2, Search, X, XCircle } from "lucide-react";
 import type { Scan, ScanStatus, Severity, SeverityCounts } from "../api";
 import { countFor, severityOrder, severityStyle } from "../lib/format";
 
@@ -310,4 +310,57 @@ export function Th({ children, className }: { children?: ReactNode; className?: 
 
 export function Td({ children, className }: { children?: ReactNode; className?: string }) {
   return <td className={cx("px-5 py-3 align-top", className)}>{children}</td>;
+}
+
+/** One page of a list: the page starts again at the first whenever reset changes, such as a search. */
+export function usePage<T>(items: T[], size: number, reset?: unknown) {
+  const [page, setPage] = useState(0);
+  const [lastReset, setLastReset] = useState(reset);
+  if (reset !== lastReset) {
+    setLastReset(reset);
+    setPage(0);
+  }
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const current = Math.min(page, pages - 1);
+  return { page: current, pages, setPage, shown: items.slice(current * size, (current + 1) * size), size, total: items.length };
+}
+
+/** Previous and next under a paged list, with which items are shown. Nothing when it fits one page. */
+export function Pager({ paging, noun }: { paging: { page: number; pages: number; setPage: (page: number) => void; size: number; total: number }; noun: string }) {
+  if (paging.pages <= 1) return null;
+  const from = paging.page * paging.size + 1;
+  const to = Math.min(paging.total, from + paging.size - 1);
+  return (
+    <nav className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-3 text-sm dark:border-slate-800" aria-label={`Pages of ${noun}`}>
+      <span className="text-slate-500 dark:text-slate-400">
+        {from.toLocaleString()}–{to.toLocaleString()} of {paging.total.toLocaleString()} {noun}
+      </span>
+      <div className="flex gap-2">
+        <Button variant="secondary" disabled={paging.page === 0} onClick={() => paging.setPage(paging.page - 1)} aria-label="Previous page">
+          <ChevronLeft className="size-4" />
+        </Button>
+        <Button variant="secondary" disabled={paging.page >= paging.pages - 1} onClick={() => paging.setPage(paging.page + 1)} aria-label="Next page">
+          <ChevronRight className="size-4" />
+        </Button>
+      </div>
+    </nav>
+  );
+}
+
+/** A search box with a magnifier, for filtering a list. */
+export function SearchBox({ value, onChange, placeholder, label, autoFocus }: { value: string; onChange: (value: string) => void; placeholder: string; label: string; autoFocus?: boolean }) {
+  return (
+    <label className="relative block">
+      <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-slate-400" aria-hidden />
+      <input
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        aria-label={label}
+        data-autofocus={autoFocus || undefined}
+        className="block w-full rounded-lg border-0 bg-white py-2 pr-3 pl-9 text-sm shadow-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600 dark:bg-slate-950 dark:ring-slate-700"
+      />
+    </label>
+  );
 }

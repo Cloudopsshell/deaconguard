@@ -43,7 +43,9 @@ Browsing is for admins, who hold the logins.
 A **watched repository** scans each new image pushed to it, without anyone adding it: every 15 minutes, the server lists the repository's tags and scans each new or re-pushed image whose tag matches.
 
 - **Tag pattern:** a regular expression ([RE2](https://github.com/google/re2/wiki/Syntax)) the tags must match; empty matches every tag. For example `^v?\d+\.\d+\.\d+$` for releases (`v1.4.2`), `^main-` for main-branch builds, `^latest$` for one moving tag. The dashboard shows which existing tags match while you type.
-- **Keep the newest:** how many of the newest matching tags stay watched (1 to 20, 5 by default). Their images are rescanned daily for new advisories, and checked for new builds, as watched images are. When a newer tag arrives, the oldest kept one stops being watched; its scans stay.
+- **Rescan the newest:** how many of the newest matching tags stay watched (1 to 20, 5 by default). Their images are rescanned daily for new advisories, and checked for new builds, as watched images are. When a newer tag arrives, the oldest kept one stops being watched; its scans stay.
+- **Keep the history of:** how many of the images the watch added are kept, with their scans (from the number rescanned up to 500, 50 by default). When there are more, the oldest are removed. Images you added yourself are never removed, even when a watch matches their tag.
+- **Report new pushes:** which new pushes send an [image scan report](#reports-of-new-pushes): every one (the default), only those with a vulnerability of a chosen severity or worse, only those with one known to be exploited, or none. **Send reports to** picks the channels, of those that take image scan reports; none ticked sends to all of them.
 - **The first check** scans the newest matching tags at once. After that, a tag that appears, or that is pushed again with a new image, is scanned. **Check now** checks at once.
 - **Newest** is by push time on Amazon ECR. Other registries don't say when a tag was pushed: the first check counts tags by version, and later a tag that appears counts as the newest.
 
@@ -66,14 +68,40 @@ RE2 has no look-ahead, so "every tag except `dev-`" can't be written as one patt
 
 **One pattern or several watches?** Several kinds of tags can be watched in two ways:
 
-- **One watch, with `|`**, such as `^(production|staging)-`: one list of the newest matching tags, so **Keep the newest 5** keeps the 5 newest of both kinds together.
+- **One watch, with `|`**, such as `^(production|staging)-`: one list of the newest matching tags, so **Rescan the newest 5** rescans the 5 newest of both kinds together.
 - **Several watches on the same repository**, one per pattern: each keeps its own newest tags, such as the newest 5 `production-` builds and the newest 2 `staging-` builds. Browse the repository again and watch it with another pattern.
 
 A tag matched by two watches is added and scanned once.
 
-The images a watch adds are listed under **Images** like any other, marked "Added by a watched repository", and their scans say `watch: repository added` or `watch: new push of TAG`. Changing a watch's pattern starts it afresh. Removing a watch keeps the images it added, no longer watched. When a check fails, the watch says why, with the whole message under **Show all**, until a check works or the registry's login is saved again.
+On **Images**, the images a watch added are grouped under their repository, one row with its newest image's result; the arrow shows them all. The search box finds any image by name, and the list shows 50 rows a page. Their scans say `watch: repository added` or `watch: new push of TAG`. Changing a watch's pattern, or how many tags it rescans, starts it afresh; changing its history or reports doesn't. Removing a watch keeps the images it added, no longer watched. When a check fails, the watch says why, with the whole message under **Show all**, until a check works or the registry's login is saved again.
 
-New known exploited and critical vulnerabilities in an image, and failed scans, are sent to the [notification](./notifications.md) channels subscribed to those events, as for hosts.
+### A repository's page
+
+The repository's name opens its page: **Vulnerabilities by build**, a bar per build, oldest on the left, stacked by severity (the newest 50 builds, each with its latest scan), and **Builds**, every scan of its images, newest first, with the tag, digest, counts, those known to be exploited, those an update fixes and why it was scanned. A tag opens its image. **Check now**, edit and remove are there too.
+
+### Reports of new pushes
+
+When the scan of a new push finishes, the watch sends an **image scan report** to the [notification](./notifications.md) channels that take the "Image scan reports" event:
+
+- the counts by severity, those known to be exploited and those an update fixes;
+- **what changed:** how many vulnerabilities are new and how many are fixed, compared with the image the watch added before it, or for a tag pushed again, with what the tag held before; the new CVEs are listed;
+- the 5 most urgent vulnerabilities, with their packages and fixed versions;
+- a link to the repository's page.
+
+In Slack it reads like this:
+
+```text
+🚨 New push of registry.example.com/acme/app:v1.12.0: 6 critical, 52 high
+• Critical 6 · High 52 · Medium 34 · Low 8 · Unknown 11
+• 0 known to be exploited · 111 fixed by an update
+• Compared with registry.example.com/acme/app:v1.11.0: 16 new, 13 fixed. New: CVE-2025-11187, CVE-2025-15469, … and 6 more
+• Most urgent: CVE-2026-34182 (critical, libcrypto3 3.5.0-r0 → 3.5.7-r0); …
+Open in DeaconGuard
+```
+
+The first check of a watch, and daily rescans, send no report. Webhooks get the same facts in `data`: `repository`, `tag`, `image`, `digest`, `severity`, `exploited`, `fixable`, `previous`, `new_cves`, `fixed_cves` and `top`.
+
+New known exploited and critical vulnerabilities in an image, and failed scans, are also sent to the channels subscribed to those events, as for hosts.
 
 **Scan on push from CI:** to scan an image the moment a pipeline pushes it, call the API with an operator's [API token](../reference/api.md#api-tokens) after the push:
 

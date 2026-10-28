@@ -305,6 +305,9 @@ func (s *Server) runImageScan(ctx context.Context, record store.ImageScan) {
 	serverLog("", store.LogInfo, "Scan of image %s (%s) finished: %d critical, %d high, %d known to be exploited",
 		image.Reference, image.Platform, record.Severity.Critical, record.Severity.High, record.Exploited)
 	s.newImageVulnerabilities(image, record.ID, result)
+	if image.RepositoryWatchID != "" && strings.HasPrefix(record.StartedBy, newPushReason) {
+		s.reportNewPush(image, record, result)
+	}
 }
 
 // imageCVEs are the CVEs of an image's findings that are known to be

@@ -255,7 +255,18 @@ export interface TrendPoint {
 }
 
 export type ChannelKind = "email" | "slack" | "teams" | "webhook" | "syslog" | "splunk" | "jira" | "servicenow";
-export type NotificationEvent = "exploited" | "critical" | "malware" | "integrity" | "cluster" | "exposure" | "scan_failed" | "audit" | "agent_offline" | "digest";
+export type NotificationEvent =
+  | "exploited"
+  | "critical"
+  | "malware"
+  | "integrity"
+  | "cluster"
+  | "exposure"
+  | "image_report"
+  | "scan_failed"
+  | "audit"
+  | "agent_offline"
+  | "digest";
 
 /** A channel's settings. Saved secrets come back as "set" (password, secret) or the address's host (url); send them empty to keep them. */
 export interface ChannelConfig {
@@ -749,6 +760,11 @@ export interface RepositoryWatch {
   tag_pattern: string;
   platform: string;
   keep: number;
+  /** How many of the images it added are kept, with their scans. */
+  history: number;
+  notify_level: NotifyLevel;
+  /** Channel ids its reports go to; empty: every channel subscribed to image scan reports. */
+  notify_channels: string[];
   checked_at?: string;
   watch_error?: string;
   created_by: string;
@@ -757,12 +773,45 @@ export interface RepositoryWatch {
   images: number;
 }
 
-export interface RepositoryWatchInput {
+/** Which new pushes a repository watch reports: none, all, or those with a vulnerability this severe or known to be exploited. */
+export type NotifyLevel = "off" | "any" | "low" | "medium" | "high" | "critical" | "exploited";
+
+/** A watch's settings that can change. */
+export interface RepositoryWatchSettings {
+  tag_pattern: string;
+  keep: number;
+  history: number;
+  notify_level: NotifyLevel;
+  notify_channels: string[];
+}
+
+export interface RepositoryWatchInput extends RepositoryWatchSettings {
   registry: string;
   repository: string;
-  tag_pattern: string;
   platform: string;
-  keep: number;
+}
+
+/** One scan of an image a repository watch added: a build of the repository. */
+export interface WatchBuild extends ImageScan {
+  image_id: string;
+  reference: string;
+  /** Whether the image is still among the newest tags the watch rescans. */
+  watched: boolean;
+}
+
+export interface RepositoryWatchDetail extends RepositoryWatch {
+  /** Every scan of the images it added, newest first, at most 1,000. */
+  builds: WatchBuild[];
+}
+
+/** A notification channel a watch's reports can go to. */
+export interface ReportChannel {
+  id: string;
+  name: string;
+  kind: ChannelKind;
+  enabled: boolean;
+  /** Whether it takes image scan reports at all. */
+  subscribed: boolean;
 }
 
 /** What a registry login can see: its repositories, unless the registry won't list them. */
@@ -1246,7 +1295,9 @@ export const api = {
     request<TagListing>("GET", `/api/registry-logins/${loginID}/tags?${new URLSearchParams({ repository, pattern })}`),
   repositoryWatches: () => request<RepositoryWatch[]>("GET", "/api/repository-watches"),
   addRepositoryWatch: (input: RepositoryWatchInput) => request<RepositoryWatch>("POST", "/api/repository-watches", input),
-  updateRepositoryWatch: (id: string, tag_pattern: string, keep: number) => request<RepositoryWatch>("PATCH", `/api/repository-watches/${id}`, { tag_pattern, keep }),
+  repositoryWatch: (id: string) => request<RepositoryWatchDetail>("GET", `/api/repository-watches/${id}`),
+  reportChannels: () => request<ReportChannel[]>("GET", "/api/repository-watches/report-channels"),
+  updateRepositoryWatch: (id: string, settings: RepositoryWatchSettings) => request<RepositoryWatch>("PATCH", `/api/repository-watches/${id}`, settings),
   deleteRepositoryWatch: (id: string) => request<null>("DELETE", `/api/repository-watches/${id}`),
   checkRepositoryWatch: (id: string) => request<RepositoryWatch>("POST", `/api/repository-watches/${id}/check`),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),

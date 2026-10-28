@@ -195,6 +195,8 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/registry-logins/{id}/repositories", s.needs(store.RoleOperator, s.browseRepositories))
 	mux.HandleFunc("GET /api/registry-logins/{id}/tags", s.needs(store.RoleOperator, s.browseTags))
 	mux.HandleFunc("GET /api/repository-watches", s.listRepositoryWatches)
+	mux.HandleFunc("GET /api/repository-watches/{id}", s.repositoryWatch)
+	mux.HandleFunc("GET /api/repository-watches/report-channels", s.needs(store.RoleOperator, s.reportChannels))
 	mux.HandleFunc("POST /api/repository-watches", s.needs(store.RoleOperator, s.addRepositoryWatch))
 	mux.HandleFunc("PATCH /api/repository-watches/{id}", s.needs(store.RoleOperator, s.updateRepositoryWatch))
 	mux.HandleFunc("DELETE /api/repository-watches/{id}", s.needs(store.RoleOperator, s.deleteRepositoryWatch))

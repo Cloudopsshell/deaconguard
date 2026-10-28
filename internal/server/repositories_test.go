@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -199,5 +200,117 @@ func TestBrowsingRegistries(t *testing.T) {
 	}
 	if bad := do(t, s, call{method: http.MethodGet, path: "/api/registry-logins/" + login.ID + "/tags?repository=acme/web&pattern=(", cookie: cookie}); bad.Code != http.StatusBadRequest {
 		t.Fatalf("a broken pattern: %d", bad.Code)
+	}
+}
+
+func TestNewPushReportsAndHistory(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	chosen, other := newHook(t), newHook(t)
+	a := addChannel(t, s, cookie, map[string]any{"name": "team", "kind": "webhook", "config": map[string]any{"url": chosen.server.URL}, "events": []string{"image_report"}})
+	addChannel(t, s, cookie, map[string]any{"name": "everyone", "kind": "webhook", "config": map[string]any{"url": other.server.URL}, "events": []string{"image_report"}})
+	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	tags := []images.TagInfo{{Tag: "v0", Digest: "sha256:00", PushedAt: base.Add(-time.Hour)}, {Tag: "v1", Digest: "sha256:01", PushedAt: base}}
+	s.images.listTags = func(ctx context.Context, s *Server, registry, repository string) ([]images.TagInfo, error) {
+		return append([]images.TagInfo(nil), tags...), nil
+	}
+	s.images.read = func(ctx context.Context, client *images.Client, ref images.Reference, platform string) (containers.Inventory, images.Resolved, error) {
+		digest := "sha256:" + ref.Tag
+		return containers.Inventory{Container: containers.Container{Name: ref.String(), Image: ref.String()}},
+			images.Resolved{Reference: ref, Digest: digest, TagDigest: "sha256:0" + strings.TrimPrefix(ref.Tag, "v"), Platform: platform}, nil
+	}
+	for _, body := range []map[string]any{
+		{"registry": "ghcr.io", "repository": "acme/app", "keep": 3, "history": 2},
+		{"registry": "ghcr.io", "repository": "acme/app", "notify_level": "loud"},
+		{"registry": "ghcr.io", "repository": "acme/app", "notify_channels": []string{"nope"}},
+	} {
+		if bad := do(t, s, call{method: http.MethodPost, path: "/api/repository-watches", cookie: cookie, body: body}); bad.Code != http.StatusBadRequest {
+			t.Fatalf("%v: %d", body, bad.Code)
+		}
+	}
+	created := do(t, s, call{method: http.MethodPost, path: "/api/repository-watches", cookie: cookie,
+		body: map[string]any{"registry": "ghcr.io", "repository": "acme/app", "keep": 2, "history": 2, "notify_channels": []string{a.ID}}})
+	watch := decode[store.RepositoryWatch](t, created)
+	if created.Code != http.StatusCreated || watch.History != 2 || watch.NotifyLevel != "any" || len(watch.NotifyChannels) != 1 {
+		t.Fatalf("add: %d %s", created.Code, created.Body.String())
+	}
+	now := time.Now()
+	check := func(push string) {
+		t.Helper()
+		if push != "" {
+			tags = append(tags, images.TagInfo{Tag: push, Digest: "sha256:0" + strings.TrimPrefix(push, "v"), PushedAt: base.Add(time.Duration(len(tags)) * time.Hour)})
+		}
+		now = now.Add(16 * time.Minute)
+		s.checkRepositoryWatches(context.Background(), now)
+		s.runQueuedImageScans(context.Background())
+		s.deliverDue(context.Background(), time.Now())
+	}
+
+	// The first check isn't a new push: no report.
+	check("")
+	if len(chosen.events()) != 0 {
+		t.Fatalf("the first check sent a report: %v", chosen.events())
+	}
+	// A new push is reported to the chosen channel only.
+	check("v2")
+	if events := chosen.events(); len(events) != 1 || events[0] != "image_report" || len(other.events()) != 0 {
+		t.Fatalf("reports: chosen %v, other %v", events, other.events())
+	}
+	chosen.mu.Lock()
+	report := chosen.messages[0]
+	chosen.mu.Unlock()
+	data, _ := report["data"].(map[string]any)
+	if report["title"] != "New push of ghcr.io/acme/app:v2: no vulnerabilities" || data["previous"] != "ghcr.io/acme/app:v1" || data["tag"] != "v2" {
+		t.Fatalf("report: %v", report)
+	}
+
+	// History 2: a new image removes the oldest, with its scans; v0 and v1
+	// were added by the same check, oldest first.
+	references := func() string {
+		list, _ := store.Images()
+		names := []string{}
+		for _, image := range list {
+			names = append(names, strings.TrimPrefix(image.Reference, "ghcr.io/acme/app:"))
+		}
+		slices.Sort(names)
+		return strings.Join(names, ",")
+	}
+	if got := references(); got != "v1,v2" {
+		t.Fatalf("history 2 after v2 kept %s", got)
+	}
+	check("v3")
+	if got := references(); got != "v2,v3" {
+		t.Fatalf("history 2 after v3 kept %s", got)
+	}
+
+	// Only critical pushes: a clean one isn't reported.
+	if patched := do(t, s, call{method: http.MethodPatch, path: "/api/repository-watches/" + watch.ID, cookie: cookie,
+		body: map[string]any{"notify_level": "critical"}}); patched.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", patched.Code, patched.Body.String())
+	}
+	if after, _ := store.GetRepositoryWatch(watch.ID); after.CheckedAt == "" {
+		t.Fatal("changing the report setting started the watch afresh")
+	}
+	check("v4")
+	if len(chosen.events()) != 2 {
+		t.Fatalf("reports after limiting to critical: %v", chosen.events())
+	}
+
+	detail := do(t, s, call{method: http.MethodGet, path: "/api/repository-watches/" + watch.ID, cookie: cookie})
+	builds := decode[repositoryWatchDetail](t, detail).Builds
+	if detail.Code != http.StatusOK || len(builds) != 2 || builds[0].Reference != "ghcr.io/acme/app:v4" || !builds[0].Watched || !builds[1].Watched {
+		t.Fatalf("builds: %d %s", detail.Code, detail.Body.String())
+	}
+}
+
+func TestReportLevels(t *testing.T) {
+	high := store.ImageScan{Severity: store.SeverityCounts{High: 1}}
+	for level, want := range map[string]bool{"off": false, "any": true, "low": true, "medium": true, "high": true, "critical": false, "exploited": false} {
+		if reports(level, high) != want {
+			t.Errorf("%s with a high vulnerability: want %v", level, want)
+		}
+	}
+	if !reports("exploited", store.ImageScan{Exploited: 1}) || reports("low", store.ImageScan{Severity: store.SeverityCounts{Unknown: 3}}) {
+		t.Error("exploited and unknown")
 	}
 }

@@ -12,6 +12,10 @@ upgrade notes.
 
 - **Browse a registry:** **Browse** next to a registry login lists its repositories (through the ECR API for Amazon ECR, the registry API's catalog elsewhere) and a repository's tags, newest first, to scan a tag's image.
 - **Watch a repository:** scan each new or re-pushed image in a repository whose tag matches a pattern (a regular expression, previewed against the existing tags), keeping the newest 1 to 20 rescanned daily. Checked every 15 minutes, or at once with **Check now**; on Amazon ECR by push time. ECR keys need `ecr:DescribeRepositories` and `ecr:DescribeImages` for this.
+- **Reports of new pushes:** a new notification event, **Image scan reports**, sent when the scan of a watched repository's new push finishes: counts by severity, known exploited and fixable, what changed since the previous build (new and fixed CVEs), the 5 most urgent vulnerabilities and a link. Each watch chooses which pushes it reports (every one, a minimum severity, known exploited only, or none) and to which channels.
+- **A repository's page:** a watched repository's builds, newest first, with what each scan found, and a chart of vulnerabilities by build.
+- **History per watch:** a watch keeps the newest 50 images it added (up to 500), with their scans, and removes older ones. Images added by hand are never removed.
+- The Images page groups the images a watched repository added under it, has a search box, and shows 50 rows a page. Browsing a registry shows 100 repositories or tags a page, and the filter searches all of them.
 - Long error messages on the Images page have **Show all**, so they can be read whole.
 - **Check a registry login:** **Check** next to each login on the Images page logs in to the registry the way `docker login` does and says whether it works, why not in plain words (such as an AWS secret access key that doesn't belong to its access key ID), or that the registry doesn't ask for a login. Saving a login checks it too.
 

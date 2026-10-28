@@ -2,14 +2,18 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
+	"deaconguard/internal/checks"
 	"deaconguard/internal/images"
+	"deaconguard/internal/notify"
 	"deaconguard/internal/store"
 )
 
@@ -140,25 +144,59 @@ func (s *Server) browseTags(w http.ResponseWriter, r *http.Request) {
 }
 
 type repositoryWatchRequest struct {
-	Registry   string `json:"registry"`
-	Repository string `json:"repository"`
-	TagPattern string `json:"tag_pattern"`
-	Platform   string `json:"platform"`
-	Keep       int    `json:"keep"`
+	Registry       string   `json:"registry"`
+	Repository     string   `json:"repository"`
+	TagPattern     string   `json:"tag_pattern"`
+	Platform       string   `json:"platform"`
+	Keep           int      `json:"keep"`
+	History        int      `json:"history"`
+	NotifyLevel    string   `json:"notify_level"`
+	NotifyChannels []string `json:"notify_channels"`
 }
 
-// maxKeep caps how many of a repository's newest tags a watch keeps
-// scanning.
-const maxKeep = 20
+const (
+	// maxKeep caps how many of a repository's newest tags a watch keeps
+	// scanning.
+	maxKeep = 20
+	// defaultHistory and maxHistory are how many of the images a watch
+	// added it keeps, with their scans.
+	defaultHistory = 50
+	maxHistory     = 500
+)
 
-func (request repositoryWatchRequest) check() error {
+func (request *repositoryWatchRequest) check() error {
 	if _, err := images.CompileTagPattern(request.TagPattern); err != nil {
 		return err
 	}
 	if request.Keep < 1 || request.Keep > maxKeep {
 		return fmt.Errorf("keep between 1 and %d of the newest matching tags", maxKeep)
 	}
+	if request.History < request.Keep || request.History > maxHistory {
+		return fmt.Errorf("keep the history of between %d (the tags it scans) and %d images", request.Keep, maxHistory)
+	}
+	if !slices.Contains(store.NotifyLevels, request.NotifyLevel) {
+		return fmt.Errorf("the report setting is one of %s", strings.Join(store.NotifyLevels, ", "))
+	}
+	if request.NotifyChannels == nil {
+		request.NotifyChannels = []string{}
+	}
+	if len(request.NotifyChannels) > 0 {
+		channels, err := store.Channels()
+		if err != nil {
+			return err
+		}
+		for _, id := range request.NotifyChannels {
+			if !slices.ContainsFunc(channels, func(channel store.Channel) bool { return channel.ID == id }) {
+				return fmt.Errorf("unknown notification channel %q", id)
+			}
+		}
+	}
 	return nil
+}
+
+func (request repositoryWatchRequest) settings() store.RepositoryWatch {
+	return store.RepositoryWatch{TagPattern: request.TagPattern, Keep: request.Keep, History: request.History,
+		NotifyLevel: request.NotifyLevel, NotifyChannels: request.NotifyChannels}
 }
 
 func (s *Server) listRepositoryWatches(w http.ResponseWriter, r *http.Request) {
@@ -195,12 +233,19 @@ func (s *Server) addRepositoryWatch(w http.ResponseWriter, r *http.Request) {
 	if request.Keep == 0 {
 		request.Keep = 5
 	}
+	if request.History == 0 {
+		request.History = max(defaultHistory, request.Keep)
+	}
+	if request.NotifyLevel == "" {
+		request.NotifyLevel = "any"
+	}
 	if err := request.check(); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	watch, err := store.AddRepositoryWatch(store.RepositoryWatch{Registry: registry, Repository: repository, TagPattern: request.TagPattern,
-		Platform: request.Platform, Keep: request.Keep, CreatedBy: s.actor(r)})
+	watch := request.settings()
+	watch.Registry, watch.Repository, watch.Platform, watch.CreatedBy = registry, repository, request.Platform, s.actor(r)
+	watch, err = store.AddRepositoryWatch(watch)
 	if errors.Is(err, store.ErrRepositoryWatchExists) {
 		writeError(w, http.StatusConflict, err)
 		return
@@ -220,7 +265,8 @@ func (s *Server) updateRepositoryWatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	request := repositoryWatchRequest{TagPattern: current.TagPattern, Keep: current.Keep}
+	request := repositoryWatchRequest{TagPattern: current.TagPattern, Keep: current.Keep, History: current.History,
+		NotifyLevel: current.NotifyLevel, NotifyChannels: current.NotifyChannels}
 	if !readJSON(w, r, &request) {
 		return
 	}
@@ -228,7 +274,7 @@ func (s *Server) updateRepositoryWatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	watch, err := store.UpdateRepositoryWatch(current.ID, request.TagPattern, request.Keep)
+	watch, err := store.UpdateRepositoryWatch(current.ID, request.settings())
 	if errors.Is(err, store.ErrRepositoryWatchExists) {
 		writeError(w, http.StatusConflict, err)
 		return
@@ -236,6 +282,10 @@ func (s *Server) updateRepositoryWatch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if watch.History < current.History {
+		store.RemoveOldWatchImages(watch.ID, watch.History)
+		watch, _ = store.GetRepositoryWatch(watch.ID)
 	}
 	s.audit(r, "repository_watch.update", watch.Registry+"/"+watch.Repository, describeWatch(watch))
 	s.wakeImageScanner()
@@ -250,6 +300,52 @@ func (s *Server) deleteRepositoryWatch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "repository_watch.delete", watch.Registry+"/"+watch.Repository, describeWatch(watch))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// repositoryWatchDetail is a watch with its builds: every scan of the
+// images it added, newest first.
+type repositoryWatchDetail struct {
+	store.RepositoryWatch
+	Builds []store.WatchBuild `json:"builds"`
+}
+
+func (s *Server) repositoryWatch(w http.ResponseWriter, r *http.Request) {
+	watch, err := store.GetRepositoryWatch(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	builds, err := store.WatchBuilds(watch.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, repositoryWatchDetail{RepositoryWatch: watch, Builds: builds})
+}
+
+// reportChannel is a notification channel a watch's reports can go to,
+// named for operators, who can't read the channels' settings.
+type reportChannel struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Enabled bool   `json:"enabled"`
+	// Subscribed says whether it takes image scan reports at all.
+	Subscribed bool `json:"subscribed"`
+}
+
+func (s *Server) reportChannels(w http.ResponseWriter, r *http.Request) {
+	channels, err := store.Channels()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	list := make([]reportChannel, 0, len(channels))
+	for _, channel := range channels {
+		list = append(list, reportChannel{ID: channel.ID, Name: channel.Name, Kind: channel.Kind, Enabled: channel.Enabled,
+			Subscribed: slices.Contains(channel.Events, notify.EventImageReport)})
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 // checkRepositoryWatchNow checks a watch at once.
@@ -273,7 +369,7 @@ func describeWatch(watch store.RepositoryWatch) string {
 	if pattern == "" {
 		pattern = "every tag"
 	}
-	return fmt.Sprintf("tags %s, newest %d, %s", pattern, watch.Keep, watch.Platform)
+	return fmt.Sprintf("tags %s, newest %d, history %d, reports %s, %s", pattern, watch.Keep, watch.History, watch.NotifyLevel, watch.Platform)
 }
 
 // checkRepositoryWatches checks each repository watch that is due, as
@@ -345,7 +441,10 @@ func (s *Server) checkRepositoryWatch(ctx context.Context, watch store.Repositor
 	var client *images.Client
 	keep := make(map[string]bool, len(newest))
 	queued := false
-	for index, tag := range newest {
+	// Oldest first, so images are added in push order and the history
+	// removes the oldest.
+	for index := len(newest) - 1; index >= 0; index-- {
+		tag := newest[index]
 		ref := images.Reference{Registry: watch.Registry, Repository: watch.Repository, Tag: tag.Tag}
 		reference := ref.String()
 		keep[reference] = true
@@ -373,7 +472,7 @@ func (s *Server) checkRepositoryWatch(ctx context.Context, watch store.Repositor
 		if scanning(image) || (!added && image.TagDigest == tag.Digest) {
 			continue
 		}
-		reason := "watch: new push of " + tag.Tag
+		reason := newPushReason + tag.Tag
 		if first {
 			reason = "watch: repository added"
 		}
@@ -384,6 +483,12 @@ func (s *Server) checkRepositoryWatch(ctx context.Context, watch store.Repositor
 	}
 	if err := store.StopWatchingOlderImages(watch.ID, keep); err != nil {
 		return fail(err.Error())
+	}
+	if removed, err := store.RemoveOldWatchImages(watch.ID, watch.History); err != nil {
+		return fail(err.Error())
+	} else if removed > 0 {
+		serverLog("", store.LogInfo, "Removed %s of repository %s/%s beyond its history of %d", plural(removed, "older image", "older images"),
+			watch.Registry, watch.Repository, watch.History)
 	}
 	digests := make(map[string]string, len(newest))
 	for _, tag := range newest {
@@ -406,4 +511,153 @@ func (s *Server) checkRepositoryWatch(ctx context.Context, watch store.Repositor
 	}
 	store.RepositoryWatchChecked(watch.ID, "", now)
 	return queued
+}
+
+// newPushReason starts the reason of a scan a repository watch queued for a
+// new push; the scan's report goes out when it finishes.
+const newPushReason = "watch: new push of "
+
+// reports says whether a scan's counts reach a watch's report setting.
+func reports(level string, scan store.ImageScan) bool {
+	counts := scan.Severity
+	switch level {
+	case "any":
+		return true
+	case "low":
+		return counts.Critical+counts.High+counts.Medium+counts.Low > 0
+	case "medium":
+		return counts.Critical+counts.High+counts.Medium > 0
+	case "high":
+		return counts.Critical+counts.High > 0
+	case "critical":
+		return counts.Critical > 0
+	case "exploited":
+		return scan.Exploited > 0
+	}
+	return false
+}
+
+// imageVulnerabilities are a scan's vulnerabilities, most urgent first:
+// all of them, or only those with a fix from servers before 1.8.0.
+func imageVulnerabilities(result checks.ContainerResult) []checks.Finding {
+	if len(result.Vulnerabilities) > 0 {
+		return result.Vulnerabilities
+	}
+	return result.Findings
+}
+
+// reportedCVEs is how many CVEs a report names at most.
+const reportedCVEs = 5
+
+// reportNewPush sends a watched repository's report of a new push's scan:
+// its counts, how it compares with the repository's previous build, and its
+// most urgent vulnerabilities, when the watch's report setting allows.
+func (s *Server) reportNewPush(image store.Image, scan store.ImageScan, result checks.ContainerResult) {
+	watch, err := store.GetRepositoryWatch(image.RepositoryWatchID)
+	if err != nil || !reports(watch.NotifyLevel, scan) {
+		return
+	}
+	tag := strings.TrimPrefix(scan.StartedBy, newPushReason)
+	counts := scan.Severity
+	total := counts.Critical + counts.High + counts.Medium + counts.Low + counts.Unknown
+	level := notify.LevelInfo
+	switch {
+	case scan.Exploited > 0 || counts.Critical > 0:
+		level = notify.LevelCritical
+	case counts.High > 0:
+		level = notify.LevelWarning
+	}
+	title := fmt.Sprintf("New push of %s/%s:%s: no vulnerabilities", watch.Registry, watch.Repository, tag)
+	if total > 0 {
+		title = fmt.Sprintf("New push of %s/%s:%s: %d critical, %d high", watch.Registry, watch.Repository, tag, counts.Critical, counts.High)
+		if scan.Exploited > 0 {
+			title += fmt.Sprintf(", %d known to be exploited", scan.Exploited)
+		}
+	}
+	lines := []string{
+		fmt.Sprintf("Critical %d · High %d · Medium %d · Low %d · Unknown %d", counts.Critical, counts.High, counts.Medium, counts.Low, counts.Unknown),
+		fmt.Sprintf("%d known to be exploited · %d fixed by an update", scan.Exploited, scan.Fixable),
+	}
+	current := map[string]bool{}
+	for _, finding := range imageVulnerabilities(result) {
+		current[finding.Rule] = true
+	}
+	data := map[string]any{
+		"image": image.Reference, "platform": image.Platform, "digest": scan.Digest, "repository": watch.Registry + "/" + watch.Repository,
+		"tag": tag, "severity": counts, "exploited": scan.Exploited, "fixable": scan.Fixable,
+	}
+	// A tag pushed again compares with what it held before; a new tag with
+	// the image added before it.
+	previous, found, err := store.PreviousImageResult(image.ID, scan.ID)
+	if err == nil && !found {
+		previous, found, err = store.PreviousWatchResult(watch.ID, image.ID)
+	}
+	if err == nil && found {
+		var before checks.ContainerResult
+		json.Unmarshal(previous.Result, &before)
+		old := map[string]bool{}
+		for _, finding := range imageVulnerabilities(before) {
+			old[finding.Rule] = true
+		}
+		var added, fixed []string
+		for cve := range current {
+			if !old[cve] {
+				added = append(added, cve)
+			}
+		}
+		for cve := range old {
+			if !current[cve] {
+				fixed = append(fixed, cve)
+			}
+		}
+		sort.Strings(added)
+		sort.Strings(fixed)
+		previousReference := previous.ImageID
+		if before, err := store.GetImage(previous.ImageID); err == nil {
+			previousReference = before.Reference
+		}
+		against := previousReference
+		if previous.ImageID == image.ID {
+			against = "the previous push of " + tag
+		}
+		line := fmt.Sprintf("Compared with %s: %d new, %d fixed", against, len(added), len(fixed))
+		if len(added) > 0 {
+			line += ". New: " + listCVEs(added)
+		}
+		lines = append(lines, line)
+		data["previous"] = previousReference
+		data["new_cves"], data["fixed_cves"] = nonNil(added), nonNil(fixed)
+	}
+	var top []string
+	named := map[string]bool{}
+	for _, finding := range imageVulnerabilities(result) {
+		if len(top) == reportedCVEs {
+			break
+		}
+		if named[finding.Rule] {
+			continue
+		}
+		named[finding.Rule] = true
+		item := fmt.Sprintf("%s (%s", finding.Rule, strings.ToLower(finding.Severity))
+		if finding.Package != "" {
+			item += ", " + finding.Package + " " + finding.Version
+			if finding.Fixed != "" {
+				item += " → " + finding.Fixed
+			}
+		}
+		top = append(top, item+")")
+	}
+	if len(top) > 0 {
+		lines = append(lines, "Most urgent: "+strings.Join(top, "; "))
+	}
+	data["top"] = nonNil(top)
+	s.emit(notify.Message{Event: notify.EventImageReport, Level: level, Title: title, Lines: lines,
+		Link: link("/images/repositories/" + watch.ID), Data: data, Channels: watch.NotifyChannels})
+}
+
+func nonNil(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
 }
