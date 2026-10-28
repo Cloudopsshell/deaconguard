@@ -48,8 +48,11 @@ export function ImageDetail() {
 
   return (
     <>
-      <Link to="/images" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
-        <ArrowLeft className="size-4" /> Images
+      <Link
+        to={image.repository_watch_id ? `/images/repositories/${image.repository_watch_id}` : "/images"}
+        className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+      >
+        <ArrowLeft className="size-4" /> {image.repository_watch_id ? "Repository" : "Images"}
       </Link>
       <PageHeader
         title={<span className="font-mono break-all">{image.reference}</span>}

@@ -750,7 +750,9 @@ PRAGMA user_version = 21;`
 // subject, which never change for a person, unlike their name or email.
 // schemaV27 adds repository watches: a repository in a registry, scanned
 // whenever an image whose tag matches a pattern is pushed, and the tags each
-// watch has seen. Images it adds point back at it.
+// watch has seen. Images it adds point back at it. history caps how many of
+// them it keeps; notify_level and notify_channels say which new pushes are
+// reported, and to which channels (empty: every channel subscribed).
 const schemaV27 = `
 CREATE TABLE repository_watches (
 	id TEXT PRIMARY KEY,
@@ -759,6 +761,9 @@ CREATE TABLE repository_watches (
 	tag_pattern TEXT NOT NULL DEFAULT '',
 	platform TEXT NOT NULL,
 	keep INTEGER NOT NULL DEFAULT 5,
+	history INTEGER NOT NULL DEFAULT 50,
+	notify_level TEXT NOT NULL DEFAULT 'any',
+	notify_channels TEXT NOT NULL DEFAULT '',
 	checked_at TEXT NOT NULL DEFAULT '',
 	watch_error TEXT NOT NULL DEFAULT '',
 	created_by TEXT NOT NULL,

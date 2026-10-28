@@ -1,9 +1,27 @@
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Boxes, CheckCircle2, Eye, Flame, FolderSearch, KeyRound, Pencil, Play, Plug, Plus, Trash2, XCircle } from "lucide-react";
-import { api, type RegistryImage, type RegistryLogin, type RegistryLoginCheck, type RegistryLoginInput } from "../api";
-import { Button, Card, CardHeader, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, SeverityCountsInline, StatusBadge, Table, Td, Th } from "../components/ui";
+import { AlertTriangle, Boxes, CheckCircle2, ChevronDown, ChevronRight, Eye, Flame, FolderGit2, FolderSearch, KeyRound, Pencil, Play, Plug, Plus, Trash2, XCircle } from "lucide-react";
+import { api, type RegistryImage, type RegistryLogin, type RegistryLoginCheck, type RegistryLoginInput, type RepositoryWatch } from "../api";
+import {
+  Button,
+  Card,
+  CardHeader,
+  Dialog,
+  EmptyState,
+  ErrorMessage,
+  Field,
+  Loading,
+  PageHeader,
+  Pager,
+  SearchBox,
+  SeverityCountsInline,
+  StatusBadge,
+  Table,
+  Td,
+  Th,
+  usePage,
+} from "../components/ui";
 import { timeAgo } from "../lib/format";
 import { useRefreshAll } from "../lib/hooks";
 import { useCan } from "../lib/role";
@@ -65,71 +83,207 @@ export function Images() {
           />
         </Card>
       ) : (
-        <Card>
-          <Table>
-            <thead>
-              <tr>
-                <Th>Image</Th>
-                <Th>Last scan</Th>
-                <Th>Vulnerabilities</Th>
-                {canOperate && <Th className="text-right">Actions</Th>}
-              </tr>
-            </thead>
-            <tbody>
-              {images.data.map((image) => (
-                <tr key={image.id}>
-                  <Td className="min-w-44">
-                    <Link to={`/images/${image.id}`} className="font-mono text-sm font-medium break-all text-indigo-700 hover:underline dark:text-indigo-400">
-                      {image.reference}
-                    </Link>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {image.platform}
-                      {image.latest?.os && ` · ${image.latest.os}`}
-                    </div>
-                    <WatchState image={image} />
-                    {image.repository_watch_id && <div className="text-xs text-slate-500 dark:text-slate-400">Added by a watched repository</div>}
-                  </Td>
-                  <Td>
-                    {image.latest ? (
-                      <div className="space-y-1">
-                        <StatusBadge status={image.latest.status} />
-                        <div className="text-xs text-slate-500 dark:text-slate-400">{timeAgo(image.latest.finished_at || image.latest.started_at)}</div>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-slate-500 dark:text-slate-400">Not scanned</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <ImageCounts image={image} />
-                  </Td>
-                  {canOperate && (
-                    <Td className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="secondary"
-                          disabled={scanning(image)}
-                          loading={scan.isPending && scan.variables?.id === image.id}
-                          onClick={() => scan.mutate(image)}
-                        >
-                          <Play className="size-4" /> Scan now
-                        </Button>
-                        <Button variant="secondary" onClick={() => setDeleting(image)} aria-label={`Remove ${image.reference}`}>
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    </Td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </Card>
+        <ImageList
+          images={images.data}
+          canOperate={canOperate}
+          onScan={(image) => scan.mutate(image)}
+          scanningId={scan.isPending ? scan.variables?.id : undefined}
+          onDelete={setDeleting}
+        />
       )}
       <WatchedRepositories />
       {isAdmin && <RegistryLogins />}
       {adding && <AddImageDialog onClose={() => setAdding(false)} />}
       {deleting && <DeleteImageDialog image={deleting} onClose={() => setDeleting(null)} />}
     </>
+  );
+}
+
+/** A row of the image list: an image added by hand, or a watched repository's images together. */
+type ListRow = { kind: "image"; image: RegistryImage } | { kind: "repository"; id: string; watch?: RepositoryWatch; images: RegistryImage[] };
+
+/** How many rows a page of the image list shows. */
+const imagesPerPage = 50;
+
+/**
+ * The images, with those a watched repository added grouped under it (newest first), so a busy repository
+ * takes one row; a search over every reference, and pages of 50.
+ */
+function ImageList({
+  images,
+  canOperate,
+  onScan,
+  scanningId,
+  onDelete,
+}: {
+  images: RegistryImage[];
+  canOperate: boolean;
+  onScan: (image: RegistryImage) => void;
+  scanningId?: string;
+  onDelete: (image: RegistryImage) => void;
+}) {
+  const watches = useQuery({ queryKey: ["repository-watches"], queryFn: api.repositoryWatches });
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const query = search.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const list: ListRow[] = [];
+    const groups = new Map<string, Extract<ListRow, { kind: "repository" }>>();
+    for (const image of images) {
+      if (query && !image.reference.toLowerCase().includes(query)) continue;
+      if (!image.repository_watch_id) {
+        list.push({ kind: "image", image });
+        continue;
+      }
+      let group = groups.get(image.repository_watch_id);
+      if (!group) {
+        group = { kind: "repository", id: image.repository_watch_id, watch: watches.data?.find((watch) => watch.id === image.repository_watch_id), images: [] };
+        groups.set(group.id, group);
+        list.push(group);
+      }
+      group.images.push(image);
+    }
+    for (const group of groups.values()) group.images.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return list;
+  }, [images, watches.data, query]);
+  const paging = usePage(rows, imagesPerPage, query);
+  return (
+    <Card>
+      <div className="p-4 pb-2">
+        <SearchBox value={search} onChange={setSearch} placeholder={`Search ${images.length.toLocaleString()} images`} label="Search images" />
+      </div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Image</Th>
+            <Th>Last scan</Th>
+            <Th>Vulnerabilities</Th>
+            {canOperate && <Th className="text-right">Actions</Th>}
+          </tr>
+        </thead>
+        <tbody>
+          {paging.shown.map((row) => {
+            if (row.kind === "image")
+              return <ImageRow key={row.image.id} image={row.image} canOperate={canOperate} onScan={onScan} scanningId={scanningId} onDelete={onDelete} />;
+            const expanded = !!query || open[row.id];
+            const newest = row.images[0];
+            const name = row.watch ? `${row.watch.registry}/${row.watch.repository}` : newest.reference.replace(/:[^/:]*$/, "");
+            return (
+              <Fragment key={row.id}>
+                <tr className="bg-slate-50/60 dark:bg-slate-800/30">
+                  <Td className="min-w-44">
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOpen((current) => ({ ...current, [row.id]: !current[row.id] }))}
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? "Hide" : "Show"} the images of ${name}`}
+                        className="mt-0.5 rounded text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                        disabled={!!query}
+                      >
+                        {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                      </button>
+                      <div>
+                        <Link
+                          to={`/images/repositories/${row.id}`}
+                          className="inline-flex items-center gap-1.5 font-mono text-sm font-medium break-all text-indigo-700 hover:underline dark:text-indigo-400"
+                        >
+                          <FolderGit2 className="size-4 shrink-0" aria-hidden /> {name}
+                        </Link>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          Watched repository · {row.images.length} {row.images.length === 1 ? "image" : "images"}
+                          {query ? " matching" : ""} · newest {newest.reference.slice(newest.reference.lastIndexOf(":") + 1)}
+                        </div>
+                      </div>
+                    </div>
+                  </Td>
+                  <Td>
+                    {newest.latest ? (
+                      <div className="space-y-1">
+                        <StatusBadge status={newest.latest.status} />
+                        <div className="text-xs text-slate-500 dark:text-slate-400">{timeAgo(newest.latest.finished_at || newest.latest.started_at)}</div>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-slate-500 dark:text-slate-400">Not scanned</span>
+                    )}
+                  </Td>
+                  <Td>
+                    <ImageCounts image={newest} />
+                  </Td>
+                  {canOperate && <Td />}
+                </tr>
+                {expanded &&
+                  row.images.map((image) => (
+                    <ImageRow key={image.id} image={image} canOperate={canOperate} onScan={onScan} scanningId={scanningId} onDelete={onDelete} nested />
+                  ))}
+              </Fragment>
+            );
+          })}
+          {rows.length === 0 && (
+            <tr>
+              <Td className="text-sm text-slate-500 dark:text-slate-400">No image matches.</Td>
+            </tr>
+          )}
+        </tbody>
+      </Table>
+      <Pager paging={paging} noun="rows" />
+    </Card>
+  );
+}
+
+function ImageRow({
+  image,
+  canOperate,
+  onScan,
+  scanningId,
+  onDelete,
+  nested,
+}: {
+  image: RegistryImage;
+  canOperate: boolean;
+  onScan: (image: RegistryImage) => void;
+  scanningId?: string;
+  onDelete: (image: RegistryImage) => void;
+  nested?: boolean;
+}) {
+  return (
+    <tr>
+      <Td className={nested ? "min-w-44 pl-12" : "min-w-44"}>
+        <Link to={`/images/${image.id}`} className="font-mono text-sm font-medium break-all text-indigo-700 hover:underline dark:text-indigo-400">
+          {image.reference}
+        </Link>
+        <div className="text-xs text-slate-500 dark:text-slate-400">
+          {image.platform}
+          {image.latest?.os && ` · ${image.latest.os}`}
+        </div>
+        <WatchState image={image} />
+      </Td>
+      <Td>
+        {image.latest ? (
+          <div className="space-y-1">
+            <StatusBadge status={image.latest.status} />
+            <div className="text-xs text-slate-500 dark:text-slate-400">{timeAgo(image.latest.finished_at || image.latest.started_at)}</div>
+          </div>
+        ) : (
+          <span className="text-sm text-slate-500 dark:text-slate-400">Not scanned</span>
+        )}
+      </Td>
+      <Td>
+        <ImageCounts image={image} />
+      </Td>
+      {canOperate && (
+        <Td className="text-right">
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" disabled={scanning(image)} loading={scanningId === image.id} onClick={() => onScan(image)}>
+              <Play className="size-4" /> Scan now
+            </Button>
+            <Button variant="secondary" onClick={() => onDelete(image)} aria-label={`Remove ${image.reference}`}>
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
+        </Td>
+      )}
+    </tr>
   );
 }
 

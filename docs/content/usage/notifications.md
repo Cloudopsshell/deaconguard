@@ -34,12 +34,13 @@ For Jira and ServiceNow, choose the events that need someone to act, such as kno
 | Changed system files | System files differ from what their packages installed. | Critical |
 | New cluster findings | A [Kubernetes cluster](./kubernetes.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a privileged workload. | Critical, or Warning for high only |
 | New network findings | A [network target](./network.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a database that now answers on the network or a certificate about to expire. | Critical, or Warning for high only |
+| Image scan reports | A [watched repository](./images.md#reports-of-new-pushes)'s new push was scanned: its counts, what changed since the previous build, and the most urgent vulnerabilities. Each watch chooses which pushes it reports, and to which of these channels. | Critical for critical or known exploited, Warning for high, else Info |
 | Failed scans | A scan of a host, an image or a network target fails, so its results are out of date. | Warning |
 | Audits | An [audit](./audits.md) finishes, with its grade and what holds it back. | Warning for D and F |
 | Agents offline | An agent stops checking in for 2 minutes. | Warning |
 | Digest | Daily, or weekly on chosen days, at a time in a time zone. | |
 
-Only what is new is sent: a vulnerability already reported for a host or an image isn't reported again by its next scan. Image notifications go to every channel subscribed to the event, whatever its tags, since images have no tags. Malware and changed system files are reported by every scan that finds them.
+Only what is new is sent: a vulnerability already reported for a host or an image isn't reported again by its next scan. Image notifications go to every channel subscribed to the event, whatever its tags, since images have no tags; image scan reports go only to the channels a watch chose, when it chose some. Malware and changed system files are reported by every scan that finds them.
 
 ## The digest
 
@@ -80,7 +81,7 @@ DeaconGuard POSTs `application/json`:
 }
 ```
 
-`event` is `exploited`, `critical`, `malware`, `integrity`, `cluster`, `exposure`, `scan_failed`, `audit`, `agent_offline`, `digest` or `test`; `level` is `critical`, `warning` or `info`. Each request carries `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp` (Unix seconds).
+`event` is `exploited`, `critical`, `malware`, `integrity`, `cluster`, `exposure`, `image_report`, `scan_failed`, `audit`, `agent_offline`, `digest` or `test`; `level` is `critical`, `warning` or `info`. Each request carries `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp` (Unix seconds).
 
 ### Checking the signature
 
