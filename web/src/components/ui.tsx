@@ -191,7 +191,7 @@ export function Field({
   label,
   hint,
   ...props
-}: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }) {
+}: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: ReactNode }) {
   return (
     <label className="block">
       <span className="text-sm font-medium">{label}</span>
