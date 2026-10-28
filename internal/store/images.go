@@ -291,6 +291,17 @@ func ImageChecked(id, tagDigest, failure string, at time.Time) error {
 	return err
 }
 
+// RecheckImage clears an image's watch failure and makes its tag due for a
+// check at once, such as after its registry's login changed.
+func RecheckImage(id string) error {
+	db, err := database()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("UPDATE images SET watch_error = '', checked_at = '' WHERE id = ?", id)
+	return err
+}
+
 // DeleteImage removes an image and its scans, and returns it.
 func DeleteImage(id string) (Image, error) {
 	image, err := GetImage(id)
@@ -459,10 +470,11 @@ func FinishImageScan(scan ImageScan, tagDigest string) error {
 	if err != nil {
 		return err
 	}
-	if tagDigest != "" {
-		if _, err := db.Exec("UPDATE images SET tag_digest = ? WHERE id = ?", tagDigest, scan.ImageID); err != nil {
-			return err
-		}
+	// A scan that read the image shows the registry can be reached, so an
+	// earlier watch failure no longer stands.
+	if _, err := db.Exec("UPDATE images SET tag_digest = CASE WHEN ? = '' THEN tag_digest ELSE ? END, watch_error = '' WHERE id = ?",
+		tagDigest, tagDigest, scan.ImageID); err != nil {
+		return err
 	}
 	return pruneImageScans(db, scan.ImageID)
 }

@@ -740,6 +740,14 @@ export interface RegistryLogin {
 
 export type RegistryLoginKind = "basic" | "ecr";
 
+/** The result of logging in to a registry with a saved login. */
+export interface RegistryLoginCheck {
+  /** "ok": the registry accepted it; "unchecked": the registry didn't ask for a login. */
+  status: "ok" | "failed" | "unchecked";
+  message: string;
+  checked_at: string;
+}
+
 export interface RegistryLoginInput {
   registry: string;
   kind: RegistryLoginKind;
@@ -1190,6 +1198,7 @@ export const api = {
   createRegistryLogin: (input: RegistryLoginInput) => request<RegistryLogin>("POST", "/api/registry-logins", input),
   updateRegistryLogin: (id: string, input: RegistryLoginInput) => request<RegistryLogin>("PATCH", `/api/registry-logins/${id}`, input),
   deleteRegistryLogin: (id: string) => request<null>("DELETE", `/api/registry-logins/${id}`),
+  checkRegistryLogin: (id: string) => request<RegistryLoginCheck>("POST", `/api/registry-logins/${id}/check`),
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   setAutoScanContainers: (hostId: string, on: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { auto_scan_containers: on }),
