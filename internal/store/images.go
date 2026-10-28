@@ -49,6 +49,8 @@ type Image struct {
 	CreatedBy  string     `json:"created_by"`
 	CreatedAt  string     `json:"created_at"`
 	Latest     *ImageScan `json:"latest,omitempty"`
+	// RepositoryWatchID is the repository watch that added the image, if one did.
+	RepositoryWatchID string `json:"repository_watch_id,omitempty"`
 }
 
 // ImageScan is one check of an image. Only a succeeded scan has a digest and
@@ -185,12 +187,12 @@ func DeleteRegistryLogin(id string) (RegistryLogin, error) {
 	return login, err
 }
 
-const imageColumns = "id, reference, platform, watch, tag_digest, checked_at, watch_error, created_by, created_at"
+const imageColumns = "id, reference, platform, watch, tag_digest, checked_at, watch_error, created_by, created_at, repository_watch_id"
 
 func scanImage(row rowScanner) (Image, error) {
 	var image Image
 	err := row.Scan(&image.ID, &image.Reference, &image.Platform, &image.Watch, &image.TagDigest, &image.CheckedAt, &image.WatchError,
-		&image.CreatedBy, &image.CreatedAt)
+		&image.CreatedBy, &image.CreatedAt, &image.RepositoryWatchID)
 	return image, err
 }
 

@@ -29,6 +29,26 @@ A **watched** image is checked again without anyone pressing **Scan now**. Watch
 
 The scan history says what started each scan: a person, `watch: new build pushed`, or `watch: daily rescan`. When the check fails, for example because the registry is rate-limiting or the login stopped working, the image says why, and the server log records it once. The message goes away at the next check that works, when a scan of the image succeeds, or as soon as the registry's login is saved again, which also checks the image's tag at once.
 
+## Browse a registry
+
+**Browse**, next to a saved [registry login](#registries-and-logins), lists the repositories the login can see, and then a repository's tags, newest first. From there, **Scan** adds one tag's image, as **Add image** does, and **Watch repository** watches the whole repository, as below.
+
+- **Amazon ECR** lists every repository, and says when each tag was pushed, through the ECR API: the key's user also needs `ecr:DescribeRepositories` and `ecr:DescribeImages` (see the [policy](#an-iam-policy-for-amazon-ecr)).
+- **Other registries** are listed with the registry API's catalog. Some, such as Docker Hub and GHCR, don't list repositories at all: type the repository's name, such as `team/app`, and its tags are listed. The registry API doesn't say when a tag was pushed, so tags are listed by version, newest first: `v1.10.0` before `v1.9.0`.
+
+Browsing is for admins, who hold the logins.
+
+## Watch a repository
+
+A **watched repository** scans each new image pushed to it, without anyone adding it: every 15 minutes, the server lists the repository's tags and scans each new or re-pushed image whose tag matches.
+
+- **Tag pattern:** a regular expression ([RE2](https://github.com/google/re2/wiki/Syntax)) the tags must match; empty matches every tag. For example `^v?\d+\.\d+\.\d+$` for releases (`v1.4.2`), `^main-` for main-branch builds, `^latest$` for one moving tag. The dashboard shows which existing tags match while you type.
+- **Keep the newest:** how many of the newest matching tags stay watched (1 to 20, 5 by default). Their images are rescanned daily for new advisories, and checked for new builds, as watched images are. When a newer tag arrives, the oldest kept one stops being watched; its scans stay.
+- **The first check** scans the newest matching tags at once. After that, a tag that appears, or that is pushed again with a new image, is scanned. **Check now** checks at once.
+- **Newest** is by push time on Amazon ECR. Other registries don't say when a tag was pushed: the first check counts tags by version, and later a tag that appears counts as the newest.
+
+The images a watch adds are listed under **Images** like any other, marked "Added by a watched repository", and their scans say `watch: repository added` or `watch: new push of TAG`. Changing a watch's pattern starts it afresh. Removing a watch keeps the images it added, no longer watched. When a check fails, the watch says why, with the whole message under **Show all**, until a check works or the registry's login is saved again.
+
 New known exploited and critical vulnerabilities in an image, and failed scans, are sent to the [notification](./notifications.md) channels subscribed to those events, as for hosts.
 
 **Scan on push from CI:** to scan an image the moment a pipeline pushes it, call the API with an operator's [API token](../reference/api.md#api-tokens) after the push:
@@ -80,7 +100,7 @@ What to save for the cloud registries:
 
 ### An IAM policy for Amazon ECR
 
-DeaconGuard calls one ECR API, `GetAuthorizationToken`, then reads manifests and layers through the registry, which ECR allows with `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`. It lists nothing. The least an IAM user needs, here for every repository whose name starts with `team-`:
+To scan, DeaconGuard calls one ECR API, `GetAuthorizationToken`, then reads manifests and layers through the registry, which ECR allows with `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`. To [browse](#browse-a-registry) and [watch repositories](#watch-a-repository), it also lists with `ecr:DescribeRepositories` and `ecr:DescribeImages`; leave those out if you only add images by name. The least an IAM user needs, here for every repository whose name starts with `team-`:
 
 ```json
 {
@@ -89,14 +109,15 @@ DeaconGuard calls one ECR API, `GetAuthorizationToken`, then reads manifests and
     { "Effect": "Allow", "Action": "ecr:GetAuthorizationToken", "Resource": "*" },
     {
       "Effect": "Allow",
-      "Action": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+      "Action": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:DescribeImages"],
       "Resource": "arn:aws:ecr:eu-north-1:123456789012:repository/team-*"
-    }
+    },
+    { "Effect": "Allow", "Action": "ecr:DescribeRepositories", "Resource": "arn:aws:ecr:eu-north-1:123456789012:repository/*" }
   ]
 }
 ```
 
-`GetAuthorizationToken` can't be limited to repositories; it only gives a registry password. Repositories in other regions need their own ARNs, and their own login.
+`GetAuthorizationToken` can't be limited to repositories; it only gives a registry password. `DescribeRepositories` on `repository/*` lists every repository's name, without access to its images. Repositories in other regions need their own ARNs, and their own login.
 
 **On the command line**, give it in the environment:
 
