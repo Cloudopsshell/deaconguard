@@ -27,7 +27,7 @@ A **watched** image is checked again without anyone pressing **Scan now**. Watch
 - **New builds:** every 15 minutes, the server asks the registry which build the tag points to, with a `HEAD` request for the manifest: nothing is downloaded, and Docker Hub doesn't count it against its pull limits. When the tag has moved to a new build, the image is scanned again.
 - **New vulnerabilities:** once a day, the image is scanned again for advisories published since. Unchanged layers come from the cache, so this takes a second or two.
 
-The scan history says what started each scan: a person, `watch: new build pushed`, or `watch: daily rescan`. When the check fails, for example because the registry is rate-limiting or the login stopped working, the image says why, and the server log records it once.
+The scan history says what started each scan: a person, `watch: new build pushed`, or `watch: daily rescan`. When the check fails, for example because the registry is rate-limiting or the login stopped working, the image says why, and the server log records it once. The message goes away at the next check that works, when a scan of the image succeeds, or as soon as the registry's login is saved again, which also checks the image's tag at once.
 
 New known exploited and critical vulnerabilities in an image, and failed scans, are sent to the [notification](./notifications.md) channels subscribed to those events, as for hosts.
 
@@ -60,15 +60,43 @@ For a private image, DeaconGuard needs a login for its registry: a username and 
 
 **In the dashboard**, an admin saves it under **Images**, **Registry logins**: the registry's host (`docker.io`, `ghcr.io`, `registry.example.com:5000`), the username and the token. It is used for every image in that registry. The server stores it in its database and never shows it again; to change it, edit the login and type a new one, or leave it empty to keep the saved one. A saved token is never sent to another registry: changing a login's registry needs the token again. The audit log records who added, changed or deleted each login, without the token.
 
+**Check a login** with **Check** next to it, and saving a login checks it too: DeaconGuard logs in to the registry the way `docker login` does and shows the answer under the login.
+
+- **Works:** the registry accepted the login.
+- **Doesn't work:** the registry refused it, with the reason in plain words, such as a wrong password, or for ECR an AWS secret access key that doesn't belong to the access key ID.
+- **Couldn't check:** the registry answers without asking for a login, so it can't say whether this one is right. DeaconGuard still uses it for images that need it.
+
+A check proves the login, not access to every repository: a token limited to some repositories still fails for the others when their images are scanned.
+
 What to save for the cloud registries:
 
 | Registry | Host | Login |
 | --- | --- | --- |
-| Amazon ECR | `123456789012.dkr.ecr.eu-north-1.amazonaws.com` | Choose **An AWS access key**, and give an access key ID and secret access key of an IAM user with only the `AmazonEC2ContainerRegistryReadOnly` policy. ECR's registry passwords last 12 hours, so DeaconGuard keeps the key and gets a new password from the ECR API when it needs one. |
+| Amazon ECR | `123456789012.dkr.ecr.eu-north-1.amazonaws.com` | Choose **An AWS access key**, and give an access key ID and secret access key of an IAM user that may only read: `ecr:GetAuthorizationToken` (on `*`), and `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer` on the repositories to scan (see the [policy below](#an-iam-policy-for-amazon-ecr)), or the managed `AmazonEC2ContainerRegistryReadOnly`. ECR's registry passwords last 12 hours, so DeaconGuard keeps the key and gets a new password from the ECR API when it needs one. |
 | Google Artifact Registry | `europe-north1-docker.pkg.dev` | Username `_json_key`, and as the password the JSON key of a service account with the **Artifact Registry Reader** role. |
 | Azure Container Registry | `myregistry.azurecr.io` | A [repository-scoped token](https://learn.microsoft.com/azure/container-registry/container-registry-repository-scoped-permissions) with `content/read`, or a service principal's application ID and secret with the **AcrPull** role. |
 | GitHub (GHCR) | `ghcr.io` | Your GitHub username and a personal access token (classic) with only `read:packages`. |
 | Docker Hub | `docker.io` | Your username and a personal access token with **Read-only** access. A login also raises Docker Hub's pull limits. |
+
+### An IAM policy for Amazon ECR
+
+DeaconGuard calls one ECR API, `GetAuthorizationToken`, then reads manifests and layers through the registry, which ECR allows with `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`. It lists nothing. The least an IAM user needs, here for every repository whose name starts with `team-`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "ecr:GetAuthorizationToken", "Resource": "*" },
+    {
+      "Effect": "Allow",
+      "Action": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+      "Resource": "arn:aws:ecr:eu-north-1:123456789012:repository/team-*"
+    }
+  ]
+}
+```
+
+`GetAuthorizationToken` can't be limited to repositories; it only gives a registry password. Repositories in other regions need their own ARNs, and their own login.
 
 **On the command line**, give it in the environment:
 

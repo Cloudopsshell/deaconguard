@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Boxes, Eye, Flame, KeyRound, Pencil, Play, Plus, Trash2 } from "lucide-react";
-import { api, type RegistryImage, type RegistryLogin, type RegistryLoginInput } from "../api";
+import { AlertTriangle, Boxes, CheckCircle2, Eye, Flame, KeyRound, Pencil, Play, Plug, Plus, Trash2, XCircle } from "lucide-react";
+import { api, type RegistryImage, type RegistryLogin, type RegistryLoginCheck, type RegistryLoginInput } from "../api";
 import { Button, Card, CardHeader, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, SeverityCountsInline, StatusBadge, Table, Td, Th } from "../components/ui";
 import { timeAgo } from "../lib/format";
 import { useRefreshAll } from "../lib/hooks";
@@ -277,6 +277,18 @@ function RegistryLogins() {
   const logins = useQuery({ queryKey: ["registry-logins"], queryFn: api.registryLogins });
   const [editing, setEditing] = useState<RegistryLogin | "new" | null>(null);
   const [deleting, setDeleting] = useState<RegistryLogin | null>(null);
+  // Results of checking logins, by login ID, until the page is left.
+  const [checks, setChecks] = useState<Record<string, RegistryLoginCheck | "checking">>({});
+  const check = async (id: string) => {
+    setChecks((current) => ({ ...current, [id]: "checking" }));
+    try {
+      const result = await api.checkRegistryLogin(id);
+      setChecks((current) => ({ ...current, [id]: result }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setChecks((current) => ({ ...current, [id]: { status: "failed", message, checked_at: new Date().toISOString() } }));
+    }
+  };
   return (
     <div className="mt-6">
       <Card>
@@ -314,10 +326,20 @@ function RegistryLogins() {
                   <Td>
                     {login.username}
                     {login.kind === "ecr" && <div className="text-xs text-slate-500 dark:text-slate-400">AWS access key</div>}
+                    <LoginCheckResult result={checks[login.id]} />
                   </Td>
                   <Td className="text-sm text-slate-500 dark:text-slate-400">{timeAgo(login.updated_at)}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={() => check(login.id)}
+                        loading={checks[login.id] === "checking"}
+                        aria-label={`Check the login for ${login.registry}`}
+                        title="Log in to the registry now, to see whether it accepts this login"
+                      >
+                        <Plug className="size-4" /> Check
+                      </Button>
                       <Button variant="secondary" onClick={() => setEditing(login)} aria-label={`Edit the login for ${login.registry}`}>
                         <Pencil className="size-4" />
                       </Button>
@@ -332,13 +354,36 @@ function RegistryLogins() {
           </Table>
         )}
       </Card>
-      {editing && <RegistryLoginDialog login={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && <RegistryLoginDialog login={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={(saved) => check(saved.id)} />}
       {deleting && <DeleteLoginDialog login={deleting} onClose={() => setDeleting(null)} />}
     </div>
   );
 }
 
-function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; onClose: () => void }) {
+/** What checking a login found, under the login. */
+function LoginCheckResult({ result }: { result?: RegistryLoginCheck | "checking" }) {
+  if (!result) return null;
+  if (result === "checking") return <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Checking the login…</div>;
+  const style =
+    result.status === "ok"
+      ? "text-emerald-700 dark:text-emerald-400"
+      : result.status === "failed"
+        ? "text-rose-700 dark:text-rose-400"
+        : "text-amber-700 dark:text-amber-400";
+  const Icon = result.status === "ok" ? CheckCircle2 : result.status === "failed" ? XCircle : AlertTriangle;
+  const label = result.status === "ok" ? "Works" : result.status === "failed" ? "Doesn't work" : "Couldn't check";
+  return (
+    <div className={`mt-1 flex max-w-xl items-start gap-1 text-xs ${style}`} role="status">
+      <Icon className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        <span className="font-medium">{label}:</span> {result.message}{" "}
+        <span className="text-slate-500 dark:text-slate-400">· {timeAgo(result.checked_at)}</span>
+      </span>
+    </div>
+  );
+}
+
+function RegistryLoginDialog({ login, onClose, onSaved }: { login: RegistryLogin | null; onClose: () => void; onSaved: (login: RegistryLogin) => void }) {
   const refresh = useRefreshAll();
   const [input, setInput] = useState<RegistryLoginInput>({
     registry: login?.registry ?? "",
@@ -349,9 +394,11 @@ function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; 
   const ecr = input.kind === "ecr";
   const save = useMutation({
     mutationFn: () => (login ? api.updateRegistryLogin(login.id, input) : api.createRegistryLogin(input)),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       refresh();
       onClose();
+      // Check it at once, so a mistyped key shows here, not at the next scan.
+      onSaved(saved);
     },
   });
   return (
@@ -386,8 +433,9 @@ function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; 
           </div>
           {ecr && (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              DeaconGuard exchanges it for ECR's 12-hour registry password when it needs one. Give the key's user only{" "}
-              <span className="font-mono">AmazonEC2ContainerRegistryReadOnly</span>.
+              DeaconGuard exchanges it for ECR's 12-hour registry password when it needs one. Give the key's user read access only:{" "}
+              <span className="font-mono">ecr:GetAuthorizationToken</span>, <span className="font-mono">ecr:BatchGetImage</span> and{" "}
+              <span className="font-mono">ecr:GetDownloadUrlForLayer</span>, or <span className="font-mono">AmazonEC2ContainerRegistryReadOnly</span>.
             </p>
           )}
         </fieldset>
@@ -405,7 +453,11 @@ function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; 
           onChange={(event) => setInput({ ...input, secret: event.target.value })}
           autoComplete="new-password"
           required={!login}
-          hint={login ? "Leave empty to keep the saved one." : "Stored on the server and never shown again."}
+          hint={
+            login
+              ? "Leave empty to keep the saved one. Saving checks the login with the registry."
+              : "Stored on the server and never shown again. Saving checks the login with the registry."
+          }
         />
         <ErrorMessage error={save.error} />
         <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">

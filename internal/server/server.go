@@ -191,6 +191,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/registry-logins", s.needs(store.RoleAdmin, s.listRegistryLogins))
 	mux.HandleFunc("POST /api/registry-logins", s.needs(store.RoleAdmin, s.createRegistryLogin))
 	mux.HandleFunc("PATCH /api/registry-logins/{id}", s.needs(store.RoleAdmin, s.updateRegistryLogin))
+	mux.HandleFunc("POST /api/registry-logins/{id}/check", s.needs(store.RoleAdmin, s.checkRegistryLogin))
 	mux.HandleFunc("DELETE /api/registry-logins/{id}", s.needs(store.RoleAdmin, s.deleteRegistryLogin))
 	mux.HandleFunc("GET /api/logs/download", s.needs(store.RoleOperator, s.downloadLogs))
 	mux.HandleFunc("POST /api/hosts/{id}/scans", s.needs(store.RoleOperator, s.startScan))

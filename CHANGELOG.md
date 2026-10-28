@@ -8,6 +8,19 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Check a registry login:** **Check** next to each login on the Images page logs in to the registry the way `docker login` does and says whether it works, why not in plain words (such as an AWS secret access key that doesn't belong to its access key ID), or that the registry doesn't ask for a login. Saving a login checks it too.
+
+### Fixed
+
+- An image's "Can't check for new builds" message stayed for up to 15 minutes after its registry's login was fixed. Saving a login now clears it for that registry's images and checks their tags at once, and a scan that succeeds clears it too.
+- Spaces and line breaks pasted around an AWS access key are removed; they made AWS refuse the signature.
+
+### Changed
+
+- The ECR login's hint and the Images docs give the least IAM permissions DeaconGuard needs: `ecr:GetAuthorizationToken`, `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`.
+
 ## [1.11.1] - 2026-10-25
 
 ### Fixed
