@@ -44,6 +44,20 @@ func TestHubAPI(t *testing.T) {
 			fmt.Fprintf(w, `{"next":"%s/v2/namespaces/library/repositories/alpine/tags?page=2&page_size=100&ordering=last_updated","results":[{"name":"3.22","digest":"sha256:%s","tag_last_pushed":"2026-10-23T05:24:47.66Z","last_updated":"2026-10-23T05:24:47.66Z"}]}`, server.URL, strings.Repeat("a", 64))
 		case r.URL.Path == "/v2/namespaces/robot/repositories":
 			fmt.Fprint(w, `{"next":null,"results":[{"name":"web"},{"name":"api"}]}`)
+		case r.URL.Path == "/v2/namespaces/library/repositories/many/tags":
+			// Docker Hub refuses anonymous pages past the first 1,000 tags.
+			page := 1
+			fmt.Sscan(r.URL.Query().Get("page"), &page)
+			if page > 10 && r.Header.Get("Authorization") == "" || page > 12 {
+				w.WriteHeader(http.StatusForbidden)
+				fmt.Fprint(w, `{"message":"pagination offset too large for anonymous requests; sign in to page further"}`)
+				return
+			}
+			var results []string
+			for i := range 100 {
+				results = append(results, fmt.Sprintf(`{"name":"t%d-%d","tag_last_pushed":"2026-10-01T00:00:00Z"}`, page, i))
+			}
+			fmt.Fprintf(w, `{"next":"%s/v2/namespaces/library/repositories/many/tags?page=%d&page_size=100&ordering=last_updated","results":[%s]}`, server.URL, page+1, strings.Join(results, ","))
 		case r.URL.Path == "/v2/namespaces/library/repositories/busy/tags":
 			w.WriteHeader(http.StatusTooManyRequests)
 		default:
@@ -77,7 +91,19 @@ func TestHubAPI(t *testing.T) {
 		t.Fatalf("rate limited: %v", err)
 	}
 
+	// A busy public repository: the newest 1,000 tags, without asking for
+	// pages Docker Hub refuses.
+	requests = 0
+	if tags, err := public.Tags(ctx, "library/many"); err != nil || len(tags) != 1000 || requests != 10 {
+		t.Fatalf("anonymous paging: %d tags in %d requests, %v", len(tags), requests, err)
+	}
 	login := &HubAPI{Client: server.Client(), Endpoint: server.URL, Username: "robot", Secret: "dckr_pat_x"}
+	// With a login it pages further, and a refused later page ends the
+	// listing with the tags read.
+	if tags, err := login.Tags(ctx, "library/many"); err != nil || len(tags) != 1200 {
+		t.Fatalf("paging with a login: %d tags, %v", len(tags), err)
+	}
+	login = &HubAPI{Client: server.Client(), Endpoint: server.URL, Username: "robot", Secret: "dckr_pat_x"}
 	if tags, err := login.Tags(ctx, "acme/private"); err != nil || len(tags) != 1 || tags[0].Tag != "v2" {
 		t.Fatalf("a private repository with a login: %+v, %v", tags, err)
 	}
