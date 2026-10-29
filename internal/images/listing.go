@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -55,24 +56,88 @@ func (c *Client) Repositories(ctx context.Context, registry string) ([]string, e
 	return names, nil
 }
 
-// Tags lists a repository's tags with the registry API.
+// Tags lists a repository's tags with the registry API. Google's Artifact
+// Registry and Container Registry add each image's digest and upload time
+// to the answer, in "manifest"; where it's there, the tags get them.
 func (c *Client) Tags(ctx context.Context, registry, repository string) ([]TagInfo, error) {
 	var tags []TagInfo
 	address := fmt.Sprintf("%s://%s/v2/%s/tags/list?n=1000", c.Scheme, registry, repository)
 	for address != "" && len(tags) < maxListed {
 		var page struct {
-			Tags []string `json:"tags"`
+			Tags     []string `json:"tags"`
+			Manifest map[string]struct {
+				Tag      []string `json:"tag"`
+				Uploaded string   `json:"timeUploadedMs"`
+			} `json:"manifest"`
 		}
 		next, err := c.getJSON(ctx, address, registry, registry+"/"+repository, "repository:"+repository+":pull", &page)
 		if err != nil {
 			return nil, err
 		}
+		known := map[string]TagInfo{}
+		for digest, image := range page.Manifest {
+			info := TagInfo{}
+			if digestPattern.MatchString(digest) {
+				info.Digest = digest
+			}
+			if ms, err := strconv.ParseInt(image.Uploaded, 10, 64); err == nil && ms > 0 {
+				info.PushedAt = time.UnixMilli(ms).UTC()
+			}
+			for _, tag := range image.Tag {
+				known[tag] = info
+			}
+		}
 		for _, tag := range page.Tags {
-			tags = append(tags, TagInfo{Tag: tag})
+			info := known[tag]
+			info.Tag = tag
+			tags = append(tags, info)
 		}
 		address = next
 	}
 	return tags, nil
+}
+
+// ACRTags lists a repository's tags with Azure Container Registry's own
+// API, on the registry's host and with its login, which says when each
+// was last pushed, newest first. The login needs to read metadata, as
+// ACR's AcrPull role and repository-scoped tokens with content/read and
+// metadata/read can.
+func (c *Client) ACRTags(ctx context.Context, registry, repository string) ([]TagInfo, error) {
+	var tags []TagInfo
+	address := fmt.Sprintf("%s://%s/acr/v1/%s/_tags?n=100&orderby=timedesc", c.Scheme, registry, repository)
+	for address != "" && len(tags) < maxListed {
+		var page struct {
+			Tags []struct {
+				Name        string    `json:"name"`
+				Digest      string    `json:"digest"`
+				CreatedTime time.Time `json:"createdTime"`
+				UpdatedTime time.Time `json:"lastUpdateTime"`
+			} `json:"tags"`
+		}
+		next, err := c.getJSON(ctx, address, registry, registry+"/"+repository, "repository:"+repository+":metadata_read", &page)
+		if err != nil {
+			return nil, err
+		}
+		for _, tag := range page.Tags {
+			pushed := tag.UpdatedTime
+			if pushed.IsZero() {
+				pushed = tag.CreatedTime
+			}
+			digest := tag.Digest
+			if !digestPattern.MatchString(digest) {
+				digest = ""
+			}
+			tags = append(tags, TagInfo{Tag: tag.Name, Digest: digest, PushedAt: pushed.UTC()})
+		}
+		address = next
+	}
+	return tags, nil
+}
+
+// IsACR reports whether registry is an Azure Container Registry.
+func IsACR(registry string) bool {
+	host, _, _ := strings.Cut(registry, ":")
+	return strings.HasSuffix(host, ".azurecr.io") || strings.HasSuffix(host, ".azurecr.cn") || strings.HasSuffix(host, ".azurecr.us")
 }
 
 // getJSON reads one page of a registry listing, and returns the next page's

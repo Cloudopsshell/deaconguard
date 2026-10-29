@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Push times from more registries:** repository watches and the browse dialog get each tag's push time and digest from Google Artifact Registry and gcr.io (in the registry API's answer), Azure Container Registry (its own API, with the registry login), Quay (its API; private repositories with `$oauthtoken` and an OAuth token), Harbor (its API, with the registry login) and GitLab (its GraphQL API; private projects with a `read_api` token), so the newest tags are the most recently pushed ones. Harbor, a self-hosted Quay and a self-hosted GitLab are recognised by asking the host, once an hour; GitLab only on hosts named for it. Browsing a Harbor login lists its repositories. When a registry's own API fails, the registry API lists the tags as before, and the browse dialog and the server log say why.
+
 ## [1.14.0] - 2026-10-29
 
 ### Added
