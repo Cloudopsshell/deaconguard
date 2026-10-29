@@ -39,7 +39,7 @@ Within each, those an update or a restart fixes come first where a list mixes bo
 
 ## Trends
 
-**Vulnerabilities over time** on the dashboard and on each host's page charts the open vulnerabilities by severity, and those known to be exploited, over the last 30, 90 or 365 days. Each host counts with its latest scan that checked packages on or before each day, so a host scanned weekly still counts on the days between. Removed hosts leave the chart. Upgrading to 0.16.0 fills it from the scans already kept. Point at a day to see its numbers.
+**Vulnerabilities over time** on the dashboard and on each host's page charts the open vulnerabilities by severity, and those known to be exploited, over the last 30, 90 or 365 days. Each host counts with its latest scan that checked packages on or before each day, so a host scanned weekly still counts on the days between. Removed hosts leave the chart. Upgrading to 0.16.0 fills it from the scans already kept. Point at a day, or tap it, to see its numbers by severity. When nothing changed over the period, the chart says since when, as its bands are then flat.
 
 ## Host tags
 

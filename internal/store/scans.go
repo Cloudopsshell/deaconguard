@@ -734,19 +734,24 @@ type AffectedPackage struct {
 }
 
 // latestFindings selects findings from the newest successful scan of each
-// registered host.
+// registered host. Each host's newest scan is found once, not once for every
+// finding of every scan it kept, which made the dashboard slow as scans
+// piled up.
 const latestFindings = `
+WITH latest AS (
+	SELECT id FROM (
+		SELECT id, ROW_NUMBER() OVER (PARTITION BY host_id ORDER BY started_at DESC, rowid DESC) AS n
+		FROM scans WHERE status = 'succeeded' AND checks LIKE '%,packages,%'
+	) WHERE n = 1
+)
 SELECT s.host_id, h.address, s.id, s.started_at, f.cve, f.package, f.installed_version, f.fixed_version,
 	f.fix, f.severity, f.url, f.title, f.priority, f.kev, f.kev_due, f.ransomware, f.epss, f.cvss_score, COALESCE(seen.first_seen, '')
-FROM findings f
-JOIN scans s ON s.id = f.scan_id
+FROM latest
+JOIN scans s ON s.id = latest.id
+JOIN findings f ON f.scan_id = s.id
 JOIN hosts h ON h.id = s.host_id
 LEFT JOIN host_cve_seen seen ON seen.host_id = s.host_id AND seen.cve = f.cve
-WHERE s.id = (
-	SELECT latest.id FROM scans latest
-	WHERE latest.host_id = s.host_id AND latest.status = 'succeeded' AND latest.checks LIKE '%,packages,%'
-	ORDER BY latest.started_at DESC, latest.rowid DESC LIMIT 1
-)`
+WHERE 1 = 1`
 
 func queryLatestFindings(filter string, arguments ...any) ([]AffectedPackage, []string, error) {
 	db, err := database()
