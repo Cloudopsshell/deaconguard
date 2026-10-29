@@ -137,6 +137,9 @@ spec:
               value: {{ include "deaconguard.adminSecret" . | quote }}
             - name: DEACONGUARD_NAMESPACE
               value: {{ .Release.Namespace | quote }}
+            - name: DEACONGUARD_FEED_CACHE_MB
+              # Upgrades that reuse older values have no feedCacheMB: 400.
+              value: {{ ternary .Values.server.feedCacheMB 400 (hasKey .Values.server "feedCacheMB") | toString | quote }}
             - name: DEACONGUARD_CLUSTER_AGENT_URL
               value: "https://{{ include "deaconguard.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.server.service.agentPort }}"
           ports:

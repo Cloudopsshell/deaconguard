@@ -109,27 +109,34 @@ type FamilyEvaluation struct {
 // (an advisory and its CVEs) both count; each true one is a finding for each
 // of its CVEs and each package it matched.
 func evaluateRPMFamilyOVAL(stream io.Reader, packages []inventory.Package, vendorKeys []string) (FamilyEvaluation, error) {
-	evaluator := &rpmFamilyEvaluator{
-		vendorKeys: make(map[string]bool),
-		packages:   packages, byName: make(map[string][]inventory.Package), tests: make(map[string]familyTest),
-		objects: make(map[string]familyObject), states: make(map[string]familyState), results: make(map[string]ovalResult),
-		patterns: make(map[string]*regexp.Regexp),
+	parsed, err := parseFamilyOVAL(stream)
+	if err != nil {
+		return FamilyEvaluation{}, err
 	}
-	for _, item := range packages {
-		evaluator.byName[item.Name] = append(evaluator.byName[item.Name], item)
-	}
-	for _, key := range vendorKeys {
-		evaluator.vendorKeys[strings.ToLower(key)] = true
-	}
+	return evaluateFamilyOVAL(parsed, packages, vendorKeys), nil
+}
+
+// familyOVAL is a parsed OVAL feed of the RPM families: its vulnerability
+// and patch definitions, and its tests, objects and states by ID.
+// Evaluations only read it, so scans share it.
+type familyOVAL struct {
+	definitions []familyDefinition
+	tests       map[string]familyTest
+	objects     map[string]familyObject
+	states      map[string]familyState
+}
+
+func parseFamilyOVAL(stream io.Reader) (familyOVAL, error) {
+	parsed := familyOVAL{definitions: make([]familyDefinition, 0, 4096), tests: make(map[string]familyTest),
+		objects: make(map[string]familyObject), states: make(map[string]familyState)}
 	decoder := xml.NewDecoder(stream)
-	definitions := make([]familyDefinition, 0, 4096)
 	for {
 		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return FamilyEvaluation{}, fmt.Errorf("read OVAL XML: %w", err)
+			return familyOVAL{}, fmt.Errorf("read OVAL XML: %w", err)
 		}
 		start, ok := token.(xml.StartElement)
 		if !ok {
@@ -139,35 +146,52 @@ func evaluateRPMFamilyOVAL(stream io.Reader, packages []inventory.Package, vendo
 		case "definition":
 			var definition familyDefinition
 			if err := decoder.DecodeElement(&definition, &start); err != nil {
-				return FamilyEvaluation{}, fmt.Errorf("read an OVAL definition: %w", err)
+				return familyOVAL{}, fmt.Errorf("read an OVAL definition: %w", err)
 			}
 			if definition.Class == "vulnerability" || definition.Class == "patch" {
-				definitions = append(definitions, definition)
+				parsed.definitions = append(parsed.definitions, definition)
 			}
 		case "rpminfo_test", "rpmverifyfile_test":
 			var test familyTest
 			if err := decoder.DecodeElement(&test, &start); err != nil {
-				return FamilyEvaluation{}, fmt.Errorf("read an OVAL test: %w", err)
+				return familyOVAL{}, fmt.Errorf("read an OVAL test: %w", err)
 			}
 			test.verifyFile = start.Name.Local == "rpmverifyfile_test"
-			evaluator.tests[test.ID] = test
+			parsed.tests[test.ID] = test
 		case "rpminfo_object":
 			var object familyObject
 			if err := decoder.DecodeElement(&object, &start); err != nil {
-				return FamilyEvaluation{}, fmt.Errorf("read an OVAL object: %w", err)
+				return familyOVAL{}, fmt.Errorf("read an OVAL object: %w", err)
 			}
-			evaluator.objects[object.ID] = object
+			parsed.objects[object.ID] = object
 		case "rpminfo_state", "rpmverifyfile_state":
 			var state familyState
 			if err := decoder.DecodeElement(&state, &start); err != nil {
-				return FamilyEvaluation{}, fmt.Errorf("read an OVAL state: %w", err)
+				return familyOVAL{}, fmt.Errorf("read an OVAL state: %w", err)
 			}
-			evaluator.states[state.ID] = state
+			parsed.states[state.ID] = state
 		}
 	}
-	if len(definitions) == 0 {
-		return FamilyEvaluation{}, errors.New("the OVAL feed has no vulnerability or patch definitions")
+	if len(parsed.definitions) == 0 {
+		return familyOVAL{}, errors.New("the OVAL feed has no vulnerability or patch definitions")
 	}
+	return parsed, nil
+}
+
+func evaluateFamilyOVAL(parsed familyOVAL, packages []inventory.Package, vendorKeys []string) FamilyEvaluation {
+	evaluator := &rpmFamilyEvaluator{
+		vendorKeys: make(map[string]bool),
+		packages:   packages, byName: make(map[string][]inventory.Package), tests: parsed.tests,
+		objects: parsed.objects, states: parsed.states, results: make(map[string]ovalResult),
+		patterns: make(map[string]*regexp.Regexp),
+	}
+	for _, item := range packages {
+		evaluator.byName[item.Name] = append(evaluator.byName[item.Name], item)
+	}
+	for _, key := range vendorKeys {
+		evaluator.vendorKeys[strings.ToLower(key)] = true
+	}
+	definitions := parsed.definitions
 
 	result := FamilyEvaluation{DebianEvaluation: DebianEvaluation{Findings: make([]Finding, 0), Unsupported: make([]Unsupported, 0)}}
 	seen := make(map[string]bool)
@@ -214,7 +238,7 @@ func evaluateRPMFamilyOVAL(stream io.Reader, packages []inventory.Package, vendo
 		}
 	}
 	result.AssumedSigned = evaluator.assumedSigned
-	return result, nil
+	return result
 }
 
 func firstNonEmpty(values ...string) string {

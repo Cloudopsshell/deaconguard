@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 
 	"deaconguard/internal/inventory"
@@ -130,13 +131,36 @@ func EvaluateUbuntuOVAL(compressed []byte, target platform.Platform, packages []
 	if target.Family != platform.Ubuntu {
 		return DebianEvaluation{}, fmt.Errorf("Canonical OVAL cannot evaluate %s", target.Family)
 	}
-	// The XML is parsed as it is decompressed, never held whole in memory.
-	limited := &limitedReader{reader: bzip2.NewReader(bytes.NewReader(compressed)), remaining: maxUbuntuOVALBytes}
-	return evaluateUbuntuOVALReader(limited, packages, kernel)
+	// The XML is parsed as it is decompressed, never held whole in memory,
+	// and once per feed: scans of the same release share the parsed rules.
+	index, err := parsedOnce("ubuntu-oval-"+target.Codename, compressed, func() (ubuntuOVALIndex, error) {
+		limited := &limitedReader{reader: bzip2.NewReader(bytes.NewReader(compressed)), remaining: maxUbuntuOVALBytes}
+		return parseUbuntuOVAL(limited)
+	})
+	if err != nil {
+		return DebianEvaluation{}, err
+	}
+	return evaluateUbuntuOVALIndex(index, packages, kernel), nil
 }
 
 func evaluateUbuntuOVALXML(contents []byte, packages []inventory.Package, kernel string) (DebianEvaluation, error) {
 	return evaluateUbuntuOVALReader(bytes.NewReader(contents), packages, kernel)
+}
+
+// ubuntuOVALIndex is a parsed Canonical OVAL feed: its elements by ID, and
+// its definitions. Evaluations only read it, so scans share it.
+type ubuntuOVALIndex struct {
+	byID, definitions map[string]*ovalNode
+}
+
+func parseUbuntuOVAL(contents io.Reader) (ubuntuOVALIndex, error) {
+	root, err := parseOVALTree(contents)
+	if err != nil {
+		return ubuntuOVALIndex{}, fmt.Errorf("parse Canonical OVAL XML: %w", err)
+	}
+	index := ubuntuOVALIndex{byID: make(map[string]*ovalNode), definitions: make(map[string]*ovalNode)}
+	indexOVALNodes(root, index.byID, index.definitions)
+	return index, nil
 }
 
 // limitedReader fails, where io.LimitReader would quietly stop, when the
@@ -159,17 +183,20 @@ func (r *limitedReader) Read(buffer []byte) (int, error) {
 }
 
 func evaluateUbuntuOVALReader(contents io.Reader, packages []inventory.Package, kernel string) (DebianEvaluation, error) {
-	root, err := parseOVALTree(contents)
+	index, err := parseUbuntuOVAL(contents)
 	if err != nil {
-		return DebianEvaluation{}, fmt.Errorf("parse Canonical OVAL XML: %w", err)
+		return DebianEvaluation{}, err
 	}
+	return evaluateUbuntuOVALIndex(index, packages, kernel), nil
+}
+
+func evaluateUbuntuOVALIndex(index ubuntuOVALIndex, packages []inventory.Package, kernel string) DebianEvaluation {
 	evaluator := &ubuntuOVALEvaluator{
-		byID: make(map[string]*ovalNode), definitions: make(map[string]*ovalNode),
+		byID: index.byID, definitions: index.definitions,
 		packages: make(map[string][]inventory.Package), kernel: kernel,
 		variables: make(map[string][]string), variableUnknown: make(map[string]bool),
 		tests: make(map[string]ovalEval),
 	}
-	indexOVALNodes(root, evaluator.byID, evaluator.definitions)
 	for _, item := range packages {
 		evaluator.packages[item.Name] = append(evaluator.packages[item.Name], item)
 	}
@@ -236,7 +263,7 @@ func evaluateUbuntuOVALReader(contents io.Reader, packages []inventory.Package, 
 			}
 		}
 	}
-	return result, nil
+	return result
 }
 
 func parseOVALTree(contents io.Reader) (*ovalNode, error) {
@@ -267,9 +294,22 @@ func parseOVALTree(contents io.Reader) (*ovalNode, error) {
 			}
 			node := &ovalNode{Name: names.intern(value.Name.Local)}
 			for _, attribute := range value.Attr {
-				if name, kept := ovalAttributes[attribute.Name.Local]; kept {
-					node.Attrs = append(node.Attrs, ovalAttr{Name: name, Value: attribute.Value})
+				name, kept := ovalAttributes[attribute.Name.Local]
+				if !kept {
+					continue
 				}
+				// The evaluation makes this address from the CVE when it
+				// isn't there; most references give exactly that one.
+				if name == "ref_url" && strings.HasPrefix(attribute.Value, "https://ubuntu.com/security/CVE-") {
+					continue
+				}
+				// Rules refer to the same tests, states and objects many
+				// times over; one copy of each value is kept, as the feed is
+				// kept in memory for the scans that follow.
+				node.Attrs = append(node.Attrs, ovalAttr{Name: name, Value: names.intern(attribute.Value)})
+			}
+			if len(node.Attrs) > 0 {
+				node.Attrs = slices.Clip(node.Attrs)
 			}
 			if len(stack) == 0 {
 				if root != nil {
@@ -289,6 +329,10 @@ func parseOVALTree(contents io.Reader) (*ovalNode, error) {
 		case xml.EndElement:
 			if len(stack) == 0 {
 				return nil, fmt.Errorf("unexpected OVAL XML closing element")
+			}
+			// Appending left room to spare; give it back.
+			if node := stack[len(stack)-1]; cap(node.Children) > len(node.Children) {
+				node.Children = append([]*ovalNode(nil), node.Children...)
 			}
 			stack = stack[:len(stack)-1]
 		}
