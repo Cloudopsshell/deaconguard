@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"deaconguard/internal/checks"
@@ -57,6 +58,98 @@ func listTags(ctx context.Context, s *Server, registry, repository string) ([]im
 		return nil, err
 	}
 	return client.Tags(ctx, registry, repository)
+}
+
+// createdFunc reads when a tag's image was built; tests replace it.
+type createdFunc func(ctx context.Context, client *images.Client, ref images.Reference, platform string) (time.Time, error)
+
+func created(ctx context.Context, client *images.Client, ref images.Reference, platform string) (time.Time, error) {
+	return client.Created(ctx, ref, platform)
+}
+
+const (
+	// maxBuiltReads caps how many tags' build times one listing reads, and
+	// builtReaders how many at once.
+	maxBuiltReads = 100
+	builtReaders  = 6
+	// builtTimeKept is how long a build time read is reused, so that
+	// previewing a watch doesn't read it again on each change.
+	builtTimeKept = 10 * time.Minute
+)
+
+type builtTime struct {
+	created time.Time
+	read    time.Time
+}
+
+// readBuildTimes fills in when the images of a repository's tags were built,
+// for the tags want picks that have no push time, so they can be ordered
+// where the registry doesn't say when each was pushed. It reads at most
+// maxBuiltReads, the newest by version, and none on Docker Hub, which limits
+// reads. A tag it can't read keeps its place by version.
+func (s *Server) readBuildTimes(ctx context.Context, registry, repository, platform string, tags []images.TagInfo, want func(images.TagInfo) bool) {
+	if images.IsDockerHub(registry) {
+		return
+	}
+	var candidates []images.TagInfo
+	for _, tag := range tags {
+		if tag.PushedAt.IsZero() && want(tag) {
+			candidates = append(candidates, tag)
+		}
+	}
+	// One tag needs no order.
+	if len(candidates) < 2 {
+		return
+	}
+	candidates, _ = images.MatchTags(candidates, "")
+	candidates = candidates[:min(len(candidates), maxBuiltReads)]
+	client, err := s.registryClient(ctx, registry)
+	if err != nil {
+		return
+	}
+	found := make(map[string]time.Time, len(candidates))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	work := make(chan string)
+	for range min(builtReaders, len(candidates)) {
+		wg.Go(func() {
+			for tag := range work {
+				ref := images.Reference{Registry: registry, Repository: repository, Tag: tag}
+				key := ref.String() + " " + platform
+				s.images.mu.Lock()
+				cached, ok := s.images.builtTimes[key]
+				s.images.mu.Unlock()
+				if !ok || time.Since(cached.read) > builtTimeKept {
+					when, err := s.images.created(ctx, client, ref, platform)
+					if err != nil {
+						continue
+					}
+					cached = builtTime{created: when, read: time.Now()}
+					s.images.mu.Lock()
+					for old, entry := range s.images.builtTimes {
+						if time.Since(entry.read) > builtTimeKept {
+							delete(s.images.builtTimes, old)
+						}
+					}
+					s.images.builtTimes[key] = cached
+					s.images.mu.Unlock()
+				}
+				mu.Lock()
+				found[tag] = cached.created
+				mu.Unlock()
+			}
+		})
+	}
+	for _, tag := range candidates {
+		work <- tag.Tag
+	}
+	close(work)
+	wg.Wait()
+	for index := range tags {
+		if when, ok := found[tags[index].Tag]; ok {
+			tags[index].Created = when
+		}
+	}
 }
 
 func (s *Server) ecrAPI(login store.RegistryLogin) images.ECRAPI {
@@ -123,6 +216,12 @@ func (s *Server) browseTags(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadGateway, errors.New(explainListingFailure(login, err)))
 		return
+	}
+	// Previewing a watch for a platform orders the tags it matches as the
+	// watch's first check will.
+	if platform := r.URL.Query().Get("platform"); platform != "" {
+		match, _ := images.CompileTagPattern(pattern)
+		s.readBuildTimes(ctx, login.Registry, repository, platform, tags, func(tag images.TagInfo) bool { return match.MatchString(tag.Tag) })
 	}
 	all, _ := images.MatchTags(tags, "")
 	matched, _ := images.MatchTags(tags, pattern)
@@ -402,8 +501,10 @@ func (s *Server) checkRepositoryWatches(ctx context.Context, now time.Time) {
 // scans, and stops watching the older ones. It says whether it queued any.
 //
 // Tags are ordered by push time where the registry says (ECR), else by when
-// the server first saw them, and on a watch's first check, when it has seen
-// none, in natural order (v1.10 after v1.9).
+// the server first saw them. On a watch's first check, when it has seen
+// none, and among tags first seen together, they are ordered by when their
+// images were built, then in natural order (v1.10 after v1.9). The first
+// check records the build times, so later checks keep that order.
 func (s *Server) checkRepositoryWatch(ctx context.Context, watch store.RepositoryWatch, now time.Time) bool {
 	fail := func(message string) bool {
 		if message != watch.WatchError {
@@ -423,6 +524,14 @@ func (s *Server) checkRepositoryWatch(ctx context.Context, watch store.Repositor
 		return fail(err.Error())
 	}
 	first := len(known) == 0
+	match, err := images.CompileTagPattern(watch.TagPattern)
+	if err != nil {
+		return fail(err.Error())
+	}
+	s.readBuildTimes(ctx, watch.Registry, watch.Repository, watch.Platform, tags, func(tag images.TagInfo) bool {
+		_, seen := known[tag.Tag]
+		return !seen && match.MatchString(tag.Tag)
+	})
 	for index := range tags {
 		if !tags[index].PushedAt.IsZero() {
 			continue
@@ -503,6 +612,8 @@ func (s *Server) checkRepositoryWatch(ctx context.Context, watch store.Repositor
 		pushed := ""
 		if !tag.PushedAt.IsZero() {
 			pushed = tag.PushedAt.UTC().Format(time.RFC3339)
+		} else if !tag.Created.IsZero() {
+			pushed = tag.Created.UTC().Format(time.RFC3339)
 		}
 		record = append(record, store.RepositoryTag{Tag: tag.Tag, Digest: digest, PushedAt: pushed})
 	}

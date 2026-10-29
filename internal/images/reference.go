@@ -100,6 +100,10 @@ func (r Reference) reference() string {
 	return r.Tag
 }
 
+// IsDockerHub reports whether registry is Docker Hub, which limits how many
+// manifests may be read.
+func IsDockerHub(registry string) bool { return registry == dockerHub }
+
 // RegistryHost names a registry as references do, for saved logins: "docker.io"
 // is registry-1.docker.io, and a scheme or trailing slash is dropped.
 func RegistryHost(text string) (string, error) {

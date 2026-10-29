@@ -69,6 +69,11 @@ func TestMatchTags(t *testing.T) {
 	if matched, _ := MatchTags(pushed, ""); matched[0].Tag != "v1" {
 		t.Fatalf("by push time: %v", matched)
 	}
+	// Then build times, then versions.
+	builds := []TagInfo{{Tag: "b", Created: day}, {Tag: "a", Created: day.Add(time.Hour)}, {Tag: "c"}, {Tag: "z", PushedAt: day}}
+	if matched, _ := MatchTags(builds, ""); matched[0].Tag != "z" || matched[1].Tag != "a" || matched[2].Tag != "b" || matched[3].Tag != "c" {
+		t.Fatalf("by build time: %v", matched)
+	}
 	if _, err := MatchTags(tags, "("); err == nil {
 		t.Fatal("a broken pattern was accepted")
 	}

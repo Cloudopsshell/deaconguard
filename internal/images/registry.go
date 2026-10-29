@@ -152,6 +152,61 @@ func (c *Client) Resolve(ctx context.Context, ref Reference, platform string) (R
 	return Resolved{Reference: ref, Digest: digest, TagDigest: tagDigest, Platform: platform, Layers: m.Layers}, nil
 }
 
+// maxConfigBytes caps an image config read for its creation time.
+const maxConfigBytes = 1 << 20
+
+// Created reads when the image a tag points to, for platform, was built:
+// the "created" time in its config. Registries without push times still
+// have it, and it orders builds as pushes usually are. It is zero when the
+// config doesn't say.
+func (c *Client) Created(ctx context.Context, ref Reference, platform string) (time.Time, error) {
+	body, mediaType, _, err := c.getManifest(ctx, ref, ref.reference())
+	if err != nil {
+		return time.Time{}, err
+	}
+	var m manifest
+	if err := json.Unmarshal(body, &m); err != nil {
+		return time.Time{}, fmt.Errorf("read the manifest of %s: %w", ref, err)
+	}
+	if m.isIndex(mediaType) {
+		chosen, err := m.choose(platform, ref.String())
+		if err != nil {
+			return time.Time{}, err
+		}
+		if body, _, _, err = c.getManifest(ctx, ref, chosen.Digest); err != nil {
+			return time.Time{}, err
+		}
+		m = manifest{}
+		if err := json.Unmarshal(body, &m); err != nil {
+			return time.Time{}, fmt.Errorf("read the %s manifest of %s: %w", platform, ref, err)
+		}
+	}
+	if m.Config.Size > maxConfigBytes {
+		return time.Time{}, fmt.Errorf("the config of %s is larger than 1 MB", ref)
+	}
+	blob, err := c.Blob(ctx, ref, m.Config)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer blob.Close()
+	var config struct {
+		Created time.Time `json:"created"`
+	}
+	// Read to the end, which checks the config against its digest.
+	data, err := io.ReadAll(io.LimitReader(blob, maxConfigBytes))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("read the config of %s: %w", ref, err)
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return time.Time{}, fmt.Errorf("read the config of %s: %w", ref, err)
+	}
+	// Reproducible builds set it to the Unix epoch, which says nothing.
+	if config.Created.Year() <= 1970 {
+		return time.Time{}, nil
+	}
+	return config.Created.UTC(), nil
+}
+
 // manifestTypes are the manifests DeaconGuard reads, as an Accept header.
 var manifestTypes = strings.Join([]string{mediaOCIIndex, mediaDockerList, mediaOCIManifest, mediaDockerSchema}, ", ")
 
