@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-10-29
+
 ### Added
 
 - **Finding out why the server is busy:** the Logs page and the server's standard output now record requests that take more than 2 seconds, with the CPU the server used meanwhile, and a watchdog that, when the server keeps more than one core busy for 30 seconds, logs which parts of DeaconGuard's code the time went to and which requests were running. Admins can also download a 30-second CPU profile from the Logs page (`GET /api/diagnostics/cpu`).
@@ -275,7 +277,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.15.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.16.0...HEAD
+[1.16.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.12.0...v1.13.0
