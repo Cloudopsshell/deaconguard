@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-10-29
+
 ### Added
 
 - **Docker Hub and GHCR say when each tag was pushed:** a repository watch and the browse dialog list Docker Hub tags through Docker Hub's API (public repositories without a login, private ones with it), and GHCR tags through GitHub's packages API with a GHCR login, so the newest tags are the most recently pushed ones, as on Amazon ECR, and their digests come with the listing. Browsing a Docker Hub login lists its namespace's repositories, and a GHCR login its user's and organizations' packages, which the registry API refused. When either API fails, the registry API lists the tags as before, and the browse dialog and the server log say why.
@@ -258,7 +260,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.0...v1.11.1
