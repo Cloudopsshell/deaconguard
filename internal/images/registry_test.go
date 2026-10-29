@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type tarFile struct {
@@ -200,6 +201,42 @@ func TestTagDigestFollowsTheTag(t *testing.T) {
 	pinned.Digest = "sha256:" + strings.Repeat("b", 64)
 	if same, _ := client.TagDigest(context.Background(), pinned); same != pinned.Digest {
 		t.Fatalf("a pinned digest: %s", same)
+	}
+}
+
+func TestCreated(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
+	registry, server := newFakeRegistry(t, [][]byte{layer(t, tarFile{name: "etc/os-release", body: "ID=alpine\n"})})
+	defer server.Close()
+	client, ref := testClient(server, "robot", "pw")
+	config := []byte(`{"created":"2026-10-20T08:30:00.123Z","architecture":"amd64","os":"linux"}`)
+	setConfig := func(body []byte) {
+		registry.blobs[digestOf(body)] = body
+		amd64, _ := json.Marshal(map[string]any{"schemaVersion": 2, "mediaType": mediaOCIManifest,
+			"config": map[string]any{"digest": digestOf(body), "size": len(body)}, "layers": []map[string]any{{"digest": digestOf(body)}}})
+		registry.manifests[digestOf(amd64)], registry.types[digestOf(amd64)] = amd64, mediaOCIManifest
+		index, _ := json.Marshal(map[string]any{"schemaVersion": 2, "mediaType": mediaOCIIndex, "manifests": []map[string]any{
+			{"mediaType": mediaOCIManifest, "digest": digestOf(amd64), "platform": map[string]string{"os": "linux", "architecture": "amd64"}}}})
+		registry.manifests["1.0"] = index
+	}
+	setConfig(config)
+	created, err := client.Created(context.Background(), ref, "linux/amd64")
+	if err != nil || !created.Equal(time.Date(2026, 10, 20, 8, 30, 0, 123e6, time.UTC)) {
+		t.Fatalf("created = %v, %v", created, err)
+	}
+	if _, err := client.Created(context.Background(), ref, "linux/s390x"); err == nil {
+		t.Fatal("a missing platform was accepted")
+	}
+	// Reproducible builds set the epoch, which says nothing.
+	setConfig([]byte(`{"created":"1970-01-01T00:00:00Z"}`))
+	if created, err := client.Created(context.Background(), ref, "linux/amd64"); err != nil || !created.IsZero() {
+		t.Fatalf("the epoch: %v, %v", created, err)
+	}
+	// A config that doesn't match its digest is refused.
+	setConfig(config)
+	registry.blobs[digestOf(config)] = []byte(`{"created":"2030-01-01T00:00:00Z","architecture":"amd64","os":"linux"}`)
+	if _, err := client.Created(context.Background(), ref, "linux/amd64"); err == nil {
+		t.Fatal("a config that doesn't match its digest was read")
 	}
 }
 

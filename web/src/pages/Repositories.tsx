@@ -319,9 +319,11 @@ function RepositoryTags({ login, repository, onBack, onDone }: { login: Registry
   const keep = settings.keep;
   const [platform, setPlatform] = useState(platforms[0]);
   const settled = useSettled(pattern);
+  // Operators preview a watch, which orders the matching tags as its first check will.
+  const previewPlatform = canOperate ? platform : undefined;
   const tags = useQuery({
-    queryKey: ["browse", login.id, repository, settled],
-    queryFn: () => api.browseTags(login.id, repository, settled),
+    queryKey: ["browse", login.id, repository, settled, previewPlatform],
+    queryFn: () => api.browseTags(login.id, repository, settled, previewPlatform),
     placeholderData: (previous) => previous,
     retry: false,
   });
@@ -431,8 +433,10 @@ function RepositoryTags({ login, repository, onBack, onDone }: { login: Registry
       )}
       {tags.data && tags.data.tags.length > 0 && !tags.data.tags.some((tag) => tag.pushed_at) && (
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          This registry doesn't say when each tag was pushed, so tags are listed by version, newest first. A watch counts a tag that appears later as the
-          newest.
+          {tags.data.tags.some((tag) => tag.created)
+            ? "This registry doesn't say when each tag was pushed, so matching tags are listed by when their image was built, newest first, then by version."
+            : "This registry doesn't say when each tag was pushed, so tags are listed by version, newest first."}{" "}
+          A watch counts a tag that appears later as the newest.
         </p>
       )}
       {tags.isPending ? (
@@ -459,7 +463,9 @@ function RepositoryTags({ login, repository, onBack, onDone }: { login: Registry
                         </span>
                       )}
                     </Td>
-                    <Td className="text-xs text-slate-500 dark:text-slate-400">{tag.pushed_at ? timeAgo(tag.pushed_at) : "—"}</Td>
+                    <Td className="text-xs text-slate-500 dark:text-slate-400">
+                      {tag.pushed_at ? timeAgo(tag.pushed_at) : tag.created ? <span title="When the image was built">built {timeAgo(tag.created)}</span> : "—"}
+                    </Td>
                     {canOperate && (
                       <Td className="text-right">
                         <Button
