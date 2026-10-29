@@ -60,9 +60,12 @@ A [maintenance window](./notifications.md#maintenance-windows), on the same page
 The **Logs** page shows what happened, newest first, so you don't need SSH and `journalctl` to find out why a scan failed or an agent went quiet.
 
 - **From the server:** starts and stops, with why the previous run ended (a reboot, running out of memory, a crash); agents connecting and no longer checking in; enrollments; each scan's start (and by whom), finish and failure; and every warning and error a scan reported, such as a stale advisory feed or a skipped check.
+- **When the server is busy:** a request that takes more than 2 seconds, as `Slow request: GET /api/summary took 12s (status 200); the server used 11.8s of CPU meanwhile`, at most once every 5 minutes for each page; and when the server keeps more than one CPU core busy for 30 seconds, `High CPU: the server used 3.4 cores for the last 30s. Busy in: …`, naming the parts of DeaconGuard's code the time went to and the requests in progress, at most once every 10 minutes. These lines go to the server's standard output too, so `kubectl logs` and `journalctl` show them.
 - **From each agent** (0.6.0 or later): the agent's own log, sent to the server over its existing connection. Lines from while the server was unreachable, such as "Cannot reach the server", are kept on the agent and arrive once it answers again, with their original times.
 
 Filter by server or agents, machine, level and text; the filters are part of the page's address, so a filtered view can be shared. **Follow** shows new entries as they arrive; **Download** saves the filtered entries as a text file. Each host's page shows its latest entries, with a link to the full log.
+
+**CPU profile (30 s)**, for admins, records what the server spends its CPU on for 30 seconds while it is busy, and downloads it as a `.pprof` file, to open with `go tool pprof` or attach to a bug report. Taking one is recorded in the audit log.
 
 Entries are kept for 7 days, at most 100,000. Reading the log needs a signed-in account; downloads are recorded in the audit log, and so is viewing, at most once per account every 15 minutes. The services' journals still have everything as well.
 
