@@ -49,6 +49,8 @@ type Image struct {
 	CreatedBy  string     `json:"created_by"`
 	CreatedAt  string     `json:"created_at"`
 	Latest     *ImageScan `json:"latest,omitempty"`
+	// RepositoryWatchID is the repository watch that added the image, if one did.
+	RepositoryWatchID string `json:"repository_watch_id,omitempty"`
 }
 
 // ImageScan is one check of an image. Only a succeeded scan has a digest and
@@ -185,12 +187,12 @@ func DeleteRegistryLogin(id string) (RegistryLogin, error) {
 	return login, err
 }
 
-const imageColumns = "id, reference, platform, watch, tag_digest, checked_at, watch_error, created_by, created_at"
+const imageColumns = "id, reference, platform, watch, tag_digest, checked_at, watch_error, created_by, created_at, repository_watch_id"
 
 func scanImage(row rowScanner) (Image, error) {
 	var image Image
 	err := row.Scan(&image.ID, &image.Reference, &image.Platform, &image.Watch, &image.TagDigest, &image.CheckedAt, &image.WatchError,
-		&image.CreatedBy, &image.CreatedAt)
+		&image.CreatedBy, &image.CreatedAt, &image.RepositoryWatchID)
 	return image, err
 }
 
@@ -288,6 +290,17 @@ func ImageChecked(id, tagDigest, failure string, at time.Time) error {
 	}
 	_, err = db.Exec("UPDATE images SET tag_digest = CASE WHEN ? = '' THEN tag_digest ELSE ? END, watch_error = ?, checked_at = ? WHERE id = ?",
 		tagDigest, tagDigest, failure, at.UTC().Format(time.RFC3339), id)
+	return err
+}
+
+// RecheckImage clears an image's watch failure and makes its tag due for a
+// check at once, such as after its registry's login changed.
+func RecheckImage(id string) error {
+	db, err := database()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("UPDATE images SET watch_error = '', checked_at = '' WHERE id = ?", id)
 	return err
 }
 
@@ -459,10 +472,11 @@ func FinishImageScan(scan ImageScan, tagDigest string) error {
 	if err != nil {
 		return err
 	}
-	if tagDigest != "" {
-		if _, err := db.Exec("UPDATE images SET tag_digest = ? WHERE id = ?", tagDigest, scan.ImageID); err != nil {
-			return err
-		}
+	// A scan that read the image shows the registry can be reached, so an
+	// earlier watch failure no longer stands.
+	if _, err := db.Exec("UPDATE images SET tag_digest = CASE WHEN ? = '' THEN tag_digest ELSE ? END, watch_error = '' WHERE id = ?",
+		tagDigest, tagDigest, scan.ImageID); err != nil {
+		return err
 	}
 	return pruneImageScans(db, scan.ImageID)
 }

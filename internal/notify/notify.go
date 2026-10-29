@@ -55,11 +55,12 @@ const (
 	EventCluster      = "cluster"       // a Kubernetes cluster has new critical or high findings
 	EventExposure     = "exposure"      // a network scan has new critical or high findings
 	EventDigest       = "digest"        // the daily or weekly summary
+	EventImageReport  = "image_report"  // a watched repository's new push was scanned
 	EventTest         = "test"          // Send test
 )
 
 // Events lists the events channels subscribe to, in the dashboard's order.
-var Events = []string{EventExploited, EventCritical, EventMalware, EventIntegrity, EventCluster, EventExposure, EventScanFailed, EventAudit, EventAgentOffline, EventDigest}
+var Events = []string{EventExploited, EventCritical, EventMalware, EventIntegrity, EventCluster, EventExposure, EventImageReport, EventScanFailed, EventAudit, EventAgentOffline, EventDigest}
 
 // Levels say how urgent a message is.
 const (
@@ -88,6 +89,9 @@ type Message struct {
 	At   time.Time      `json:"at"`
 	// Attachment is a file sent with emails only, such as the digest's CSV.
 	Attachment *Attachment `json:"-"`
+	// Channels, when set, are the only channels the message may go to, of
+	// those subscribed to its event.
+	Channels []string `json:"-"`
 }
 
 // Attachment is a file attached to an email.

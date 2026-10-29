@@ -1,12 +1,31 @@
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Boxes, Eye, Flame, KeyRound, Pencil, Play, Plus, Trash2 } from "lucide-react";
-import { api, type RegistryImage, type RegistryLogin, type RegistryLoginInput } from "../api";
-import { Button, Card, CardHeader, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, SeverityCountsInline, StatusBadge, Table, Td, Th } from "../components/ui";
+import { AlertTriangle, Boxes, CheckCircle2, ChevronDown, ChevronRight, Eye, Flame, FolderGit2, FolderSearch, KeyRound, Pencil, Play, Plug, Plus, Trash2, XCircle } from "lucide-react";
+import { api, type RegistryImage, type RegistryLogin, type RegistryLoginCheck, type RegistryLoginInput, type RepositoryWatch } from "../api";
+import {
+  Button,
+  Card,
+  CardHeader,
+  Dialog,
+  EmptyState,
+  ErrorMessage,
+  Field,
+  Loading,
+  PageHeader,
+  Pager,
+  SearchBox,
+  SeverityCountsInline,
+  StatusBadge,
+  Table,
+  Td,
+  Th,
+  usePage,
+} from "../components/ui";
 import { timeAgo } from "../lib/format";
 import { useRefreshAll } from "../lib/hooks";
 import { useCan } from "../lib/role";
+import { BrowseRegistryDialog, WatchedRepositories } from "./Repositories";
 
 /** The platforms an image can be checked for, as the server accepts them. */
 export const platforms = ["linux/amd64", "linux/arm64", "linux/arm/v7", "linux/386", "linux/ppc64le", "linux/s390x"];
@@ -64,69 +83,223 @@ export function Images() {
           />
         </Card>
       ) : (
-        <Card>
-          <Table>
-            <thead>
-              <tr>
-                <Th>Image</Th>
-                <Th>Last scan</Th>
-                <Th>Vulnerabilities</Th>
-                {canOperate && <Th className="text-right">Actions</Th>}
-              </tr>
-            </thead>
-            <tbody>
-              {images.data.map((image) => (
-                <tr key={image.id}>
+        <ImageList
+          images={images.data}
+          canOperate={canOperate}
+          onScan={(image) => scan.mutate(image)}
+          scanningId={scan.isPending ? scan.variables?.id : undefined}
+          onDelete={setDeleting}
+        />
+      )}
+      <WatchedRepositories />
+      {isAdmin && <RegistryLogins />}
+      {adding && <AddImageDialog onClose={() => setAdding(false)} />}
+      {deleting && <DeleteImageDialog image={deleting} onClose={() => setDeleting(null)} />}
+    </>
+  );
+}
+
+/** A row of the image list: an image added by hand, or a watched repository's images together. */
+type ListRow = { kind: "image"; image: RegistryImage } | { kind: "repository"; id: string; watch?: RepositoryWatch; images: RegistryImage[] };
+
+/** How many rows a page of the image list shows. */
+const imagesPerPage = 50;
+
+/**
+ * The images, with those a watched repository added grouped under it (newest first), so a busy repository
+ * takes one row; a search over every reference, and pages of 50.
+ */
+function ImageList({
+  images,
+  canOperate,
+  onScan,
+  scanningId,
+  onDelete,
+}: {
+  images: RegistryImage[];
+  canOperate: boolean;
+  onScan: (image: RegistryImage) => void;
+  scanningId?: string;
+  onDelete: (image: RegistryImage) => void;
+}) {
+  const watches = useQuery({ queryKey: ["repository-watches"], queryFn: api.repositoryWatches });
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const query = search.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const list: ListRow[] = [];
+    const groups = new Map<string, Extract<ListRow, { kind: "repository" }>>();
+    for (const image of images) {
+      if (query && !image.reference.toLowerCase().includes(query)) continue;
+      if (!image.repository_watch_id) {
+        list.push({ kind: "image", image });
+        continue;
+      }
+      let group = groups.get(image.repository_watch_id);
+      if (!group) {
+        group = { kind: "repository", id: image.repository_watch_id, watch: watches.data?.find((watch) => watch.id === image.repository_watch_id), images: [] };
+        groups.set(group.id, group);
+        list.push(group);
+      }
+      group.images.push(image);
+    }
+    for (const group of groups.values()) group.images.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return list;
+  }, [images, watches.data, query]);
+  const paging = usePage(rows, imagesPerPage, query);
+  return (
+    <Card>
+      <div className="p-4 pb-2">
+        <SearchBox value={search} onChange={setSearch} placeholder={`Search ${images.length.toLocaleString()} images`} label="Search images" />
+      </div>
+      <Table>
+        <thead>
+          <tr>
+            <Th>Image</Th>
+            <Th>Last scan</Th>
+            <Th>Vulnerabilities</Th>
+            {canOperate && <Th className="text-right">Actions</Th>}
+          </tr>
+        </thead>
+        <tbody>
+          {paging.shown.map((row) => {
+            if (row.kind === "image")
+              return <ImageRow key={row.image.id} image={row.image} canOperate={canOperate} onScan={onScan} scanningId={scanningId} onDelete={onDelete} />;
+            const expanded = !!query || open[row.id];
+            const newest = row.images[0];
+            const name = row.watch ? `${row.watch.registry}/${row.watch.repository}` : newest.reference.replace(/:[^/:]*$/, "");
+            return (
+              <Fragment key={row.id}>
+                <tr className="bg-slate-50/60 dark:bg-slate-800/30">
                   <Td className="min-w-44">
-                    <Link to={`/images/${image.id}`} className="font-mono text-sm font-medium break-all text-indigo-700 hover:underline dark:text-indigo-400">
-                      {image.reference}
-                    </Link>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {image.platform}
-                      {image.latest?.os && ` · ${image.latest.os}`}
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOpen((current) => ({ ...current, [row.id]: !current[row.id] }))}
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? "Hide" : "Show"} the images of ${name}`}
+                        className="mt-0.5 rounded text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                        disabled={!!query}
+                      >
+                        {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                      </button>
+                      <div>
+                        <Link
+                          to={`/images/repositories/${row.id}`}
+                          className="inline-flex items-center gap-1.5 font-mono text-sm font-medium break-all text-indigo-700 hover:underline dark:text-indigo-400"
+                        >
+                          <FolderGit2 className="size-4 shrink-0" aria-hidden /> {name}
+                        </Link>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          Watched repository · {row.images.length} {row.images.length === 1 ? "image" : "images"}
+                          {query ? " matching" : ""} · newest {newest.reference.slice(newest.reference.lastIndexOf(":") + 1)}
+                        </div>
+                      </div>
                     </div>
-                    <WatchState image={image} />
                   </Td>
                   <Td>
-                    {image.latest ? (
+                    {newest.latest ? (
                       <div className="space-y-1">
-                        <StatusBadge status={image.latest.status} />
-                        <div className="text-xs text-slate-500 dark:text-slate-400">{timeAgo(image.latest.finished_at || image.latest.started_at)}</div>
+                        <StatusBadge status={newest.latest.status} />
+                        <div className="text-xs text-slate-500 dark:text-slate-400">{timeAgo(newest.latest.finished_at || newest.latest.started_at)}</div>
                       </div>
                     ) : (
                       <span className="text-sm text-slate-500 dark:text-slate-400">Not scanned</span>
                     )}
                   </Td>
                   <Td>
-                    <ImageCounts image={image} />
+                    <ImageCounts image={newest} />
                   </Td>
-                  {canOperate && (
-                    <Td className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="secondary"
-                          disabled={scanning(image)}
-                          loading={scan.isPending && scan.variables?.id === image.id}
-                          onClick={() => scan.mutate(image)}
-                        >
-                          <Play className="size-4" /> Scan now
-                        </Button>
-                        <Button variant="secondary" onClick={() => setDeleting(image)} aria-label={`Remove ${image.reference}`}>
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    </Td>
-                  )}
+                  {canOperate && <Td />}
                 </tr>
-              ))}
-            </tbody>
-          </Table>
-        </Card>
+                {expanded &&
+                  row.images.map((image) => (
+                    <ImageRow key={image.id} image={image} canOperate={canOperate} onScan={onScan} scanningId={scanningId} onDelete={onDelete} nested />
+                  ))}
+              </Fragment>
+            );
+          })}
+          {rows.length === 0 && (
+            <tr>
+              <Td className="text-sm text-slate-500 dark:text-slate-400">No image matches.</Td>
+            </tr>
+          )}
+        </tbody>
+      </Table>
+      <Pager paging={paging} noun="rows" />
+    </Card>
+  );
+}
+
+function ImageRow({
+  image,
+  canOperate,
+  onScan,
+  scanningId,
+  onDelete,
+  nested,
+}: {
+  image: RegistryImage;
+  canOperate: boolean;
+  onScan: (image: RegistryImage) => void;
+  scanningId?: string;
+  onDelete: (image: RegistryImage) => void;
+  nested?: boolean;
+}) {
+  return (
+    <tr>
+      <Td className={nested ? "min-w-44 pl-12" : "min-w-44"}>
+        <Link to={`/images/${image.id}`} className="font-mono text-sm font-medium break-all text-indigo-700 hover:underline dark:text-indigo-400">
+          {image.reference}
+        </Link>
+        <div className="text-xs text-slate-500 dark:text-slate-400">
+          {image.platform}
+          {image.latest?.os && ` · ${image.latest.os}`}
+        </div>
+        <WatchState image={image} />
+      </Td>
+      <Td>
+        {image.latest ? (
+          <div className="space-y-1">
+            <StatusBadge status={image.latest.status} />
+            <div className="text-xs text-slate-500 dark:text-slate-400">{timeAgo(image.latest.finished_at || image.latest.started_at)}</div>
+          </div>
+        ) : (
+          <span className="text-sm text-slate-500 dark:text-slate-400">Not scanned</span>
+        )}
+      </Td>
+      <Td>
+        <ImageCounts image={image} />
+      </Td>
+      {canOperate && (
+        <Td className="text-right">
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" disabled={scanning(image)} loading={scanningId === image.id} onClick={() => onScan(image)}>
+              <Play className="size-4" /> Scan now
+            </Button>
+            <Button variant="secondary" onClick={() => onDelete(image)} aria-label={`Remove ${image.reference}`}>
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
+        </Td>
       )}
-      {isAdmin && <RegistryLogins />}
-      {adding && <AddImageDialog onClose={() => setAdding(false)} />}
-      {deleting && <DeleteImageDialog image={deleting} onClose={() => setDeleting(null)} />}
-    </>
+    </tr>
+  );
+}
+
+/** A message shown in two lines, with Show all for the rest, so a long error can be read whole. */
+export function ExpandableText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 110;
+  return (
+    <span className="min-w-0 break-words" title={long && !open ? text : undefined}>
+      <span className={open || !long ? "" : "line-clamp-2"}>{text}</span>
+      {long && (
+        <button type="button" onClick={() => setOpen(!open)} className="mt-0.5 block text-xs font-medium underline underline-offset-2 opacity-80 hover:opacity-100">
+          {open ? "Show less" : "Show all"}
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -137,7 +310,7 @@ export function WatchState({ image }: { image: RegistryImage }) {
     return (
       <div className="mt-1 flex items-start gap-1 text-xs text-amber-700 dark:text-amber-400" title={image.watch_error}>
         <AlertTriangle className="mt-px size-3 shrink-0" aria-hidden />
-        <span className="line-clamp-2">Can't check for new builds: {image.watch_error}</span>
+        <ExpandableText text={`Can't check for new builds: ${image.watch_error}`} />
       </div>
     );
   return (
@@ -153,9 +326,9 @@ function ImageCounts({ image }: { image: RegistryImage }) {
   if (!latest || latest.status === "queued" || latest.status === "running") return <span className="text-sm text-slate-500 dark:text-slate-400">—</span>;
   if (latest.status === "failed")
     return (
-      <span className="line-clamp-2 max-w-56 text-sm break-words text-red-700 dark:text-red-400" title={latest.error}>
-        {latest.error}
-      </span>
+      <div className="max-w-72 text-sm text-red-700 dark:text-red-400">
+        <ExpandableText text={latest.error ?? ""} />
+      </div>
     );
   return (
     <div className="space-y-1">
@@ -277,12 +450,25 @@ function RegistryLogins() {
   const logins = useQuery({ queryKey: ["registry-logins"], queryFn: api.registryLogins });
   const [editing, setEditing] = useState<RegistryLogin | "new" | null>(null);
   const [deleting, setDeleting] = useState<RegistryLogin | null>(null);
+  const [browsing, setBrowsing] = useState<RegistryLogin | null>(null);
+  // Results of checking logins, by login ID, until the page is left.
+  const [checks, setChecks] = useState<Record<string, RegistryLoginCheck | "checking">>({});
+  const check = async (id: string) => {
+    setChecks((current) => ({ ...current, [id]: "checking" }));
+    try {
+      const result = await api.checkRegistryLogin(id);
+      setChecks((current) => ({ ...current, [id]: result }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setChecks((current) => ({ ...current, [id]: { status: "failed", message, checked_at: new Date().toISOString() } }));
+    }
+  };
   return (
     <div className="mt-6">
       <Card>
         <CardHeader
           title="Registry logins"
-          description="For private images. Use a read-only token where the registry offers one: DeaconGuard only pulls. A login is used for every image in its registry."
+          description="For private images, with a read-only token: DeaconGuard only pulls. Browse a login's registry to scan its images or watch a repository for new pushes."
           action={
             <Button variant="secondary" onClick={() => setEditing("new")}>
               <KeyRound className="size-4" /> Add login
@@ -314,10 +500,28 @@ function RegistryLogins() {
                   <Td>
                     {login.username}
                     {login.kind === "ecr" && <div className="text-xs text-slate-500 dark:text-slate-400">AWS access key</div>}
+                    <LoginCheckResult result={checks[login.id]} />
                   </Td>
                   <Td className="text-sm text-slate-500 dark:text-slate-400">{timeAgo(login.updated_at)}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={() => setBrowsing(login)}
+                        aria-label={`Browse ${login.registry}`}
+                        title="List this registry's repositories and tags, to scan an image or watch a repository"
+                      >
+                        <FolderSearch className="size-4" /> Browse
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => check(login.id)}
+                        loading={checks[login.id] === "checking"}
+                        aria-label={`Check the login for ${login.registry}`}
+                        title="Log in to the registry now, to see whether it accepts this login"
+                      >
+                        <Plug className="size-4" /> Check
+                      </Button>
                       <Button variant="secondary" onClick={() => setEditing(login)} aria-label={`Edit the login for ${login.registry}`}>
                         <Pencil className="size-4" />
                       </Button>
@@ -332,13 +536,37 @@ function RegistryLogins() {
           </Table>
         )}
       </Card>
-      {editing && <RegistryLoginDialog login={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && <RegistryLoginDialog login={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={(saved) => check(saved.id)} />}
       {deleting && <DeleteLoginDialog login={deleting} onClose={() => setDeleting(null)} />}
+      {browsing && <BrowseRegistryDialog login={browsing} onClose={() => setBrowsing(null)} />}
     </div>
   );
 }
 
-function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; onClose: () => void }) {
+/** What checking a login found, under the login. */
+function LoginCheckResult({ result }: { result?: RegistryLoginCheck | "checking" }) {
+  if (!result) return null;
+  if (result === "checking") return <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Checking the login…</div>;
+  const style =
+    result.status === "ok"
+      ? "text-emerald-700 dark:text-emerald-400"
+      : result.status === "failed"
+        ? "text-rose-700 dark:text-rose-400"
+        : "text-amber-700 dark:text-amber-400";
+  const Icon = result.status === "ok" ? CheckCircle2 : result.status === "failed" ? XCircle : AlertTriangle;
+  const label = result.status === "ok" ? "Works" : result.status === "failed" ? "Doesn't work" : "Couldn't check";
+  return (
+    <div className={`mt-1 flex max-w-xl items-start gap-1 text-xs ${style}`} role="status">
+      <Icon className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        <span className="font-medium">{label}:</span> {result.message}{" "}
+        <span className="text-slate-500 dark:text-slate-400">· {timeAgo(result.checked_at)}</span>
+      </span>
+    </div>
+  );
+}
+
+function RegistryLoginDialog({ login, onClose, onSaved }: { login: RegistryLogin | null; onClose: () => void; onSaved: (login: RegistryLogin) => void }) {
   const refresh = useRefreshAll();
   const [input, setInput] = useState<RegistryLoginInput>({
     registry: login?.registry ?? "",
@@ -349,9 +577,11 @@ function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; 
   const ecr = input.kind === "ecr";
   const save = useMutation({
     mutationFn: () => (login ? api.updateRegistryLogin(login.id, input) : api.createRegistryLogin(input)),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       refresh();
       onClose();
+      // Check it at once, so a mistyped key shows here, not at the next scan.
+      onSaved(saved);
     },
   });
   return (
@@ -386,8 +616,10 @@ function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; 
           </div>
           {ecr && (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              DeaconGuard exchanges it for ECR's 12-hour registry password when it needs one. Give the key's user only{" "}
-              <span className="font-mono">AmazonEC2ContainerRegistryReadOnly</span>.
+              DeaconGuard exchanges it for ECR's 12-hour registry password when it needs one. Give the key's user read access only:{" "}
+              <span className="font-mono">ecr:GetAuthorizationToken</span>, <span className="font-mono">ecr:BatchGetImage</span> and{" "}
+              <span className="font-mono">ecr:GetDownloadUrlForLayer</span> to scan, and <span className="font-mono">ecr:DescribeRepositories</span> and{" "}
+              <span className="font-mono">ecr:DescribeImages</span> to browse and watch repositories; or <span className="font-mono">AmazonEC2ContainerRegistryReadOnly</span>.
             </p>
           )}
         </fieldset>
@@ -405,7 +637,11 @@ function RegistryLoginDialog({ login, onClose }: { login: RegistryLogin | null; 
           onChange={(event) => setInput({ ...input, secret: event.target.value })}
           autoComplete="new-password"
           required={!login}
-          hint={login ? "Leave empty to keep the saved one." : "Stored on the server and never shown again."}
+          hint={
+            login
+              ? "Leave empty to keep the saved one. Saving checks the login with the registry."
+              : "Stored on the server and never shown again. Saving checks the login with the registry."
+          }
         />
         <ErrorMessage error={save.error} />
         <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">

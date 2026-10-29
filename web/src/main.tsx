@@ -26,6 +26,7 @@ import { Policies } from "./pages/Policies";
 import { Notifications } from "./pages/Notifications";
 import { Images } from "./pages/Images";
 import { ImageDetail } from "./pages/ImageDetail";
+import { RepositoryDetail } from "./pages/Repositories";
 import { Network } from "./pages/Network";
 import { NetworkTargetDetail } from "./pages/NetworkTargetDetail";
 import "./index.css";
@@ -51,6 +52,7 @@ const router = createBrowserRouter([
           { path: "/vulnerabilities/:cve", element: <VulnerabilityDetail /> },
           { path: "/images", element: <Images /> },
           { path: "/images/:imageId", element: <ImageDetail /> },
+          { path: "/images/repositories/:watchId", element: <RepositoryDetail /> },
           { path: "/network", element: <Network /> },
           { path: "/network/:targetId", element: <NetworkTargetDetail /> },
           { path: "/agents", element: <Agents /> },

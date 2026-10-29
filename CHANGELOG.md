@@ -8,6 +8,31 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Browse a registry:** **Browse** next to a registry login lists its repositories (through the ECR API for Amazon ECR, the registry API's catalog elsewhere) and a repository's tags, newest first, to scan a tag's image.
+- **Watch a repository:** scan each new or re-pushed image in a repository whose tag matches a pattern (a regular expression, previewed against the existing tags), keeping the newest 1 to 20 rescanned daily. Checked every 15 minutes, or at once with **Check now**; on Amazon ECR by push time. ECR keys need `ecr:DescribeRepositories` and `ecr:DescribeImages` for this.
+- **Reports of new pushes:** a new notification event, **Image scan reports**, sent when the scan of a watched repository's new push finishes: counts by severity, known exploited and fixable, what changed since the previous build (new and fixed CVEs), the 5 most urgent vulnerabilities and a link. Each watch chooses which pushes it reports (every one, a minimum severity, known exploited only, or none) and to which channels.
+- **A repository's page:** a watched repository's builds, newest first, with what each scan found, and a chart of vulnerabilities by build.
+- **History per watch:** a watch keeps the newest 50 images it added (up to 500), with their scans, and removes older ones. Images added by hand are never removed.
+- The Images page groups the images a watched repository added under it, has a search box, and shows 50 rows a page. Browsing a registry shows 100 repositories or tags a page, and the filter searches all of them.
+- Long error messages on the Images page have **Show all**, so they can be read whole.
+- **Check a registry login:** **Check** next to each login on the Images page logs in to the registry the way `docker login` does and says whether it works, why not in plain words (such as an AWS secret access key that doesn't belong to its access key ID), or that the registry doesn't ask for a login. Saving a login checks it too.
+
+### Fixed
+
+- An image's "Can't check for new builds" message stayed for up to 15 minutes after its registry's login was fixed. Saving a login now clears it for that registry's images and checks their tags at once, and a scan that succeeds clears it too.
+- Spaces and line breaks pasted around an AWS access key are removed; they made AWS refuse the signature.
+- Card headers keep their button beside the title when the description is long.
+
+### Security
+
+- Updated `golang.org/x/net` to 0.62.0 for GO-2026-6860 (quadratic complexity in HTML parsing, reached by the Amazon Linux advisory parser).
+
+### Changed
+
+- The ECR login's hint and the Images docs give the least IAM permissions DeaconGuard needs: `ecr:GetAuthorizationToken`, `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer`.
+
 ## [1.11.1] - 2026-10-25
 
 ### Fixed

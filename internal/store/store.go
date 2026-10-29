@@ -274,6 +274,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 27 {
+		if err := execInTx(db, schemaV27); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -743,6 +748,38 @@ PRAGMA user_version = 21;`
 
 // schemaV26 links accounts to single sign-on: the provider's issuer and
 // subject, which never change for a person, unlike their name or email.
+// schemaV27 adds repository watches: a repository in a registry, scanned
+// whenever an image whose tag matches a pattern is pushed, and the tags each
+// watch has seen. Images it adds point back at it. history caps how many of
+// them it keeps; notify_level and notify_channels say which new pushes are
+// reported, and to which channels (empty: every channel subscribed).
+const schemaV27 = `
+CREATE TABLE repository_watches (
+	id TEXT PRIMARY KEY,
+	registry TEXT NOT NULL,
+	repository TEXT NOT NULL,
+	tag_pattern TEXT NOT NULL DEFAULT '',
+	platform TEXT NOT NULL,
+	keep INTEGER NOT NULL DEFAULT 5,
+	history INTEGER NOT NULL DEFAULT 50,
+	notify_level TEXT NOT NULL DEFAULT 'any',
+	notify_channels TEXT NOT NULL DEFAULT '',
+	checked_at TEXT NOT NULL DEFAULT '',
+	watch_error TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	UNIQUE (registry, repository, tag_pattern, platform)
+);
+CREATE TABLE repository_tags (
+	watch_id TEXT NOT NULL REFERENCES repository_watches(id) ON DELETE CASCADE,
+	tag TEXT NOT NULL,
+	digest TEXT NOT NULL DEFAULT '',
+	pushed_at TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (watch_id, tag)
+);
+ALTER TABLE images ADD COLUMN repository_watch_id TEXT NOT NULL DEFAULT '';
+PRAGMA user_version = 27;`
+
 const schemaV26 = `
 ALTER TABLE users ADD COLUMN oidc_subject TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX users_by_oidc_subject ON users(oidc_subject) WHERE oidc_subject != '';
