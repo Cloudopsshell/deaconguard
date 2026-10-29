@@ -99,6 +99,7 @@ The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs
 | `server.admin.existingSecret`, `server.admin.secretKey` | `""`, `password` | The secret with its password |
 | `server.admin.password` | `""` | Or the password itself, which the chart puts in a secret (it is then also in Helm's release data) |
 | `server.trustedProxies` | `[]` | Networks of the proxies in front of the dashboard, such as the ingress controller's pods; see [Behind a reverse proxy](../security/securing-the-dashboard.md#behind-a-reverse-proxy) |
+| `server.accessLog` | `false` | A line in `kubectl logs` for each request: method, path, status, duration, account and client address. Agents' and the dashboard's routine polls are left out. |
 | `server.tls.existingSecret` | `""` | A `kubernetes.io/tls` secret to serve instead of the self-signed certificate |
 | `server.persistence.size`, `.storageClass`, `.existingClaim` | `5Gi`, the default class, none | The database's volume |
 | `server.service.type`, `.annotations`, `.dashboardPort`, `.agentPort` | `ClusterIP`, none, `8443`, `8444` | The Service |

@@ -285,7 +285,17 @@ func explainListingFailure(login store.RegistryLogin, err error) string {
 		return "This registry doesn't list its repositories for this login. Type the repository's name instead, such as team/app."
 	}
 	if login.Kind == store.LoginECR && strings.Contains(text, "AccessDeniedException") {
-		return "AWS refused to list: the key's user also needs ecr:DescribeRepositories and ecr:DescribeImages to browse and watch repositories. (" + text + ")"
+		// AWS's own reason, without the generic advice to check the login:
+		// the login works, its user only may not list.
+		reason := text
+		if _, after, found := strings.Cut(text, "AWS answered "); found {
+			// It ends " to ACTION)", naming the call.
+			reason = strings.TrimSuffix(after, ")")
+			if index := strings.LastIndex(reason, " to "); index > 0 {
+				reason = reason[:index]
+			}
+		}
+		return "AWS refused to list: the key's user also needs ecr:DescribeRepositories and ecr:DescribeImages to browse and watch repositories (see the IAM policy in the docs). AWS said: " + reason
 	}
 	return explainLoginFailure(login, err)
 }
