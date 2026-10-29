@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -136,6 +137,10 @@ func TestRepositoryWatchWithoutPushTimes(t *testing.T) {
 		asked++
 		return "sha256:" + ref.Tag, nil
 	}
+	// This registry's images don't say when they were built.
+	s.images.created = func(ctx context.Context, client *images.Client, ref images.Reference, platform string) (time.Time, error) {
+		return time.Time{}, errors.New("no config")
+	}
 	decode[store.RepositoryWatch](t, do(t, s, call{method: http.MethodPost, path: "/api/repository-watches", cookie: cookie,
 		body: map[string]any{"registry": "registry.example.com", "repository": "team/db", "keep": 1}}))
 	now := time.Now()
@@ -150,6 +155,95 @@ func TestRepositoryWatchWithoutPushTimes(t *testing.T) {
 	list, _ = store.Images()
 	if len(list) != 2 || !strings.Contains(list[0].Reference+list[1].Reference, "0.1-hotfix") {
 		t.Fatalf("a new tag: %+v", list)
+	}
+}
+
+func TestRepositoryWatchByBuildTime(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	// Commit tags: their names say nothing of their order.
+	names := []string{"main-9f2c", "main-0b7a", "main-c41d"}
+	built := map[string]time.Time{}
+	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	for index, name := range names {
+		built[name] = base.Add(time.Duration(index) * time.Hour)
+	}
+	s.images.listTags = func(ctx context.Context, s *Server, registry, repository string) ([]images.TagInfo, error) {
+		var tags []images.TagInfo
+		for _, name := range names {
+			tags = append(tags, images.TagInfo{Tag: name})
+		}
+		return tags, nil
+	}
+	s.images.tagDigest = func(ctx context.Context, client *images.Client, ref images.Reference) (string, error) {
+		return "sha256:" + ref.Tag, nil
+	}
+	var reads []string
+	var mu sync.Mutex
+	s.images.created = func(ctx context.Context, client *images.Client, ref images.Reference, platform string) (time.Time, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		reads = append(reads, ref.Registry+" "+ref.Tag+" "+platform)
+		return built[ref.Tag], nil
+	}
+	login := decode[store.RegistryLogin](t, do(t, s, call{method: http.MethodPost, path: "/api/registry-logins", cookie: cookie,
+		body: map[string]any{"registry": "registry.example.com", "username": "robot", "secret": "token"}}))
+
+	// The preview for a platform orders the matching tags by build time, as
+	// the first check will.
+	type tagList struct {
+		Tags []images.TagInfo `json:"tags"`
+	}
+	preview := decode[tagList](t, do(t, s, call{method: http.MethodGet, cookie: cookie,
+		path: "/api/registry-logins/" + login.ID + "/tags?repository=team/app&pattern=%5Emain-&platform=linux/amd64"}))
+	if len(preview.Tags) != 3 || preview.Tags[0].Tag != "main-c41d" || preview.Tags[2].Tag != "main-9f2c" || !preview.Tags[0].Created.Equal(built["main-c41d"]) {
+		t.Fatalf("preview: %+v", preview.Tags)
+	}
+	// Browsing without a platform reads nothing.
+	reads = nil
+	decode[tagList](t, do(t, s, call{method: http.MethodGet, cookie: cookie, path: "/api/registry-logins/" + login.ID + "/tags?repository=team/app"}))
+	if len(reads) != 0 {
+		t.Fatalf("plain browsing read build times: %v", reads)
+	}
+
+	decode[store.RepositoryWatch](t, do(t, s, call{method: http.MethodPost, path: "/api/repository-watches", cookie: cookie,
+		body: map[string]any{"registry": "registry.example.com", "repository": "team/app", "tag_pattern": "^main-", "platform": "linux/amd64", "keep": 1}}))
+	now := time.Now()
+	s.checkRepositoryWatches(context.Background(), now)
+	list, _ := store.Images()
+	if len(list) != 1 || list[0].Reference != "registry.example.com/team/app:main-c41d" {
+		t.Fatalf("the newest build on the first check: %+v", list)
+	}
+	if len(reads) != 0 {
+		t.Fatalf("the preview's build times weren't reused: %v", reads)
+	}
+	// Two pushes seen together: the later build is the newer push. The first
+	// check's build times are kept, so the old tags aren't read again.
+	names = append(names, "main-77aa", "main-e5e0")
+	built["main-77aa"], built["main-e5e0"] = base.Add(9*time.Hour), base.Add(8*time.Hour)
+	s.checkRepositoryWatches(context.Background(), now.Add(16*time.Minute))
+	list, _ = store.Images()
+	watched := ""
+	for _, image := range list {
+		if image.Watch {
+			watched += image.Reference
+		}
+	}
+	if !strings.HasSuffix(watched, ":main-77aa") || strings.Count(watched, "registry.example.com") != 1 {
+		t.Fatalf("pushed together: watched %s of %+v", watched, list)
+	}
+	if strings.Join(reads, ",") != "registry.example.com main-77aa linux/amd64,registry.example.com main-e5e0 linux/amd64" &&
+		strings.Join(reads, ",") != "registry.example.com main-e5e0 linux/amd64,registry.example.com main-77aa linux/amd64" {
+		t.Fatalf("reads on the second check: %v", reads)
+	}
+
+	// Docker Hub limits reads: its tags stay in version order.
+	reads = nil
+	decode[store.RepositoryWatch](t, do(t, s, call{method: http.MethodPost, path: "/api/repository-watches", cookie: cookie,
+		body: map[string]any{"registry": "docker.io", "repository": "library/app", "keep": 1}}))
+	s.checkRepositoryWatches(context.Background(), now.Add(32*time.Minute))
+	if len(reads) != 0 {
+		t.Fatalf("read build times on Docker Hub: %v", reads)
 	}
 }
 

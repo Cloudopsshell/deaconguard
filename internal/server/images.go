@@ -56,6 +56,7 @@ type imageScanner struct {
 	checkLogin       func(ctx context.Context, client *images.Client, registry string) error
 	listRepositories listRepositoriesFunc
 	listTags         listTagsFunc
+	created          createdFunc
 	wake             chan struct{}
 	cancel           context.CancelFunc
 	wg               sync.WaitGroup
@@ -64,6 +65,8 @@ type imageScanner struct {
 	ecrEndpoint string
 	mu          sync.Mutex
 	ecrTokens   map[string]ecrToken
+	// builtTimes caches when tags' images were built, for ordering tags.
+	builtTimes map[string]builtTime
 }
 
 // ecrToken is an ECR registry password, for the saved login it came from.
@@ -78,8 +81,8 @@ func newImageScanner() *imageScanner {
 		checkLogin: func(ctx context.Context, client *images.Client, registry string) error {
 			return client.CheckLogin(ctx, registry)
 		},
-		listRepositories: listRepositories, listTags: listTags,
-		http: &http.Client{Timeout: 30 * time.Second}, ecrTokens: map[string]ecrToken{}}
+		listRepositories: listRepositories, listTags: listTags, created: created,
+		http: &http.Client{Timeout: 30 * time.Second}, ecrTokens: map[string]ecrToken{}, builtTimes: map[string]builtTime{}}
 }
 
 func (s *Server) startImageScanner() {

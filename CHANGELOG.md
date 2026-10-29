@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Repository watches order tags by build time** on registries that don't say when a tag was pushed, such as GHCR, GitLab, Harbor or a self-hosted registry: the first check, and tags that appear at the same check, go by when each image was built (the `created` time in its config), then by version. Tags named by commit, such as `main-3f9c2a1`, now come in build order. The watch dialog's preview orders the matching tags the same way and shows when each was built. Docker Hub, which limits reads, stays in version order.
+
 ## [1.12.0] - 2026-10-29
 
 ### Added
