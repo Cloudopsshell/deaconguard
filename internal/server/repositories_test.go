@@ -579,3 +579,12 @@ func TestReportLevels(t *testing.T) {
 		t.Error("exploited and unknown")
 	}
 }
+
+func TestExplainECRListingRefused(t *testing.T) {
+	err := fmt.Errorf("750344086294.dkr.ecr.eu-north-1.amazonaws.com: %w (AWS answered AccessDeniedException: User: arn:aws:iam::750344086294:user/deaconguard is not authorized to perform: ecr:DescribeRepositories on resource: arn:aws:ecr:eu-north-1:750344086294:repository/* because no identity-based policy allows the ecr:DescribeRepositories action to DescribeRepositories)", images.ErrUnauthorized)
+	got := explainListingFailure(store.RegistryLogin{Kind: store.LoginECR}, err)
+	want := "AWS refused to list: the key's user also needs ecr:DescribeRepositories and ecr:DescribeImages to browse and watch repositories (see the IAM policy in the docs). AWS said: AccessDeniedException: User: arn:aws:iam::750344086294:user/deaconguard is not authorized to perform: ecr:DescribeRepositories on resource: arn:aws:ecr:eu-north-1:750344086294:repository/* because no identity-based policy allows the ecr:DescribeRepositories action"
+	if got != want {
+		t.Fatalf("got %q", got)
+	}
+}

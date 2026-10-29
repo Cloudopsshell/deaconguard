@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"runtime"
 	"runtime/pprof"
@@ -56,6 +57,9 @@ type diagnostics struct {
 	inFlight map[*http.Request]time.Time
 	logged   map[string]time.Time
 	busyAt   time.Time
+	// accessLog writes a line to standard output for each request, when the
+	// server runs with --access-log.
+	accessLog bool
 	// now and cpu are the clock and the CPU meter, and tick and window how
 	// often and over how long the watchdog measures; tests change them.
 	now          func() time.Time
@@ -72,6 +76,30 @@ func newDiagnostics() *diagnostics {
 func waits(r *http.Request) bool {
 	return r.URL.Path == agentapi.PathPrefix+"job" || strings.HasPrefix(r.URL.Path, "/api/diagnostics/")
 }
+
+// heartbeat reports the polls the access log leaves out, as they come every
+// few seconds while nothing happens: an agent asking for its next job, and
+// an open dashboard asking for sudo prompts. They are logged when they fail.
+func heartbeat(r *http.Request, status int) bool {
+	return status < 400 && (r.URL.Path == agentapi.PathPrefix+"job" || r.URL.Path == "/api/prompts")
+}
+
+// requestInfo is what the handlers learn about a request that the access
+// log needs: who made it.
+type requestInfo struct{ user string }
+
+type requestInfoKey struct{}
+
+// noteUser records who made a request, for the access log.
+func noteUser(r *http.Request, name string) {
+	if info, ok := r.Context().Value(requestInfoKey{}).(*requestInfo); ok {
+		info.user = name
+	}
+}
+
+// LogRequests turns the access log on: a line on standard output for each
+// request. Call it before serving.
+func (s *Server) LogRequests(on bool) { s.diagnostics.accessLog = on }
 
 type statusRecorder struct {
 	http.ResponseWriter
@@ -99,20 +127,35 @@ func (recorder *statusRecorder) Unwrap() http.ResponseWriter { return recorder.R
 // method and path.
 func (d *diagnostics) timed(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if waits(r) {
-			next.ServeHTTP(w, r)
-			return
-		}
 		start, cpu := d.now(), d.cpu()
-		d.mu.Lock()
-		d.inFlight[r] = start
-		d.mu.Unlock()
+		info := &requestInfo{}
+		r = r.WithContext(context.WithValue(r.Context(), requestInfoKey{}, info))
+		waiting := waits(r)
+		if !waiting {
+			d.mu.Lock()
+			d.inFlight[r] = start
+			d.mu.Unlock()
+		}
 		recorder := &statusRecorder{ResponseWriter: w}
 		defer func() {
 			took, used := d.now().Sub(start), d.cpu()-cpu
+			status := recorder.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			key := r.Method + " " + r.URL.Path
+			if d.accessLog && !heartbeat(r, status) {
+				user := info.user
+				if user == "" {
+					user = "-"
+				}
+				log.Printf("ACCESS %s %d %s user=%s ip=%s", key, status, took.Round(time.Millisecond), user, remoteIP(r))
+			}
+			if waiting {
+				return
+			}
 			d.mu.Lock()
 			delete(d.inFlight, r)
-			key := r.Method + " " + r.URL.Path
 			quiet := d.now().Sub(d.logged[key]) < slowRequestQuiet
 			if took >= slowRequest && !quiet {
 				d.logged[key] = d.now()
@@ -120,7 +163,7 @@ func (d *diagnostics) timed(next http.Handler) http.Handler {
 			d.mu.Unlock()
 			if took >= slowRequest && !quiet {
 				serverLog("", store.LogWarning, "Slow request: %s took %s (status %d); the server used %s of CPU meanwhile",
-					key, took.Round(100*time.Millisecond), recorder.status, used.Round(100*time.Millisecond))
+					key, took.Round(100*time.Millisecond), status, used.Round(100*time.Millisecond))
 			}
 		}()
 		next.ServeHTTP(recorder, r)

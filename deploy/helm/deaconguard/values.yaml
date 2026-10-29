@@ -27,6 +27,10 @@ server:
   # Networks of reverse proxies in front of the dashboard, such as the
   # ingress controller's pods, whose X-Forwarded-For the server believes.
   trustedProxies: []
+  # A line in the server's log (kubectl logs) for each request: method, path,
+  # status, duration, account and address. Agents' and the dashboard's
+  # routine polls are left out.
+  accessLog: false
   # A kubernetes.io/tls secret to serve instead of the self-signed
   # certificate. Agents trust a certificate that the system trusts for the
   # server's name, or its key's fingerprint from their token.
