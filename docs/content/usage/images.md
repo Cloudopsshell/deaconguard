@@ -36,6 +36,8 @@ The scan history says what started each scan: a person, `watch: new build pushed
 - **Amazon ECR** lists every repository, and says when each tag was pushed, through the ECR API: the key's user also needs `ecr:DescribeRepositories` and `ecr:DescribeImages` (see the [policy](#an-iam-policy-for-amazon-ecr)).
 - **Docker Hub** lists, through its API, the repositories in the login's own namespace, and any repository's tags, with when each was pushed; public repositories need no login. To browse another namespace, type its name, such as `library/alpine`.
 - **GHCR** lists, through GitHub's packages API, the packages of the login's user and of its organizations, and their tags, with when each was pushed. The login's token must be a classic one with `read:packages`; without a login, or with a token GitHub's API refuses, the tags come from the registry API, as below.
+- **Harbor** lists, through its API, every repository the login can see (a user or a robot account), and their tags with when each was pushed; public projects need no login for tags. DeaconGuard recognises a Harbor host by asking it, once an hour.
+- **Quay** (quay.io, or Red Hat Quay), **GitLab** (registry.gitlab.com, or a self-hosted registry on `registry.gitlab.example.com` or `gitlab.example.com:5050`), **Azure Container Registry** and **Google Artifact Registry** (and gcr.io) list tags with when each was pushed, through their own APIs or the registry API's answer, as **Newest** below says; their repositories are listed with the catalog, or typed.
 - **Other registries** are listed with the registry API's catalog. Some don't list repositories at all: type the repository's name, such as `team/app`, and its tags are listed. The registry API doesn't say when a tag was pushed, so tags are listed by version, newest first: `v1.10.0` before `v1.9.0`. While you set up a watch, the tags its pattern matches are listed by when their image was built instead, as its first check orders them (see **Newest** below).
 
 Browsing is for admins, who hold the logins.
@@ -49,11 +51,21 @@ A **watched repository** scans each new image pushed to it, without anyone addin
 - **Keep the history of:** how many of the images the watch added are kept, with their scans (from the number rescanned up to 500, 50 by default). When there are more, the oldest are removed. Images you added yourself are never removed, even when a watch matches their tag.
 - **Report new pushes:** which new pushes send an [image scan report](#reports-of-new-pushes): every one (the default), only those with a vulnerability of a chosen severity or worse, only those with one known to be exploited, or none. **Send reports to** picks the channels, of those that take image scan reports; none ticked sends to all of them.
 - **The first check** scans the newest matching tags at once. After that, a tag that appears, or that is pushed again with a new image, is scanned. **Check now** checks at once.
-- **Newest** is by push time on Amazon ECR, Docker Hub (its 1,000 most recently pushed tags, as far as Docker Hub lets an anonymous request page, or 2,500 with a Docker Hub login), and GHCR with a login. Other registries don't say when a tag was pushed, so:
+- **Newest** is by push time where the registry says when each tag was pushed:
+  - **Amazon ECR**, through the ECR API;
+  - **Docker Hub**, through its API: its 1,000 most recently pushed tags, as far as Docker Hub lets an anonymous request page, or 2,500 with a Docker Hub login;
+  - **GHCR** with a login, through GitHub's packages API;
+  - **Google Artifact Registry** and gcr.io, whose registry API gives each image's upload time;
+  - **Azure Container Registry**, through its own API on the registry's host, with the registry login;
+  - **Quay**, through its API: public repositories without a login, private ones with the username `$oauthtoken` and an OAuth access token;
+  - **Harbor**, through its API, with the registry login, or none for public projects;
+  - **GitLab**, through its GraphQL API: public projects without a login, private ones with an access token with `read_api`.
+
+  Other registries don't say when a tag was pushed, so:
   - the first check orders the matching tags by when their image was built for the watch's platform (the `created` time in the image's config), then by version. Tags named by commit, such as `main-3f9c2a1`, come in build order, not in the order of their names. It reads the build time of the 100 matching tags that are newest by version, 6 at a time;
   - later, a tag that appears counts as the newest, and tags that appear at the same check are ordered by build time;
   - a tag whose image has no build time, as reproducible builds often leave it, keeps its place by version.
-- **When Docker Hub's or GitHub's API fails**, for example because it is limiting requests or the token may not read packages, the tags come from the registry API and are ordered as for other registries. The browse dialog says why, and the server log records it once.
+- **When a registry's own API fails**, for example because it is limiting requests or the login may not read it (a GitLab deploy token, a Quay robot account, a fine-grained GitHub token), the tags come from the registry API and are ordered as for other registries. The browse dialog says why, and the server log records it once.
 
 ### Tag pattern examples
 
@@ -152,7 +164,10 @@ What to save for the cloud registries:
 | --- | --- | --- |
 | Amazon ECR | `123456789012.dkr.ecr.eu-north-1.amazonaws.com` | Choose **An AWS access key**, and give an access key ID and secret access key of an IAM user that may only read: `ecr:GetAuthorizationToken` (on `*`), and `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer` on the repositories to scan (see the [policy below](#an-iam-policy-for-amazon-ecr)), or the managed `AmazonEC2ContainerRegistryReadOnly`. ECR's registry passwords last 12 hours, so DeaconGuard keeps the key and gets a new password from the ECR API when it needs one. |
 | Google Artifact Registry | `europe-north1-docker.pkg.dev` | Username `_json_key`, and as the password the JSON key of a service account with the **Artifact Registry Reader** role. |
-| Azure Container Registry | `myregistry.azurecr.io` | A [repository-scoped token](https://learn.microsoft.com/azure/container-registry/container-registry-repository-scoped-permissions) with `content/read`, or a service principal's application ID and secret with the **AcrPull** role. |
+| Azure Container Registry | `myregistry.azurecr.io` | A [repository-scoped token](https://learn.microsoft.com/azure/container-registry/container-registry-repository-scoped-permissions) with `content/read`, or a service principal's application ID and secret with the **AcrPull** role. For push times, a token also needs `metadata/read`; AcrPull has it. |
+| Quay | `quay.io` | A robot account, which reads images. For push times of private repositories, the username `$oauthtoken` and an OAuth access token with **View all visible repositories** instead: Quay's API refuses robot accounts. |
+| GitLab | `registry.gitlab.com` | A deploy token, or a personal, project or group access token with `read_registry`. For push times of private projects, an access token with `read_registry` and `read_api`; a deploy token reads the registry only. |
+| Harbor | `harbor.example.com` | A user, or a robot account that may pull and list artifacts. The same login lists repositories and push times through Harbor's API. |
 | GitHub (GHCR) | `ghcr.io` | Your GitHub username and a personal access token (classic) with only `read:packages`. GitHub's packages API takes the same token, to list your packages and say when each tag was pushed; it refuses fine-grained tokens. |
 | Docker Hub | `docker.io` | Your username and a personal access token with **Read-only** access. A login also raises Docker Hub's pull limits, lists your repositories when browsing, and lets private repositories be watched. |
 

@@ -57,11 +57,17 @@ type imageScanner struct {
 	listRepositories listRepositoriesFunc
 	listTags         listTagsFunc
 	created          createdFunc
-	// registryTags lists tags with the registry API; tests replace it.
+	// registryTags lists tags with the registry API, acrTags with Azure
+	// Container Registry's, and detectFlavor asks a host whether it is
+	// Quay, Harbor or GitLab; tests replace them.
 	registryTags func(ctx context.Context, client *images.Client, registry, repository string) ([]images.TagInfo, error)
-	wake         chan struct{}
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
+	acrTags      func(ctx context.Context, client *images.Client, registry, repository string) ([]images.TagInfo, error)
+	detectFlavor func(ctx context.Context, client *http.Client, scheme, registry string) (images.Flavor, string)
+	// flavors keeps what each registry host answered as.
+	flavors map[string]registryFlavor
+	wake    chan struct{}
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
 	// http, ecrEndpoint, hubEndpoint and githubEndpoint reach the ECR,
 	// Docker Hub and GitHub APIs; tests point them elsewhere.
 	http           *http.Client
@@ -93,6 +99,10 @@ func newImageScanner() *imageScanner {
 		registryTags: func(ctx context.Context, client *images.Client, registry, repository string) ([]images.TagInfo, error) {
 			return client.Tags(ctx, registry, repository)
 		},
+		acrTags: func(ctx context.Context, client *images.Client, registry, repository string) ([]images.TagInfo, error) {
+			return client.ACRTags(ctx, registry, repository)
+		},
+		detectFlavor: images.DetectFlavor, flavors: map[string]registryFlavor{},
 		http: &http.Client{Timeout: 30 * time.Second}, ecrTokens: map[string]ecrToken{}, builtTimes: map[string]builtTime{}, listingNotes: map[string]string{}}
 }
 

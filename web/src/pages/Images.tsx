@@ -614,13 +614,7 @@ function RegistryLoginDialog({ login, onClose, onSaved }: { login: RegistryLogin
               An AWS access key (Amazon ECR)
             </label>
           </div>
-          {!ecr && /^(docker\.io|index\.docker\.io|registry-1\.docker\.io|ghcr\.io)$/i.test(input.registry.trim()) && (
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              {/ghcr/i.test(input.registry)
-                ? "Use your GitHub username and a classic personal access token with read:packages: with it, Browse lists your packages and a watch knows when each tag was pushed."
-                : "Use your Docker Hub username and a personal access token (read-only is enough): with it, Browse lists your repositories, and private ones can be watched."}
-            </p>
-          )}
+          {!ecr && loginHint(input.registry) && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{loginHint(input.registry)}</p>}
           {ecr && (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               DeaconGuard exchanges it for ECR's 12-hour registry password when it needs one. Give the key's user read access only:{" "}
@@ -687,4 +681,25 @@ function DeleteLoginDialog({ login, onClose }: { login: RegistryLogin; onClose: 
       </div>
     </Dialog>
   );
+}
+
+/** What a login to a registry with its own API should be, for that API to say when each tag was pushed. */
+function loginHint(registry: string): string | undefined {
+  const host = registry.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (host === "ghcr.io") {
+    return "Use your GitHub username and a classic personal access token with read:packages: with it, Browse lists your packages and a watch knows when each tag was pushed.";
+  }
+  if (["docker.io", "index.docker.io", "registry-1.docker.io"].includes(host)) {
+    return "Use your Docker Hub username and a personal access token (read-only is enough): with it, Browse lists your repositories, and private ones can be watched.";
+  }
+  if (host === "quay.io") {
+    return "A robot account reads images. For a watch to know when private tags were pushed, log in as $oauthtoken with an OAuth access token instead: Quay's API refuses robot accounts. Public repositories need no login.";
+  }
+  if (host === "registry.gitlab.com" || /^registry\.gitlab\./.test(host) || /gitlab.*:\d+$/.test(host)) {
+    return "A deploy token reads images. For a watch to know when private tags were pushed, use an access token with read_registry and read_api instead. Public projects need no login.";
+  }
+  if (/\.azurecr\.(io|cn|us)(:\d+)?$/.test(host)) {
+    return "A token or service principal that can pull and read metadata (the AcrPull role can) also lets a watch know when each tag was pushed.";
+  }
+  return undefined;
 }

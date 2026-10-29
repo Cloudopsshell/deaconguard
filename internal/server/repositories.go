@@ -31,8 +31,9 @@ type (
 
 // listRepositories uses the ECR API for an ECR login, which lists every
 // repository, Docker Hub's API for a Docker Hub login (its namespace's
-// repositories), GitHub's packages API for a GHCR login, and the registry
-// API's catalog otherwise, which some registries refuse.
+// repositories), GitHub's packages API for a GHCR login, Harbor's API on a
+// Harbor host, and the registry API's catalog otherwise, which some
+// registries refuse.
 func listRepositories(ctx context.Context, s *Server, login store.RegistryLogin) ([]string, error) {
 	switch {
 	case login.Kind == store.LoginECR:
@@ -42,6 +43,9 @@ func listRepositories(ctx context.Context, s *Server, login store.RegistryLogin)
 	case login.Registry == images.GHCR:
 		return s.githubAPI(login).Repositories(ctx)
 	}
+	if flavor, endpoint := s.registryFlavor(ctx, login.Registry); flavor == images.FlavorHarbor {
+		return images.HarborAPI{Client: s.images.http, Endpoint: endpoint, Username: login.Username, Password: login.Secret}.Repositories(ctx)
+	}
 	client, err := s.registryClient(ctx, login.Registry)
 	if err != nil {
 		return nil, err
@@ -50,9 +54,11 @@ func listRepositories(ctx context.Context, s *Server, login store.RegistryLogin)
 }
 
 // listTags uses the registry's own API where it has one that says when each
-// image was pushed: the ECR API, Docker Hub's API (with or without a login),
-// and GitHub's packages API for GHCR with a login. Elsewhere, or when Docker
-// Hub's or GitHub's API fails, it uses the registry API, and notes why.
+// image was pushed: the ECR API; Docker Hub's API (with or without a login);
+// GitHub's packages API for GHCR with a login; Azure Container Registry's
+// API, with the registry login; and Quay's, Harbor's and GitLab's APIs, on
+// hosts that answer as one. Elsewhere, or when that API fails, it uses the
+// registry API, and notes why.
 func listTags(ctx context.Context, s *Server, registry, repository string) ([]images.TagInfo, error) {
 	login, found, err := store.RegistryLoginFor(registry)
 	if err != nil {
@@ -61,31 +67,84 @@ func listTags(ctx context.Context, s *Server, registry, repository string) ([]im
 	if found && login.Kind == store.LoginECR {
 		return s.ecrAPI(login).Tags(ctx, repository)
 	}
-	var apiErr error
-	switch {
-	case images.IsDockerHub(registry):
-		hub := s.hubAPI(login, found)
-		var tags []images.TagInfo
-		if tags, apiErr = hub.Tags(ctx, repository); apiErr == nil {
-			s.noteListing(registry, repository, "")
-			return tags, nil
-		}
-	case registry == images.GHCR && found:
-		var tags []images.TagInfo
-		if tags, apiErr = s.githubAPI(login).Tags(ctx, repository); apiErr == nil {
-			s.noteListing(registry, repository, "")
-			return tags, nil
-		}
-	}
 	client, err := s.registryClient(ctx, registry)
 	if err != nil {
 		return nil, err
+	}
+	var own func() ([]images.TagInfo, error)
+	switch {
+	case images.IsDockerHub(registry):
+		own = func() ([]images.TagInfo, error) { return s.hubAPI(login, found).Tags(ctx, repository) }
+	case registry == images.GHCR:
+		if found {
+			own = func() ([]images.TagInfo, error) { return s.githubAPI(login).Tags(ctx, repository) }
+		}
+	case images.IsACR(registry):
+		own = func() ([]images.TagInfo, error) { return s.images.acrTags(ctx, client, registry, repository) }
+	default:
+		flavor, endpoint := s.registryFlavor(ctx, registry)
+		switch flavor {
+		case images.FlavorQuay:
+			api := images.QuayAPI{Client: s.images.http, Endpoint: endpoint}
+			// Quay's API takes an OAuth token, which logs in to the
+			// registry as $oauthtoken; robot accounts work for the registry
+			// only.
+			if found && login.Username == "$oauthtoken" {
+				api.Token = login.Secret
+			}
+			own = func() ([]images.TagInfo, error) { return api.Tags(ctx, repository) }
+		case images.FlavorHarbor:
+			api := images.HarborAPI{Client: s.images.http, Endpoint: endpoint}
+			if found {
+				api.Username, api.Password = login.Username, login.Secret
+			}
+			own = func() ([]images.TagInfo, error) { return api.Tags(ctx, repository) }
+		case images.FlavorGitLab:
+			api := images.GitLabAPI{Client: s.images.http, Endpoint: endpoint}
+			if found {
+				api.Token = login.Secret
+			}
+			own = func() ([]images.TagInfo, error) { return api.Tags(ctx, repository) }
+		}
+	}
+	var apiErr error
+	if own != nil {
+		var tags []images.TagInfo
+		if tags, apiErr = own(); apiErr == nil {
+			s.noteListing(registry, repository, "")
+			return tags, nil
+		}
 	}
 	tags, err := s.images.registryTags(ctx, client, registry, repository)
 	if err == nil && apiErr != nil {
 		s.noteListing(registry, repository, apiErr.Error())
 	}
 	return tags, err
+}
+
+// flavorKept is how long what a registry host answered as is reused.
+const flavorKept = time.Hour
+
+type registryFlavor struct {
+	flavor   images.Flavor
+	endpoint string
+	asked    time.Time
+}
+
+// registryFlavor says whether a registry is Quay, Harbor or GitLab, and
+// where its API is, asking the host at most once an hour.
+func (s *Server) registryFlavor(ctx context.Context, registry string) (images.Flavor, string) {
+	s.images.mu.Lock()
+	known, ok := s.images.flavors[registry]
+	s.images.mu.Unlock()
+	if ok && time.Since(known.asked) < flavorKept {
+		return known.flavor, known.endpoint
+	}
+	flavor, endpoint := s.images.detectFlavor(ctx, s.images.http, "https", registry)
+	s.images.mu.Lock()
+	s.images.flavors[registry] = registryFlavor{flavor: flavor, endpoint: endpoint, asked: time.Now()}
+	s.images.mu.Unlock()
+	return flavor, endpoint
 }
 
 // noteListing keeps why a repository's tags came from the registry API
