@@ -336,6 +336,88 @@ func TestDockerHubAndGHCRAPIs(t *testing.T) {
 	_ = login
 }
 
+func TestRegistryFlavors(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	digest := "sha256:" + strings.Repeat("e", 64)
+	down := false
+	harbor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		user, pass, _ := r.BasicAuth()
+		if user != "robot$ci" || pass != "secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.EscapedPath() {
+		case "/api/v2.0/projects/team/repositories/app/artifacts":
+			fmt.Fprintf(w, `[{"digest":"%s","push_time":"2026-10-01T00:00:00Z","tags":[{"name":"main-0aaa","push_time":"2026-10-02T00:00:00Z"}]}]`, digest)
+		case "/api/v2.0/repositories":
+			fmt.Fprint(w, `[{"name":"team/app"}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer harbor.Close()
+	asked := map[string]int{}
+	s.images.http = harbor.Client()
+	s.images.detectFlavor = func(ctx context.Context, client *http.Client, scheme, registry string) (images.Flavor, string) {
+		asked[registry]++
+		if registry == "harbor.example.com" {
+			return images.FlavorHarbor, harbor.URL
+		}
+		return images.FlavorNone, ""
+	}
+	var registryAPI []string
+	s.images.registryTags = func(ctx context.Context, client *images.Client, registry, repository string) ([]images.TagInfo, error) {
+		registryAPI = append(registryAPI, registry)
+		return []images.TagInfo{{Tag: "main-0aaa"}}, nil
+	}
+	var acr []string
+	s.images.acrTags = func(ctx context.Context, client *images.Client, registry, repository string) ([]images.TagInfo, error) {
+		acr = append(acr, registry+"/"+repository)
+		return []images.TagInfo{{Tag: "v1", Digest: digest, PushedAt: time.Now()}}, nil
+	}
+	login := decode[store.RegistryLogin](t, do(t, s, call{method: http.MethodPost, path: "/api/registry-logins", cookie: cookie,
+		body: map[string]any{"registry": "harbor.example.com", "username": "robot$ci", "secret": "secret"}}))
+
+	// Harbor, with the registry login, gives push times and digests; what
+	// the host is, is asked once.
+	for range 2 {
+		tags, err := listTags(context.Background(), s, "harbor.example.com", "team/app")
+		if err != nil || len(tags) != 1 || tags[0].PushedAt.Day() != 2 || tags[0].Digest != digest {
+			t.Fatalf("Harbor: %+v, %v", tags, err)
+		}
+	}
+	if asked["harbor.example.com"] != 1 || len(registryAPI) != 0 {
+		t.Fatalf("asked %v, registry API %v", asked, registryAPI)
+	}
+	type listing struct {
+		Repositories []string `json:"repositories"`
+		Listed       bool     `json:"listed"`
+	}
+	if got := decode[listing](t, do(t, s, call{method: http.MethodGet, path: "/api/registry-logins/" + login.ID + "/repositories", cookie: cookie})); !got.Listed || strings.Join(got.Repositories, ",") != "team/app" {
+		t.Fatalf("Harbor's repositories: %+v", got)
+	}
+	// When Harbor's API fails, the registry API lists the tags, with a note.
+	down = true
+	tags, err := listTags(context.Background(), s, "harbor.example.com", "team/app")
+	if err != nil || len(tags) != 1 || !tags[0].PushedAt.IsZero() || s.listingNote("harbor.example.com", "team/app") == "" {
+		t.Fatalf("the fallback: %+v, %v, note %q", tags, err, s.listingNote("harbor.example.com", "team/app"))
+	}
+	// Azure Container Registry: its own API, nothing asked.
+	if tags, err := listTags(context.Background(), s, "acme.azurecr.io", "team/app"); err != nil || len(tags) != 1 || len(acr) != 1 || asked["acme.azurecr.io"] != 0 {
+		t.Fatalf("ACR: %+v, %v, %v, %v", tags, err, acr, asked)
+	}
+	// Any other registry: the registry API, without a note.
+	registryAPI = nil
+	if _, err := listTags(context.Background(), s, "registry.example.com", "team/app"); err != nil || len(registryAPI) != 1 || s.listingNote("registry.example.com", "team/app") != "" {
+		t.Fatalf("a plain registry: %v, %v", err, registryAPI)
+	}
+}
+
 func TestBrowsingRegistries(t *testing.T) {
 	s := newNetworkTestServer(t)
 	cookie := signIn(t, s)
