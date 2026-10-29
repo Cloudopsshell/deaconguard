@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: server
-          image: ghcr.io/cloudopsshell/deaconguard:1.14.0
+          image: ghcr.io/cloudopsshell/deaconguard:1.15.0
           args: [serve, --listen, "0.0.0.0:8443", --agent-listen, "0.0.0.0:8444"]
           env:
             - name: DEACONGUARD_HOME
