@@ -437,6 +437,7 @@ function RepositoryTags({ login, repository, onBack, onDone }: { login: Registry
             ? "This registry doesn't say when each tag was pushed, so matching tags are listed by when their image was built, newest first, then by version."
             : "This registry doesn't say when each tag was pushed, so tags are listed by version, newest first."}{" "}
           A watch counts a tag that appears later as the newest.
+          {tags.data.note && <> The registry's own API, which says when tags were pushed, failed: {tags.data.note}</>}
         </p>
       )}
       {tags.isPending ? (

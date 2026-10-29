@@ -30,11 +30,17 @@ type (
 )
 
 // listRepositories uses the ECR API for an ECR login, which lists every
-// repository, and the registry API's catalog otherwise, which some
-// registries, such as Docker Hub and GHCR, refuse.
+// repository, Docker Hub's API for a Docker Hub login (its namespace's
+// repositories), GitHub's packages API for a GHCR login, and the registry
+// API's catalog otherwise, which some registries refuse.
 func listRepositories(ctx context.Context, s *Server, login store.RegistryLogin) ([]string, error) {
-	if login.Kind == store.LoginECR {
+	switch {
+	case login.Kind == store.LoginECR:
 		return s.ecrAPI(login).Repositories(ctx)
+	case images.IsDockerHub(login.Registry):
+		return s.hubAPI(login, true).Repositories(ctx)
+	case login.Registry == images.GHCR:
+		return s.githubAPI(login).Repositories(ctx)
 	}
 	client, err := s.registryClient(ctx, login.Registry)
 	if err != nil {
@@ -43,8 +49,10 @@ func listRepositories(ctx context.Context, s *Server, login store.RegistryLogin)
 	return client.Repositories(ctx, login.Registry)
 }
 
-// listTags uses the ECR API for an ECR registry, which also says when each
-// image was pushed, and the registry API otherwise.
+// listTags uses the registry's own API where it has one that says when each
+// image was pushed: the ECR API, Docker Hub's API (with or without a login),
+// and GitHub's packages API for GHCR with a login. Elsewhere, or when Docker
+// Hub's or GitHub's API fails, it uses the registry API, and notes why.
 func listTags(ctx context.Context, s *Server, registry, repository string) ([]images.TagInfo, error) {
 	login, found, err := store.RegistryLoginFor(registry)
 	if err != nil {
@@ -53,11 +61,66 @@ func listTags(ctx context.Context, s *Server, registry, repository string) ([]im
 	if found && login.Kind == store.LoginECR {
 		return s.ecrAPI(login).Tags(ctx, repository)
 	}
+	var apiErr error
+	switch {
+	case images.IsDockerHub(registry):
+		hub := s.hubAPI(login, found)
+		var tags []images.TagInfo
+		if tags, apiErr = hub.Tags(ctx, repository); apiErr == nil {
+			s.noteListing(registry, repository, "")
+			return tags, nil
+		}
+	case registry == images.GHCR && found:
+		var tags []images.TagInfo
+		if tags, apiErr = s.githubAPI(login).Tags(ctx, repository); apiErr == nil {
+			s.noteListing(registry, repository, "")
+			return tags, nil
+		}
+	}
 	client, err := s.registryClient(ctx, registry)
 	if err != nil {
 		return nil, err
 	}
-	return client.Tags(ctx, registry, repository)
+	tags, err := s.images.registryTags(ctx, client, registry, repository)
+	if err == nil && apiErr != nil {
+		s.noteListing(registry, repository, apiErr.Error())
+	}
+	return tags, err
+}
+
+// noteListing keeps why a repository's tags came from the registry API
+// instead of its registry's own API, and logs it when that changes.
+func (s *Server) noteListing(registry, repository, note string) {
+	key := registry + "/" + repository
+	s.images.mu.Lock()
+	previous := s.images.listingNotes[key]
+	if note == "" {
+		delete(s.images.listingNotes, key)
+	} else {
+		s.images.listingNotes[key] = note
+	}
+	s.images.mu.Unlock()
+	if note != "" && note != previous {
+		serverLog("", store.LogWarning, "Listed the tags of %s with the registry API, without push times, because its registry's own API failed: %s", key, note)
+	}
+}
+
+func (s *Server) listingNote(registry, repository string) string {
+	s.images.mu.Lock()
+	defer s.images.mu.Unlock()
+	return s.images.listingNotes[registry+"/"+repository]
+}
+
+func (s *Server) hubAPI(login store.RegistryLogin, found bool) *images.HubAPI {
+	api := &images.HubAPI{Client: s.images.http, Endpoint: s.images.hubEndpoint}
+	if found {
+		api.Username, api.Secret = login.Username, login.Secret
+	}
+	return api
+}
+
+func (s *Server) githubAPI(login store.RegistryLogin) images.GitHubPackagesAPI {
+	return images.GitHubPackagesAPI{Client: s.images.http, Endpoint: s.images.githubEndpoint, Token: login.Secret}
 }
 
 // createdFunc reads when a tag's image was built; tests replace it.
@@ -239,7 +302,11 @@ func (s *Server) browseTags(w http.ResponseWriter, r *http.Request) {
 		ref := images.Reference{Registry: login.Registry, Repository: repository, Tag: tag.Tag}
 		view = append(view, tagView{TagInfo: tag, Matches: matches[tag.Tag], Reference: ref.String()})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"repository": repository, "tags": view, "matched": len(matched)})
+	answer := map[string]any{"repository": repository, "tags": view, "matched": len(matched)}
+	if note := s.listingNote(login.Registry, repository); note != "" {
+		answer["note"] = note
+	}
+	writeJSON(w, http.StatusOK, answer)
 }
 
 type repositoryWatchRequest struct {
