@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Download, Logs as LogsIcon, Pause, Play, Search } from "lucide-react";
+import { Cpu, Download, Logs as LogsIcon, Pause, Play, Search } from "lucide-react";
 import { useCan } from "../lib/role";
 import { api, logDownloadUrl, type LogFilters, type LogLevel } from "../api";
 import { LogTable } from "../components/LogTable";
@@ -25,6 +25,7 @@ const selectClass =
 /** The server's and the agents' logs, newest first, with filters and a download. */
 export function Logs() {
   const canDownload = useCan("operator");
+  const canProfile = useCan("admin");
   const [parameters, setParameters] = useSearchParams();
   const [live, setLive] = useState(true);
   const [search, setSearch] = useState(parameters.get("q") ?? "");
@@ -70,6 +71,16 @@ export function Logs() {
             >
               <Download className="size-4" /> Download
             </a>
+            )}
+            {canProfile && (
+              <a
+                href="/api/diagnostics/cpu?seconds=30"
+                download
+                title="Records what the server spends its CPU on for 30 seconds, then downloads it as a .pprof file. Use it while the server is busy."
+                className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-900 ring-1 ring-slate-300 ring-inset hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700 dark:hover:bg-slate-700"
+              >
+                <Cpu className="size-4" /> CPU profile (30 s)
+              </a>
             )}
           </div>
         }

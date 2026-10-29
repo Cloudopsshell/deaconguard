@@ -7,6 +7,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,7 +42,10 @@ const (
 
 type Server struct {
 	runner *runner
-	agents *agentHub
+	// diagnostics logs slow requests and what keeps the CPU busy.
+	diagnostics     *diagnostics
+	stopDiagnostics context.CancelFunc
+	agents          *agentHub
 	// localAvailable reports why this machine cannot be scanned, if it cannot.
 	localAvailable func() error
 	ui             fs.FS
@@ -99,7 +103,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	if err := store.PruneAllScans(store.KeepScansPerHost); err != nil {
 		return nil, err
 	}
-	s := &Server{
+	s := &Server{diagnostics: newDiagnostics(),
 		runner: newRunner(scan), ui: ui, network: network, pin: pin, limiter: newFailureLimiter(), scheduler: &scheduler{},
 		notifier:       &notifier{wake: make(chan struct{}, 1)},
 		images:         newImageScanner(),
@@ -134,6 +138,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/account/tokens", s.networkOnly(s.listOwnAPITokens))
 	mux.HandleFunc("POST /api/account/tokens", s.networkOnly(s.createAPIToken))
 	mux.HandleFunc("DELETE /api/account/tokens/{id}", s.networkOnly(s.revokeOwnAPIToken))
+	mux.HandleFunc("GET /api/diagnostics/cpu", s.needs(store.RoleAdmin, s.cpuProfile))
 	mux.HandleFunc("GET /api/tokens", s.needs(store.RoleAdmin, s.networkOnly(s.listAPITokens)))
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.needs(store.RoleAdmin, s.networkOnly(s.revokeAPIToken)))
 	// Accounts exist only when DeaconGuard serves on the network.
@@ -263,18 +268,18 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		agentMux.HandleFunc(agentapi.PathPrefix, func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("unknown agent API endpoint"))
 		})
-		s.agentHandler = agentOnly(agentMux)
+		s.agentHandler = s.diagnostics.timed(agentOnly(agentMux))
 		browser := s.signedIn(browserChecks(mux, "https"))
-		s.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.handler = s.diagnostics.timed(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasPrefix(r.URL.Path, agentapi.PathPrefix) {
 				agentMux.ServeHTTP(w, r)
 				return
 			}
 			browser.ServeHTTP(w, r)
-		})
+		}))
 		s.agents.start()
 	} else {
-		s.handler = localOnly(browserChecks(mux, "http"))
+		s.handler = s.diagnostics.timed(localOnly(browserChecks(mux, "http")))
 	}
 	return s, nil
 }
@@ -309,6 +314,9 @@ func agentOnly(agentMux http.Handler) http.Handler {
 // StartScheduler starts the scheduled scans, digests, notifications and
 // image scans; Close stops them.
 func (s *Server) StartScheduler() {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.stopDiagnostics = cancel
+	go s.diagnostics.watch(ctx)
 	s.startScheduler()
 	s.startNotifier()
 	s.startImageScanner()
@@ -318,6 +326,9 @@ func (s *Server) StartScheduler() {
 // Close cancels questions waiting for an answer and blocks until background
 // scans finish.
 func (s *Server) Close() {
+	if s.stopDiagnostics != nil {
+		s.stopDiagnostics()
+	}
 	s.stopScheduler()
 	s.stopNotifier()
 	s.stopImageScanner()

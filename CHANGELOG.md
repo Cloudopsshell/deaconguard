@@ -8,6 +8,15 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Finding out why the server is busy:** the Logs page and the server's standard output now record requests that take more than 2 seconds, with the CPU the server used meanwhile, and a watchdog that, when the server keeps more than one core busy for 30 seconds, logs which parts of DeaconGuard's code the time went to and which requests were running. Admins can also download a 30-second CPU profile from the Logs page (`GET /api/diagnostics/cpu`).
+- The **Vulnerabilities over time** chart shows a day's numbers by severity in a box at the pointer, marks each band, works with touch, and says when nothing changed over the period.
+
+### Fixed
+
+- The dashboard's vulnerability counts read every finding of every scan a host kept, finding its latest scan again for each one; they now find each host's latest scan once. For a host with about 12,000 findings over 10 scans, the dashboard summary's queries take about 40 ms instead of 250 ms, and no longer grow with the scans kept.
+
 ## [1.15.0] - 2026-10-29
 
 ### Added
