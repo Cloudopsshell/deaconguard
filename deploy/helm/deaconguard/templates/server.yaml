@@ -121,6 +121,9 @@ spec:
             - --trusted-proxy
             - {{ . | quote }}
             {{- end }}
+            {{- if .Values.server.accessLog }}
+            - --access-log
+            {{- end }}
           env:
             - name: DEACONGUARD_HOME
               value: /home/nonroot

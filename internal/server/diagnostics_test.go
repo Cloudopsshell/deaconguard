@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -157,5 +159,51 @@ func TestCPUProfileDownload(t *testing.T) {
 	answer := do(t, s, call{method: http.MethodGet, path: "/api/diagnostics/cpu?seconds=5", cookie: cookie})
 	if answer.Code != http.StatusOK || answer.Body.Len() == 0 || !strings.Contains(answer.Header().Get("Content-Disposition"), ".pprof") {
 		t.Fatalf("profile: %d, %d bytes, %q", answer.Code, answer.Body.Len(), answer.Header().Get("Content-Disposition"))
+	}
+}
+
+func TestAccessLog(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
+	var output strings.Builder
+	log.SetOutput(&output)
+	defer log.SetOutput(os.Stderr)
+	d := newDiagnostics()
+	status := http.StatusOK
+	handler := d.timed(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		noteUser(r, "admin")
+		w.WriteHeader(status)
+	}))
+	call := func(path string) {
+		request := httptest.NewRequest(http.MethodGet, path+"?token=secret", nil)
+		request.RemoteAddr = "192.0.2.7:51000"
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+	}
+
+	call("/api/summary")
+	if output.Len() != 0 {
+		t.Fatalf("logged with the access log off: %q", output.String())
+	}
+	d.accessLog = true
+	call("/api/summary")
+	call("/api/prompts")
+	status = http.StatusInternalServerError
+	call("/api/prompts")
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], "ACCESS GET /api/summary 200 0s user=admin ip=192.0.2.7") || !strings.Contains(lines[1], "ACCESS GET /api/prompts 500") {
+		t.Fatalf("access log: %q", lines)
+	}
+	if strings.Contains(output.String(), "secret") {
+		t.Fatalf("the query string was logged: %q", output.String())
+	}
+}
+
+func TestServerLogLevelOnStdout(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
+	var output strings.Builder
+	log.SetOutput(&output)
+	defer log.SetOutput(os.Stderr)
+	serverLog("", store.LogWarning, "Could not check %s", "x")
+	if !strings.HasSuffix(strings.TrimSpace(output.String()), "WARNING Could not check x") {
+		t.Fatalf("stdout: %q", output.String())
 	}
 }
