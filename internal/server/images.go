@@ -59,9 +59,9 @@ type imageScanner struct {
 	created          createdFunc
 	// registryTags lists tags with the registry API; tests replace it.
 	registryTags func(ctx context.Context, client *images.Client, registry, repository string) ([]images.TagInfo, error)
-	wake             chan struct{}
-	cancel           context.CancelFunc
-	wg               sync.WaitGroup
+	wake         chan struct{}
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
 	// http, ecrEndpoint, hubEndpoint and githubEndpoint reach the ECR,
 	// Docker Hub and GitHub APIs; tests point them elsewhere.
 	http           *http.Client
@@ -71,8 +71,8 @@ type imageScanner struct {
 	// listingNotes says, per registry/repository, why its registry's own
 	// API couldn't list its tags, when the registry API did instead.
 	listingNotes map[string]string
-	mu          sync.Mutex
-	ecrTokens   map[string]ecrToken
+	mu           sync.Mutex
+	ecrTokens    map[string]ecrToken
 	// builtTimes caches when tags' images were built, for ordering tags.
 	builtTimes map[string]builtTime
 }
