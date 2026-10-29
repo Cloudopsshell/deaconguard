@@ -52,15 +52,22 @@ func LoadFamilyOVAL(target platform.Platform, client HTTPClient, now time.Time) 
 // EvaluateFamilyOVAL evaluates a compressed OVAL feed of an AlmaLinux,
 // Oracle Linux or SUSE release.
 func EvaluateFamilyOVAL(target platform.Platform, compressed []byte, packages []inventory.Package) (FamilyEvaluation, error) {
-	stream, err := decompress(compressed)
-	if err != nil {
-		return FamilyEvaluation{}, err
-	}
 	var keys []string
 	if target.Family == platform.OpenSUSELeap || target.Family == platform.SLES {
 		keys = VendorKeys["suse"]
 	}
-	return evaluateRPMFamilyOVAL(io.LimitReader(stream, maxExpandedOVAL), packages, keys)
+	// Parsed once per feed: scans of the same release share the rules.
+	parsed, err := parsedOnce(fmt.Sprintf("family-oval-%s-%d-%d", target.Family, target.Major, target.Minor), compressed, func() (familyOVAL, error) {
+		stream, err := decompress(compressed)
+		if err != nil {
+			return familyOVAL{}, err
+		}
+		return parseFamilyOVAL(io.LimitReader(stream, maxExpandedOVAL))
+	})
+	if err != nil {
+		return FamilyEvaluation{}, err
+	}
+	return evaluateFamilyOVAL(parsed, packages, keys), nil
 }
 
 // decompress reads bzip2, gzip or zstd, as the magic bytes say.
@@ -156,11 +163,18 @@ func LoadUpdateInfo(target platform.Platform, packages []inventory.Package, clie
 		if index == 0 {
 			metadata = feed.Metadata
 		}
-		stream, err := decompress(feed.Data)
+		// Parsed once per feed: scans of the same release share the updates.
+		updates, err := parsedOnce("updateinfo-"+name, feed.Data, func() ([]securityUpdate, error) {
+			stream, err := decompress(feed.Data)
+			if err != nil {
+				return nil, err
+			}
+			return parseUpdateInfo(io.LimitReader(stream, maxExpandedOVAL))
+		})
 		if err != nil {
 			return DebianEvaluation{}, FeedMetadata{}, err
 		}
-		sources = append(sources, UpdateInfoSource{Data: io.LimitReader(stream, maxExpandedOVAL), Advisory: advisory})
+		sources = append(sources, UpdateInfoSource{Advisory: advisory, updates: updates})
 	}
 	evaluation, err := evaluateUpdateInfo(sources, packages)
 	return evaluation, metadata, err

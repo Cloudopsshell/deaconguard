@@ -112,40 +112,70 @@ type rpmOVALEvaluator struct {
 }
 
 func EvaluateRedHatOVAL(compressed []byte, packages []inventory.Package) (DebianEvaluation, error) {
-	reader := io.LimitReader(bzip2.NewReader(bytes.NewReader(compressed)), maxExpandedOVAL+1)
-	data, err := io.ReadAll(reader)
+	// Parsed once per feed: scans of the same release share the rules.
+	parsed, err := parsedOnce("redhat-oval", compressed, func() (redHatOVAL, error) {
+		reader := io.LimitReader(bzip2.NewReader(bytes.NewReader(compressed)), maxExpandedOVAL+1)
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			return redHatOVAL{}, fmt.Errorf("decompress Red Hat OVAL data: %w", err)
+		}
+		if len(data) == 0 || len(data) > maxExpandedOVAL {
+			return redHatOVAL{}, fmt.Errorf("Red Hat OVAL data is empty or exceeds %d bytes", maxExpandedOVAL)
+		}
+		return parseRedHatOVAL(data)
+	})
 	if err != nil {
-		return DebianEvaluation{}, fmt.Errorf("decompress Red Hat OVAL data: %w", err)
+		return DebianEvaluation{}, err
 	}
-	if len(data) == 0 || len(data) > maxExpandedOVAL {
-		return DebianEvaluation{}, fmt.Errorf("Red Hat OVAL data is empty or exceeds %d bytes", maxExpandedOVAL)
+	return evaluateRedHatOVAL(parsed, packages), nil
+}
+
+// redHatOVAL is a parsed Red Hat OVAL feed, with its objects, states and
+// tests by ID. Evaluations only read it, so scans share it.
+type redHatOVAL struct {
+	document ovalDocument
+	objects  map[string]ovalObject
+	states   map[string]ovalState
+	testMap  map[string]ovalTest
+}
+
+func parseRedHatOVAL(data []byte) (redHatOVAL, error) {
+	var document ovalDocument
+	if err := xml.Unmarshal(data, &document); err != nil {
+		return redHatOVAL{}, fmt.Errorf("parse Red Hat OVAL XML: %w", err)
 	}
-	return evaluateRedHatOVALXML(data, packages)
+	if len(document.Definitions) == 0 {
+		return redHatOVAL{}, fmt.Errorf("Red Hat OVAL document contains no definitions")
+	}
+	parsed := redHatOVAL{document: document, objects: make(map[string]ovalObject), states: make(map[string]ovalState), testMap: make(map[string]ovalTest)}
+	for _, item := range document.Objects {
+		parsed.objects[item.ID] = item
+	}
+	for _, item := range document.States {
+		parsed.states[item.ID] = item
+	}
+	for _, item := range document.Tests {
+		parsed.testMap[item.ID] = item
+	}
+	return parsed, nil
 }
 
 func evaluateRedHatOVALXML(data []byte, packages []inventory.Package) (DebianEvaluation, error) {
-	var document ovalDocument
-	if err := xml.Unmarshal(data, &document); err != nil {
-		return DebianEvaluation{}, fmt.Errorf("parse Red Hat OVAL XML: %w", err)
+	parsed, err := parseRedHatOVAL(data)
+	if err != nil {
+		return DebianEvaluation{}, err
 	}
-	if len(document.Definitions) == 0 {
-		return DebianEvaluation{}, fmt.Errorf("Red Hat OVAL document contains no definitions")
-	}
+	return evaluateRedHatOVAL(parsed, packages), nil
+}
+
+func evaluateRedHatOVAL(parsed redHatOVAL, packages []inventory.Package) DebianEvaluation {
+	document := parsed.document
 	evaluator := &rpmOVALEvaluator{
 		document: document, packages: make(map[string][]inventory.Package), tests: make(map[string]ovalResult),
-		objects: make(map[string]ovalObject), states: make(map[string]ovalState), testMap: make(map[string]ovalTest),
+		objects: parsed.objects, states: parsed.states, testMap: parsed.testMap,
 	}
 	for _, item := range packages {
 		evaluator.packages[item.Name] = append(evaluator.packages[item.Name], item)
-	}
-	for _, item := range document.Objects {
-		evaluator.objects[item.ID] = item
-	}
-	for _, item := range document.States {
-		evaluator.states[item.ID] = item
-	}
-	for _, item := range document.Tests {
-		evaluator.testMap[item.ID] = item
 	}
 
 	result := DebianEvaluation{Findings: make([]Finding, 0), Unsupported: make([]Unsupported, 0)}
@@ -198,7 +228,7 @@ func evaluateRedHatOVALXML(data []byte, packages []inventory.Package) (DebianEva
 			}
 		}
 	}
-	return result, nil
+	return result
 }
 
 func (evaluator *rpmOVALEvaluator) criteria(criteria ovalCriteria, depth int) ovalResult {
