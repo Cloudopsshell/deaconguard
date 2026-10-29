@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-10-29
+
 ### Added
 
 - **Access log:** `deaconguard serve --access-log`, `DEACONGUARD_ACCESS_LOG=1`, or the Helm value `server.accessLog: true` writes a line to standard output for each request, as `ACCESS GET /api/summary 200 38ms user=admin ip=203.0.113.7`: method, path (never the query string), status, duration, account and client address. Agents' job polls and the dashboard's sudo-prompt polls are left out unless they fail.
@@ -290,7 +292,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.16.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.0...HEAD
+[1.17.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.13.0...v1.14.0
