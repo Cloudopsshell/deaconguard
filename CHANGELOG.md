@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-10-29
+
 ### Added
 
 - **Repository watches order tags by build time** on registries that don't say when a tag was pushed, such as GHCR, GitLab, Harbor or a self-hosted registry: the first check, and tags that appear at the same check, go by when each image was built (the `created` time in its config), then by version. Tags named by commit, such as `main-3f9c2a1`, now come in build order. The watch dialog's preview orders the matching tags the same way and shows when each was built. Docker Hub, which limits reads, stays in version order.
@@ -252,7 +254,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.10.0...v1.11.0
