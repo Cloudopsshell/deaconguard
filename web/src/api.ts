@@ -827,6 +827,8 @@ export interface TagListing {
   repository: string;
   matched: number;
   tags: { tag: string; digest?: string; pushed_at?: string; created?: string; matches: boolean; reference: string }[];
+  /** Why the registry's own API couldn't list the tags, when the registry API did instead, without push times. */
+  note?: string;
 }
 
 /** The result of logging in to a registry with a saved login. */

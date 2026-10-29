@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -245,6 +246,94 @@ func TestRepositoryWatchByBuildTime(t *testing.T) {
 	if len(reads) != 0 {
 		t.Fatalf("read build times on Docker Hub: %v", reads)
 	}
+}
+
+func TestDockerHubAndGHCRAPIs(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	digest := "sha256:" + strings.Repeat("d", 64)
+	limited := false
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if limited {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		if r.URL.Path == "/v2/auth/token" {
+			fmt.Fprint(w, `{"access_token":"jwt"}`)
+			return
+		}
+		if r.URL.Path != "/v2/namespaces/acme/repositories/app/tags" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprintf(w, `{"results":[{"name":"main-0aaa","digest":"%s","tag_last_pushed":"2026-10-01T00:00:00Z"},{"name":"main-ffff","digest":"%s","tag_last_pushed":"2026-09-01T00:00:00Z"}]}`, digest, "sha256:"+strings.Repeat("f", 64))
+	}))
+	defer hub.Close()
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer ghp_token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.EscapedPath() == "/orgs/acme/packages/container/api/versions" {
+			fmt.Fprintf(w, `[{"name":"%s","created_at":"2026-10-02T00:00:00Z","updated_at":"2026-10-02T00:00:00Z","metadata":{"container":{"tags":["v1"]}}}]`, digest)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer github.Close()
+	s.images.http, s.images.hubEndpoint, s.images.githubEndpoint = hub.Client(), hub.URL, github.URL
+	var registryAPI []string
+	s.images.registryTags = func(ctx context.Context, client *images.Client, registry, repository string) ([]images.TagInfo, error) {
+		registryAPI = append(registryAPI, registry+"/"+repository)
+		return []images.TagInfo{{Tag: "main-0aaa"}, {Tag: "main-ffff"}}, nil
+	}
+	heads := 0
+	s.images.tagDigest = func(ctx context.Context, client *images.Client, ref images.Reference) (string, error) {
+		heads++
+		return digest, nil
+	}
+
+	// Docker Hub, without a login: its API gives push times and digests, so
+	// no digest is asked of the registry.
+	decode[store.RepositoryWatch](t, do(t, s, call{method: http.MethodPost, path: "/api/repository-watches", cookie: cookie,
+		body: map[string]any{"registry": "docker.io", "repository": "acme/app", "keep": 1}}))
+	now := time.Now()
+	s.checkRepositoryWatches(context.Background(), now)
+	list, _ := store.Images()
+	if len(list) != 1 || list[0].Reference != "acme/app:main-0aaa" || heads != 0 || len(registryAPI) != 0 {
+		t.Fatalf("Docker Hub's API: %d HEADs, registry API %v, %+v", heads, registryAPI, list)
+	}
+
+	// GHCR with a login: GitHub's packages API.
+	login := decode[store.RegistryLogin](t, do(t, s, call{method: http.MethodPost, path: "/api/registry-logins", cookie: cookie,
+		body: map[string]any{"registry": "ghcr.io", "username": "robot", "secret": "ghp_token"}}))
+	tags, err := listTags(context.Background(), s, "ghcr.io", "acme/api")
+	if err != nil || len(tags) != 1 || tags[0].PushedAt.IsZero() || tags[0].Digest != digest || len(registryAPI) != 0 {
+		t.Fatalf("GHCR through GitHub's API: %+v, %v, registry API %v", tags, err, registryAPI)
+	}
+
+	// When Docker Hub's API fails, the registry API lists the tags, and the
+	// browse dialog says why there are no push times.
+	limited = true
+	tags, err = listTags(context.Background(), s, "registry-1.docker.io", "acme/app")
+	if err != nil || len(tags) != 2 || !tags[0].PushedAt.IsZero() || strings.Join(registryAPI, ",") != "registry-1.docker.io/acme/app" {
+		t.Fatalf("the fallback: %+v, %v, %v", tags, err, registryAPI)
+	}
+	hubLogin := decode[store.RegistryLogin](t, do(t, s, call{method: http.MethodPost, path: "/api/registry-logins", cookie: cookie,
+		body: map[string]any{"registry": "docker.io", "username": "robot", "secret": "dckr_pat"}}))
+	type tagList struct {
+		Note string `json:"note"`
+	}
+	answer := decode[tagList](t, do(t, s, call{method: http.MethodGet, cookie: cookie, path: "/api/registry-logins/" + hubLogin.ID + "/tags?repository=acme/app"}))
+	if !strings.Contains(answer.Note, "limiting requests") {
+		t.Fatalf("the note: %+v", answer)
+	}
+	limited = false
+	answer = decode[tagList](t, do(t, s, call{method: http.MethodGet, cookie: cookie, path: "/api/registry-logins/" + hubLogin.ID + "/tags?repository=acme/app"}))
+	if answer.Note != "" {
+		t.Fatalf("the note stayed after the API worked again: %+v", answer)
+	}
+	_ = login
 }
 
 func TestBrowsingRegistries(t *testing.T) {

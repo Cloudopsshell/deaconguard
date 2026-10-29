@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Docker Hub and GHCR say when each tag was pushed:** a repository watch and the browse dialog list Docker Hub tags through Docker Hub's API (public repositories without a login, private ones with it), and GHCR tags through GitHub's packages API with a GHCR login, so the newest tags are the most recently pushed ones, as on Amazon ECR, and their digests come with the listing. Browsing a Docker Hub login lists its namespace's repositories, and a GHCR login its user's and organizations' packages, which the registry API refused. When either API fails, the registry API lists the tags as before, and the browse dialog and the server log say why.
+
 ## [1.13.0] - 2026-10-29
 
 ### Added

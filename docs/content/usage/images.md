@@ -34,7 +34,9 @@ The scan history says what started each scan: a person, `watch: new build pushed
 **Browse**, next to a saved [registry login](#registries-and-logins), lists the repositories the login can see, and then a repository's tags, newest first. From there, **Scan** adds one tag's image, as **Add image** does, and **Watch repository** watches the whole repository, as below.
 
 - **Amazon ECR** lists every repository, and says when each tag was pushed, through the ECR API: the key's user also needs `ecr:DescribeRepositories` and `ecr:DescribeImages` (see the [policy](#an-iam-policy-for-amazon-ecr)).
-- **Other registries** are listed with the registry API's catalog. Some, such as Docker Hub and GHCR, don't list repositories at all: type the repository's name, such as `team/app`, and its tags are listed. The registry API doesn't say when a tag was pushed, so tags are listed by version, newest first: `v1.10.0` before `v1.9.0`. While you set up a watch, the tags its pattern matches are listed by when their image was built instead, as its first check orders them (see **Newest** below).
+- **Docker Hub** lists, through its API, the repositories in the login's own namespace, and any repository's tags, with when each was pushed; public repositories need no login. To browse another namespace, type its name, such as `library/alpine`.
+- **GHCR** lists, through GitHub's packages API, the packages of the login's user and of its organizations, and their tags, with when each was pushed. The login's token must be a classic one with `read:packages`; without a login, or with a token GitHub's API refuses, the tags come from the registry API, as below.
+- **Other registries** are listed with the registry API's catalog. Some don't list repositories at all: type the repository's name, such as `team/app`, and its tags are listed. The registry API doesn't say when a tag was pushed, so tags are listed by version, newest first: `v1.10.0` before `v1.9.0`. While you set up a watch, the tags its pattern matches are listed by when their image was built instead, as its first check orders them (see **Newest** below).
 
 Browsing is for admins, who hold the logins.
 
@@ -47,10 +49,11 @@ A **watched repository** scans each new image pushed to it, without anyone addin
 - **Keep the history of:** how many of the images the watch added are kept, with their scans (from the number rescanned up to 500, 50 by default). When there are more, the oldest are removed. Images you added yourself are never removed, even when a watch matches their tag.
 - **Report new pushes:** which new pushes send an [image scan report](#reports-of-new-pushes): every one (the default), only those with a vulnerability of a chosen severity or worse, only those with one known to be exploited, or none. **Send reports to** picks the channels, of those that take image scan reports; none ticked sends to all of them.
 - **The first check** scans the newest matching tags at once. After that, a tag that appears, or that is pushed again with a new image, is scanned. **Check now** checks at once.
-- **Newest** is by push time on Amazon ECR. Other registries don't say when a tag was pushed, so:
+- **Newest** is by push time on Amazon ECR, Docker Hub (its 2,500 most recently pushed tags), and GHCR with a login. Other registries don't say when a tag was pushed, so:
   - the first check orders the matching tags by when their image was built for the watch's platform (the `created` time in the image's config), then by version. Tags named by commit, such as `main-3f9c2a1`, come in build order, not in the order of their names. It reads the build time of the 100 matching tags that are newest by version, 6 at a time;
   - later, a tag that appears counts as the newest, and tags that appear at the same check are ordered by build time;
-  - a tag whose image has no build time, as reproducible builds often leave it, keeps its place by version, and so does every tag on Docker Hub, which limits how many images may be read.
+  - a tag whose image has no build time, as reproducible builds often leave it, keeps its place by version.
+- **When Docker Hub's or GitHub's API fails**, for example because it is limiting requests or the token may not read packages, the tags come from the registry API and are ordered as for other registries. The browse dialog says why, and the server log records it once.
 
 ### Tag pattern examples
 
@@ -150,8 +153,8 @@ What to save for the cloud registries:
 | Amazon ECR | `123456789012.dkr.ecr.eu-north-1.amazonaws.com` | Choose **An AWS access key**, and give an access key ID and secret access key of an IAM user that may only read: `ecr:GetAuthorizationToken` (on `*`), and `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer` on the repositories to scan (see the [policy below](#an-iam-policy-for-amazon-ecr)), or the managed `AmazonEC2ContainerRegistryReadOnly`. ECR's registry passwords last 12 hours, so DeaconGuard keeps the key and gets a new password from the ECR API when it needs one. |
 | Google Artifact Registry | `europe-north1-docker.pkg.dev` | Username `_json_key`, and as the password the JSON key of a service account with the **Artifact Registry Reader** role. |
 | Azure Container Registry | `myregistry.azurecr.io` | A [repository-scoped token](https://learn.microsoft.com/azure/container-registry/container-registry-repository-scoped-permissions) with `content/read`, or a service principal's application ID and secret with the **AcrPull** role. |
-| GitHub (GHCR) | `ghcr.io` | Your GitHub username and a personal access token (classic) with only `read:packages`. |
-| Docker Hub | `docker.io` | Your username and a personal access token with **Read-only** access. A login also raises Docker Hub's pull limits. |
+| GitHub (GHCR) | `ghcr.io` | Your GitHub username and a personal access token (classic) with only `read:packages`. GitHub's packages API takes the same token, to list your packages and say when each tag was pushed; it refuses fine-grained tokens. |
+| Docker Hub | `docker.io` | Your username and a personal access token with **Read-only** access. A login also raises Docker Hub's pull limits, lists your repositories when browsing, and lets private repositories be watched. |
 
 ### An IAM policy for Amazon ECR
 
