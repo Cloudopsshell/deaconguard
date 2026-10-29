@@ -5,12 +5,13 @@ description: What changed in each DeaconGuard release, and what to do when you u
 
 One page per release, newest first: what's new, what to do before you upgrade, and anything particular to Kubernetes, the install script and Docker Compose, and known issues. The steps to upgrade are the same for every release: see [Upgrade](../installation/upgrade.md).
 
-**Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.11.1 to 1.13.0, the pages for 1.12.0 and 1.13.0. You can upgrade straight to the newest release; you don't need to install each one in turn.
+**Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.12.0 to 1.14.0, the pages for 1.13.0 and 1.14.0. You can upgrade straight to the newest release; you don't need to install each one in turn.
 
-Releases with nothing to do say so. The last 10 minor lines (now 1.4 to 1.13) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
+Releases with nothing to do say so. The last 10 minor lines (now 1.5 to 1.14) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
 
 | Release | Released | What to do |
 | --- | --- | --- |
+| [1.14.0](./v1-14/v1-14-0.md) | 2026-10-29 | Allow `hub.docker.com` and `api.github.com` if outbound traffic is limited |
 | [1.13.0](./v1-13/v1-13-0.md) | 2026-10-29 | Nothing; watches order tags by build time |
 | [1.12.0](./v1-12/v1-12-0.md) | 2026-10-29 | Back up: database schema 27; ECR browsing needs two more IAM actions |
 | [1.11.1](./v1-11/v1-11-1.md) | 2026-10-25 | Allow `raw.githubusercontent.com` if outbound traffic is limited |
@@ -24,4 +25,3 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.4 to 1.13) ar
 | [1.7.0](./v1-7/v1-7-0.md) | 2026-10-20 | Back up: database schema 26 |
 | [1.6.0](./v1-6/v1-6-0.md) | 2026-10-20 | Back up: database schema 24 |
 | [1.5.0](./v1-5/v1-5-0.md) | 2026-10-19 | Back up: database schema 23 |
-| [1.4.0](./v1-4/v1-4-0.md) | 2026-10-19 | Nothing |
