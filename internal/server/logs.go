@@ -19,7 +19,7 @@ import (
 // if it is not "", and in the service journal.
 func serverLog(hostID, level, format string, arguments ...any) {
 	message := fmt.Sprintf(format, arguments...)
-	log.Print(message)
+	log.Print(strings.ToUpper(level) + " " + message)
 	store.Log(store.LogServer, hostID, level, message)
 }
 

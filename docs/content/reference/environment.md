@@ -36,6 +36,7 @@ Read by the [container image](../installation/docker.md), and by DeaconGuard any
 | `DEACONGUARD_ADMIN_PASSWORD_FILE` | `serve` | The file with that account's password, such as a secret; one trailing newline is ignored. |
 | `DEACONGUARD_ADMIN_PASSWORD` | `serve` | The password itself, when there is no file. Prefer the file: the environment is easier to leak. |
 | `DEACONGUARD_TRUSTED_PROXIES` | `serve` | Comma-separated addresses or networks of reverse proxies, like `--trusted-proxy`. See [Behind a reverse proxy](../security/securing-the-dashboard.md#behind-a-reverse-proxy). |
+| `DEACONGUARD_ACCESS_LOG` | `serve` | `1` or `true` writes a line to standard output for each request, like `--access-log`. On a server installed with the install script, set it with `sudo systemctl edit deaconguard-server` (`[Service]` then `Environment=DEACONGUARD_ACCESS_LOG=1`); in Docker Compose, under the server's `environment`. |
 | `DEACONGUARD_HOST_ROOT` | the agent | Where the host's root filesystem is mounted, such as `/host`. Checks run there, with the host's own tools. |
 | `DEACONGUARD_HOSTNAME` | the agent | The name the agent reports, such as a Kubernetes node's name. Otherwise the host's `/etc/hostname`, with `DEACONGUARD_HOST_ROOT`, or the machine's name. |
 | `DEACONGUARD_ENROLL_TOKEN_FILE`, `DEACONGUARD_ENROLL_TOKEN` | `agent run` | A token to [enroll with by itself](../usage/agents.md#agents-that-enroll-themselves). |

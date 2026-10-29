@@ -76,6 +76,7 @@ func (s *Server) signedIn(next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, errors.New(needs))
 			return
 		}
+		noteUser(r, user.Username)
 		ctx := context.WithValue(r.Context(), userContextKey{}, user)
 		ctx = context.WithValue(ctx, sessionContextKey{}, session)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -122,6 +123,7 @@ func (s *Server) tokenSignedIn(next http.Handler, w http.ResponseWriter, r *http
 		writeError(w, http.StatusForbidden, errors.New("the token's account can't be used yet: "+needs))
 		return
 	}
+	noteUser(r, user.Username)
 	ctx := context.WithValue(r.Context(), userContextKey{}, user)
 	ctx = context.WithValue(ctx, apiTokenContextKey{}, token)
 	next.ServeHTTP(w, r.WithContext(ctx))

@@ -8,6 +8,18 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Access log:** `deaconguard serve --access-log`, `DEACONGUARD_ACCESS_LOG=1`, or the Helm value `server.accessLog: true` writes a line to standard output for each request, as `ACCESS GET /api/summary 200 38ms user=admin ip=203.0.113.7`: method, path (never the query string), status, duration, account and client address. Agents' job polls and the dashboard's sudo-prompt polls are left out unless they fail.
+
+### Changed
+
+- Each server line on standard output starts with its level (`INFO`, `WARNING`, `ERROR`), and "Press Ctrl+C to stop." is printed only when the server runs in a terminal, not under systemd or in a container.
+
+### Fixed
+
+- When an Amazon ECR key may not list repositories, Browse says which permissions to add and shows AWS's own reason, without the misleading advice to check the login.
+
 ## [1.16.0] - 2026-10-29
 
 ### Added

@@ -43,9 +43,14 @@ func runServe(arguments []string, output io.Writer) (serveErr error) {
 	if configured := os.Getenv("DEACONGUARD_TRUSTED_PROXIES"); configured != "" {
 		proxies = strings.Split(configured, ",")
 	}
+	accessLog := os.Getenv("DEACONGUARD_ACCESS_LOG") == "1" || os.Getenv("DEACONGUARD_ACCESS_LOG") == "true"
 	for index := 0; index < len(arguments); index++ {
+		if arguments[index] == "--access-log" {
+			accessLog = true
+			continue
+		}
 		if index+1 >= len(arguments) {
-			return fmt.Errorf("usage: deaconguard serve [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE] [--trusted-proxy CIDR]...")
+			return fmt.Errorf("usage: deaconguard serve [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT] [--tls-cert FILE --tls-key FILE] [--trusted-proxy CIDR]... [--access-log]")
 		}
 		switch arguments[index] {
 		case "--listen":
@@ -98,11 +103,12 @@ func runServe(arguments []string, output io.Writer) (serveErr error) {
 		if err != nil {
 			return err
 		}
+		handler.LogRequests(accessLog)
 		listener, err := net.Listen("tcp", listen)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "DeaconGuard %s web UI: http://%s\nData: %s\nPress Ctrl+C to stop.\n", buildinfo.Version, listener.Addr(), store.DatabasePath())
+		fmt.Fprintf(output, "DeaconGuard %s web UI: http://%s\nData: %s\n%s", buildinfo.Version, listener.Addr(), store.DatabasePath(), stopHint())
 		handler.StartScheduler()
 		return serveUntilStopped(handler, listener, output, run, nil)
 	}
@@ -130,6 +136,7 @@ func runServe(arguments []string, output io.Writer) (serveErr error) {
 	if err != nil {
 		return err
 	}
+	handler.LogRequests(accessLog)
 	if err := store.SetMeta(metaServerPin, pin); err != nil {
 		return err
 	}
@@ -164,7 +171,7 @@ func runServe(arguments []string, output io.Writer) (serveErr error) {
 			filepath.Join(store.DataDir(), "tls"))
 		fmt.Fprintln(output, "agents trust it through the fingerprint in their enrollment token.")
 	}
-	fmt.Fprintf(output, "Certificate public key (SHA-256): %s\nData: %s\nPress Ctrl+C to stop.\n", pin, store.DatabasePath())
+	fmt.Fprintf(output, "Certificate public key (SHA-256): %s\nData: %s\n%s", pin, store.DatabasePath(), stopHint())
 	handler.StartScheduler()
 	return serveUntilStopped(handler, listener, output, run, agents)
 }
@@ -792,4 +799,13 @@ func loadOrEnroll(ctx context.Context, path string, diagnostics io.Writer) (agen
 	}
 	fmt.Fprintf(diagnostics, "Enrolled %s with %s as host %s; saved %s\n", config.Name(), config.ServerURL, config.HostID, path)
 	return config, nil
+}
+
+// stopHint tells someone running the server in a terminal how to stop it;
+// a service or a container has no one to tell.
+func stopHint() string {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		return "Press Ctrl+C to stop.\n"
+	}
+	return ""
 }
