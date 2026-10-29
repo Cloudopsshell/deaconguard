@@ -614,6 +614,13 @@ function RegistryLoginDialog({ login, onClose, onSaved }: { login: RegistryLogin
               An AWS access key (Amazon ECR)
             </label>
           </div>
+          {!ecr && /^(docker\.io|index\.docker\.io|registry-1\.docker\.io|ghcr\.io)$/i.test(input.registry.trim()) && (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {/ghcr/i.test(input.registry)
+                ? "Use your GitHub username and a classic personal access token with read:packages: with it, Browse lists your packages and a watch knows when each tag was pushed."
+                : "Use your Docker Hub username and a personal access token (read-only is enough): with it, Browse lists your repositories, and private ones can be watched."}
+            </p>
+          )}
           {ecr && (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               DeaconGuard exchanges it for ECR's 12-hour registry password when it needs one. Give the key's user read access only:{" "}
