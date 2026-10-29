@@ -21,8 +21,12 @@ import (
 // Docker Hub's pull limits.
 
 // maxHubTags caps how many tags one Docker Hub listing reads, newest first:
-// 25 requests of the 180 a minute Docker Hub allows.
-const maxHubTags = 2500
+// 25 requests of the 180 a minute Docker Hub allows. Without a login,
+// Docker Hub pages no further than its first 1,000 tags.
+const (
+	maxHubTags          = 2500
+	maxAnonymousHubTags = 1000
+)
 
 // HubAPI lists repositories and tags with Docker Hub's API, which says when
 // each tag was pushed. Public repositories need no login; private ones, and
@@ -119,9 +123,13 @@ func (api *HubAPI) Tags(ctx context.Context, repository string) ([]TagInfo, erro
 	if err := api.login(ctx); err != nil {
 		return nil, err
 	}
+	limit := maxHubTags
+	if api.token == "" {
+		limit = maxAnonymousHubTags
+	}
 	var tags []TagInfo
 	address := fmt.Sprintf("%s/v2/namespaces/%s/repositories/%s/tags?page_size=100&ordering=last_updated", api.endpoint(), url.PathEscape(namespace), url.PathEscape(name))
-	for address != "" && len(tags) < maxHubTags {
+	for address != "" && len(tags) < limit {
 		var page struct {
 			Next    string `json:"next"`
 			Results []struct {
@@ -132,6 +140,11 @@ func (api *HubAPI) Tags(ctx context.Context, repository string) ([]TagInfo, erro
 			} `json:"results"`
 		}
 		if err := api.send(ctx, http.MethodGet, address, nil, &page); err != nil {
+			// Docker Hub may refuse to page further; the newest tags are
+			// already read.
+			if len(tags) > 0 && errors.Is(err, ErrUnauthorized) {
+				break
+			}
 			return nil, fmt.Errorf("docker.io/%s: %w", repository, err)
 		}
 		for _, result := range page.Results {
