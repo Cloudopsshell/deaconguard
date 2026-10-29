@@ -15,10 +15,13 @@ import (
 
 // TagInfo is a tag in a repository: the image it points to, and when it was
 // pushed, when the registry says (ECR does; the registry API doesn't).
+// Created is when its image was built, from the image's config, where the
+// registry doesn't give push times.
 type TagInfo struct {
 	Tag      string    `json:"tag"`
 	Digest   string    `json:"digest,omitempty"`
 	PushedAt time.Time `json:"pushed_at,omitzero"`
+	Created  time.Time `json:"created,omitzero"`
 }
 
 // ErrListingRefused means the registry doesn't let the login list its
@@ -107,8 +110,9 @@ func nextPage(current, link string) string {
 }
 
 // MatchTags returns the tags pattern matches, newest first: by push time
-// where the registry gave one, then in natural order, so v1.10 comes before
-// v1.9. An empty pattern matches every tag.
+// where the registry gave one, then by when the image was built where that
+// was read, then in natural order, so v1.10 comes before v1.9. An empty
+// pattern matches every tag.
 func MatchTags(tags []TagInfo, pattern string) ([]TagInfo, error) {
 	var match *regexp.Regexp
 	if pattern != "" {
@@ -127,6 +131,9 @@ func MatchTags(tags []TagInfo, pattern string) ([]TagInfo, error) {
 		a, b := matched[i], matched[j]
 		if !a.PushedAt.Equal(b.PushedAt) {
 			return a.PushedAt.After(b.PushedAt)
+		}
+		if !a.Created.Equal(b.Created) {
+			return a.Created.After(b.Created)
 		}
 		return naturalLess(b.Tag, a.Tag)
 	})

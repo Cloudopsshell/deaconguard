@@ -34,7 +34,7 @@ The scan history says what started each scan: a person, `watch: new build pushed
 **Browse**, next to a saved [registry login](#registries-and-logins), lists the repositories the login can see, and then a repository's tags, newest first. From there, **Scan** adds one tag's image, as **Add image** does, and **Watch repository** watches the whole repository, as below.
 
 - **Amazon ECR** lists every repository, and says when each tag was pushed, through the ECR API: the key's user also needs `ecr:DescribeRepositories` and `ecr:DescribeImages` (see the [policy](#an-iam-policy-for-amazon-ecr)).
-- **Other registries** are listed with the registry API's catalog. Some, such as Docker Hub and GHCR, don't list repositories at all: type the repository's name, such as `team/app`, and its tags are listed. The registry API doesn't say when a tag was pushed, so tags are listed by version, newest first: `v1.10.0` before `v1.9.0`.
+- **Other registries** are listed with the registry API's catalog. Some, such as Docker Hub and GHCR, don't list repositories at all: type the repository's name, such as `team/app`, and its tags are listed. The registry API doesn't say when a tag was pushed, so tags are listed by version, newest first: `v1.10.0` before `v1.9.0`. While you set up a watch, the tags its pattern matches are listed by when their image was built instead, as its first check orders them (see **Newest** below).
 
 Browsing is for admins, who hold the logins.
 
@@ -47,7 +47,10 @@ A **watched repository** scans each new image pushed to it, without anyone addin
 - **Keep the history of:** how many of the images the watch added are kept, with their scans (from the number rescanned up to 500, 50 by default). When there are more, the oldest are removed. Images you added yourself are never removed, even when a watch matches their tag.
 - **Report new pushes:** which new pushes send an [image scan report](#reports-of-new-pushes): every one (the default), only those with a vulnerability of a chosen severity or worse, only those with one known to be exploited, or none. **Send reports to** picks the channels, of those that take image scan reports; none ticked sends to all of them.
 - **The first check** scans the newest matching tags at once. After that, a tag that appears, or that is pushed again with a new image, is scanned. **Check now** checks at once.
-- **Newest** is by push time on Amazon ECR. Other registries don't say when a tag was pushed: the first check counts tags by version, and later a tag that appears counts as the newest.
+- **Newest** is by push time on Amazon ECR. Other registries don't say when a tag was pushed, so:
+  - the first check orders the matching tags by when their image was built for the watch's platform (the `created` time in the image's config), then by version. Tags named by commit, such as `main-3f9c2a1`, come in build order, not in the order of their names. It reads the build time of the 100 matching tags that are newest by version, 6 at a time;
+  - later, a tag that appears counts as the newest, and tags that appear at the same check are ordered by build time;
+  - a tag whose image has no build time, as reproducible builds often leave it, keeps its place by version, and so does every tag on Docker Hub, which limits how many images may be read.
 
 ### Tag pattern examples
 

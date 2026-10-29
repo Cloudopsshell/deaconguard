@@ -826,7 +826,7 @@ export interface RepositoryListing {
 export interface TagListing {
   repository: string;
   matched: number;
-  tags: { tag: string; digest?: string; pushed_at?: string; matches: boolean; reference: string }[];
+  tags: { tag: string; digest?: string; pushed_at?: string; created?: string; matches: boolean; reference: string }[];
 }
 
 /** The result of logging in to a registry with a saved login. */
@@ -1291,8 +1291,9 @@ export const api = {
   deleteRegistryLogin: (id: string) => request<null>("DELETE", `/api/registry-logins/${id}`),
   checkRegistryLogin: (id: string) => request<RegistryLoginCheck>("POST", `/api/registry-logins/${id}/check`),
   browseRepositories: (loginID: string) => request<RepositoryListing>("GET", `/api/registry-logins/${loginID}/repositories`),
-  browseTags: (loginID: string, repository: string, pattern: string) =>
-    request<TagListing>("GET", `/api/registry-logins/${loginID}/tags?${new URLSearchParams({ repository, pattern })}`),
+  /** With a platform, the matching tags are ordered by when their images were built where the registry gives no push times. */
+  browseTags: (loginID: string, repository: string, pattern: string, platform?: string) =>
+    request<TagListing>("GET", `/api/registry-logins/${loginID}/tags?${new URLSearchParams({ repository, pattern, ...(platform ? { platform } : {}) })}`),
   repositoryWatches: () => request<RepositoryWatch[]>("GET", "/api/repository-watches"),
   addRepositoryWatch: (input: RepositoryWatchInput) => request<RepositoryWatch>("POST", "/api/repository-watches", input),
   repositoryWatch: (id: string) => request<RepositoryWatchDetail>("GET", `/api/repository-watches/${id}`),
