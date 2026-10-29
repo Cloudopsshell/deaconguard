@@ -62,6 +62,16 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `GET /api/images/{id}` | Viewer | One image with its last 20 scans, without their results |
 | `GET /api/image-scans/{id}` | Viewer | One image scan with its full result; poll until `status` is `succeeded` or `failed` |
 | `POST /api/registry-logins` | Admin | Save a registry login: `{"registry": "ghcr.io", "username": "robot", "secret": "…"}`, or for Amazon ECR `"kind": "ecr"` with an access key ID as `username`; the secret is never returned |
+| `POST /api/registry-logins/{id}/check` | Admin | Log in to the registry with a saved login: `status` is `ok`, `failed` (with `message`) or `unchecked` |
+| `GET /api/registry-logins/{id}/repositories` | Operator | The repositories the login can see; `listed` is `false` when the registry won't list them |
+| `GET /api/registry-logins/{id}/tags?repository=team/app&pattern=` | Operator | A repository's tags, newest first, each with whether it matches `pattern` |
+| `GET /api/repository-watches` | Viewer | The [watched repositories](../usage/images.md#watch-a-repository) |
+| `POST /api/repository-watches` | Operator | Watch a repository: `{"registry": "ghcr.io", "repository": "acme/app", "tag_pattern": "^v\\d+", "platform": "linux/amd64", "keep": 5, "history": 50, "notify_level": "any", "notify_channels": []}`; `notify_level` is `off`, `any`, `low`, `medium`, `high`, `critical` or `exploited`, and empty `notify_channels` means every channel that takes `image_report` |
+| `GET /api/repository-watches/{id}` | Viewer | One watched repository with its `builds`: every scan of the images it added, newest first, at most 1,000 |
+| `PATCH /api/repository-watches/{id}` | Operator | Change a watch: any of `tag_pattern`, `keep`, `history`, `notify_level` and `notify_channels` |
+| `DELETE /api/repository-watches/{id}` | Operator | Stop watching a repository; the images it added stay, no longer watched |
+| `POST /api/repository-watches/{id}/check` | Operator | Check a watched repository for new pushes now |
+| `GET /api/repository-watches/report-channels` | Operator | The notification channels a watch's reports can go to, by name |
 | `GET /api/network-targets` | Viewer | The [network targets](../usage/network.md#in-the-dashboard) the server scans, each with its latest scan |
 | `POST /api/network-targets` | Admin | Add a network target and start its first scan: `{"name": "Office", "targets": ["10.0.0.0/24", "shop.example.com"], "ports": "", "tls": true, "interval_hours": 24}`; `ports` empty means the default ports, and `interval_hours` is 0 (only on demand), 1, 6, 12, 24 or 168 |
 | `PATCH /api/network-targets/{id}` | Admin | Change a network target: send every field, as when adding it |

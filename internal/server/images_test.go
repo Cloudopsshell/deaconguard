@@ -348,3 +348,117 @@ func TestNewImageVulnerabilitiesAreNotified(t *testing.T) {
 
 // keptImageScansForTest matches store.keptImageScans.
 const keptImageScansForTest = 20
+
+func TestWatchFailuresClearWhenTheRegistryWorksAgain(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	digest, failure := "sha256:"+strings.Repeat("1", 64), error(nil)
+	s.images.tagDigest = func(ctx context.Context, client *images.Client, ref images.Reference) (string, error) {
+		return digest, failure
+	}
+	s.images.read = func(ctx context.Context, client *images.Client, ref images.Reference, platform string) (containers.Inventory, images.Resolved, error) {
+		return containers.Inventory{Container: containers.Container{Name: ref.String(), Image: ref.String()}},
+			images.Resolved{Reference: ref, Digest: "sha256:" + strings.Repeat("9", 64), TagDigest: digest, Platform: platform}, nil
+	}
+	image := decode[store.Image](t, do(t, s, call{method: http.MethodPost, path: "/api/images", cookie: cookie, body: map[string]any{"reference": "ghcr.io/acme/shop:1"}}))
+	other := decode[store.Image](t, do(t, s, call{method: http.MethodPost, path: "/api/images", cookie: cookie, body: map[string]any{"reference": "quay.io/acme/db:1"}}))
+	s.runQueuedImageScans(context.Background())
+	failed := func(id string) {
+		t.Helper()
+		if err := store.ImageChecked(id, "", "ghcr.io: the registry refused access", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A scan that reads the image clears an earlier watch failure.
+	failed(image.ID)
+	do(t, s, call{method: http.MethodPost, path: "/api/images/" + image.ID + "/scans", cookie: cookie})
+	s.runQueuedImageScans(context.Background())
+	if got, _ := store.GetImage(image.ID); got.WatchError != "" {
+		t.Fatalf("after a succeeded scan: %q", got.WatchError)
+	}
+
+	// Saving a login for the registry clears its images' failures and makes
+	// them due for a check at once; other registries' images keep theirs.
+	failed(image.ID)
+	failed(other.ID)
+	do(t, s, call{method: http.MethodPost, path: "/api/registry-logins", cookie: cookie,
+		body: map[string]any{"registry": "ghcr.io", "username": "robot", "secret": "token"}})
+	if got, _ := store.GetImage(image.ID); got.WatchError != "" || got.CheckedAt != "" {
+		t.Fatalf("after saving the login: %+v", got)
+	}
+	if got, _ := store.GetImage(other.ID); got.WatchError == "" {
+		t.Fatal("another registry's failure was cleared")
+	}
+}
+
+func TestRegistryLoginsCanBeChecked(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	var tried images.Credentials
+	answer := error(nil)
+	s.images.checkLogin = func(ctx context.Context, client *images.Client, registry string) error {
+		tried, _ = client.Credentials(registry)
+		return answer
+	}
+	login := decode[store.RegistryLogin](t, do(t, s, call{method: http.MethodPost, path: "/api/registry-logins", cookie: cookie,
+		body: map[string]any{"registry": "ghcr.io", "username": "robot", "secret": "token"}}))
+	check := func() registryLoginCheck {
+		t.Helper()
+		response := do(t, s, call{method: http.MethodPost, path: "/api/registry-logins/" + login.ID + "/check", cookie: cookie})
+		if response.Code != http.StatusOK {
+			t.Fatalf("check: %d %s", response.Code, response.Body.String())
+		}
+		return decode[registryLoginCheck](t, response)
+	}
+	if result := check(); result.Status != "ok" || tried.Username != "robot" || tried.Password != "token" {
+		t.Fatalf("a working login: %+v, tried %+v", result, tried)
+	}
+	answer = fmt.Errorf("ghcr.io: %w", images.ErrUnauthorized)
+	if result := check(); result.Status != "failed" || !strings.Contains(result.Message, "check the username and the password") {
+		t.Fatalf("a refused login: %+v", result)
+	}
+	answer = fmt.Errorf("ghcr.io: %w", images.ErrLoginNotAsked)
+	if result := check(); result.Status != "unchecked" {
+		t.Fatalf("a registry that doesn't ask: %+v", result)
+	}
+	if missing := do(t, s, call{method: http.MethodPost, path: "/api/registry-logins/nope/check", cookie: cookie}); missing.Code != http.StatusNotFound {
+		t.Fatalf("an unknown login: %d", missing.Code)
+	}
+}
+
+func TestPastedAWSKeysAreTrimmed(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	const registry = "123456789012.dkr.ecr.eu-north-1.amazonaws.com"
+	var signedWith string
+	aws := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		signedWith = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode(map[string]any{"authorizationData": []map[string]any{{
+			"authorizationToken": base64.StdEncoding.EncodeToString([]byte("AWS:token")), "expiresAt": float64(time.Now().Add(12 * time.Hour).Unix()),
+		}}})
+	}))
+	defer aws.Close()
+	s.images.http, s.images.ecrEndpoint = aws.Client(), aws.URL
+	s.images.checkLogin = func(ctx context.Context, client *images.Client, registry string) error { return nil }
+	login := decode[store.RegistryLogin](t, do(t, s, call{method: http.MethodPost, path: "/api/registry-logins", cookie: cookie,
+		body: map[string]any{"registry": registry, "kind": "ecr", "username": " AKIDGOOD ", "secret": "  secret-key\n"}}))
+	saved, err := store.GetRegistryLogin(login.ID)
+	if err != nil || saved.Username != "AKIDGOOD" || saved.Secret != "secret-key" {
+		t.Fatalf("saved %q / %q, %v", saved.Username, saved.Secret, err)
+	}
+	if result := decode[registryLoginCheck](t, do(t, s, call{method: http.MethodPost, path: "/api/registry-logins/" + login.ID + "/check", cookie: cookie})); result.Status != "ok" || !strings.Contains(signedWith, "Credential=AKIDGOOD/") {
+		t.Fatalf("an ECR check: %+v, signed %q", result, signedWith)
+	}
+	// AWS's refusals are explained.
+	for code, want := range map[string]string{
+		"InvalidSignatureException":   "doesn't belong to this access key ID",
+		"UnrecognizedClientException": "doesn't know this access key ID",
+		"AccessDeniedException":       "ecr:GetAuthorizationToken",
+	} {
+		err := fmt.Errorf("%s: %w (AWS answered %s: no)", registry, images.ErrUnauthorized, code)
+		if got := explainLoginFailure(saved, err); !strings.Contains(got, want) || !strings.Contains(got, code) {
+			t.Errorf("%s: %q", code, got)
+		}
+	}
+}

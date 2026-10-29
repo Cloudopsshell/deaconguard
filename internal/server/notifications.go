@@ -131,6 +131,9 @@ func (s *Server) emit(message notify.Message) {
 		if !channel.Enabled || !slices.Contains(channel.Events, message.Event) {
 			continue
 		}
+		if len(message.Channels) > 0 && !slices.Contains(message.Channels, channel.ID) {
+			continue
+		}
 		if message.HostID != "" && len(channel.Tags) > 0 && !slices.ContainsFunc(channel.Tags, func(tag string) bool { return slices.Contains(hostTags, tag) }) {
 			continue
 		}

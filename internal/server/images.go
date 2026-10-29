@@ -51,9 +51,14 @@ func tagDigest(ctx context.Context, client *images.Client, ref images.Reference)
 type imageScanner struct {
 	read      readImageFunc
 	tagDigest tagDigestFunc
-	wake      chan struct{}
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
+	// checkLogin logs in to a registry with a saved login; tests replace it,
+	// and listRepositories and listTags.
+	checkLogin       func(ctx context.Context, client *images.Client, registry string) error
+	listRepositories listRepositoriesFunc
+	listTags         listTagsFunc
+	wake             chan struct{}
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
 	// http and ecrEndpoint reach the ECR API; tests point them elsewhere.
 	http        *http.Client
 	ecrEndpoint string
@@ -70,6 +75,10 @@ type ecrToken struct {
 
 func newImageScanner() *imageScanner {
 	return &imageScanner{read: readImage, tagDigest: tagDigest, wake: make(chan struct{}, 1),
+		checkLogin: func(ctx context.Context, client *images.Client, registry string) error {
+			return client.CheckLogin(ctx, registry)
+		},
+		listRepositories: listRepositories, listTags: listTags,
 		http: &http.Client{Timeout: 30 * time.Second}, ecrTokens: map[string]ecrToken{}}
 }
 
@@ -86,6 +95,7 @@ func (s *Server) startImageScanner() {
 		defer ticker.Stop()
 		for {
 			s.checkWatchedImages(ctx, time.Now())
+			s.checkRepositoryWatches(ctx, time.Now())
 			s.runQueuedImageScans(ctx)
 			select {
 			case <-ctx.Done():
@@ -295,6 +305,9 @@ func (s *Server) runImageScan(ctx context.Context, record store.ImageScan) {
 	serverLog("", store.LogInfo, "Scan of image %s (%s) finished: %d critical, %d high, %d known to be exploited",
 		image.Reference, image.Platform, record.Severity.Critical, record.Severity.High, record.Exploited)
 	s.newImageVulnerabilities(image, record.ID, result)
+	if image.RepositoryWatchID != "" && strings.HasPrefix(record.StartedBy, newPushReason) {
+		s.reportNewPush(image, record, result)
+	}
 }
 
 // imageCVEs are the CVEs of an image's findings that are known to be
@@ -533,7 +546,13 @@ func (request registryLoginRequest) apply(login *store.RegistryLogin) error {
 	if login.ID != "" && request.Secret == "" && (login.Kind != kind || login.Registry != host) {
 		return errors.New("give the password or key again when changing the registry or the kind of login")
 	}
-	login.Registry, login.Kind, login.Username, login.Secret = host, kind, username, request.Secret
+	secret := request.Secret
+	if kind == store.LoginECR {
+		// AWS keys never contain spaces: a pasted line break or space would
+		// only make AWS refuse the signature.
+		secret = strings.TrimSpace(secret)
+	}
+	login.Registry, login.Kind, login.Username, login.Secret = host, kind, username, secret
 	return nil
 }
 
@@ -582,7 +601,107 @@ func (s *Server) saveRegistryLogin(w http.ResponseWriter, r *http.Request, login
 		detail = "AWS access key " + saved.Username
 	}
 	s.audit(r, action, saved.Registry, detail)
+	s.recheckImagesIn(saved.Registry)
 	writeJSON(w, status, saved)
+}
+
+// recheckImagesIn clears the watch failures of a registry's images and
+// checks their tags at once: a changed login may have fixed them.
+func (s *Server) recheckImagesIn(registry string) {
+	list, err := store.Images()
+	if err != nil {
+		return
+	}
+	due := false
+	for _, image := range list {
+		if ref, err := images.ParseReference(image.Reference); err == nil && ref.Registry == registry {
+			if store.RecheckImage(image.ID) == nil {
+				due = true
+			}
+		}
+	}
+	if watches, err := store.RepositoryWatches(); err == nil {
+		for _, watch := range watches {
+			if watch.Registry == registry && store.RecheckRepositoryWatch(watch.ID) == nil {
+				due = true
+			}
+		}
+	}
+	if due {
+		s.wakeImageScanner()
+	}
+}
+
+// registryLoginCheck is the result of logging in with a saved login.
+type registryLoginCheck struct {
+	// Status is "ok" (the registry accepted the login), "failed", or
+	// "unchecked" (the registry didn't ask for a login).
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	CheckedAt string `json:"checked_at"`
+}
+
+// checkRegistryLogin logs in to the registry with a saved login, the way a
+// scan would, and says whether the registry accepts it.
+func (s *Server) checkRegistryLogin(w http.ResponseWriter, r *http.Request) {
+	login, err := store.GetRegistryLogin(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	defer cancel()
+	result := registryLoginCheck{Status: "ok", Message: "The registry accepted the login.", CheckedAt: time.Now().UTC().Format(time.RFC3339)}
+	err = s.tryRegistryLogin(ctx, login)
+	switch {
+	case errors.Is(err, images.ErrLoginNotAsked):
+		result.Status, result.Message = "unchecked", "The registry answers without a login, so it couldn't check this one. DeaconGuard still uses it for images that need it."
+	case err != nil:
+		result.Status, result.Message = "failed", explainLoginFailure(login, err)
+	case login.Kind == store.LoginECR:
+		result.Message = "AWS accepted the access key, and the registry accepted the login it gave."
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// explainLoginFailure says in plain words why a login failed, and what to
+// change, with the registry's or AWS's own answer.
+func explainLoginFailure(login store.RegistryLogin, err error) string {
+	text := err.Error()
+	if login.Kind == store.LoginECR {
+		for _, known := range []struct{ code, advice string }{
+			{"InvalidSignatureException", "AWS refused the secret access key: it doesn't belong to this access key ID. Paste the secret again, without spaces, or create a new access key."},
+			{"UnrecognizedClientException", "AWS doesn't know this access key ID: it was deleted, deactivated, or mistyped."},
+			{"AccessDeniedException", "AWS accepted the key, but its user may not call ecr:GetAuthorizationToken. Give it read access to ECR."},
+			{"ExpiredTokenException", "The key has expired. Create a new access key."},
+		} {
+			if strings.Contains(text, known.code) {
+				return known.advice + " (" + text + ")"
+			}
+		}
+		if errors.Is(err, images.ErrUnauthorized) && !strings.Contains(text, "AWS answered") {
+			return "AWS gave a registry login, but the registry refused it: the key's user may not be allowed ecr:BatchGetImage and ecr:GetDownloadUrlForLayer. (" + text + ")"
+		}
+		return text
+	}
+	if errors.Is(err, images.ErrUnauthorized) {
+		return "The registry refused this login: check the username and the password or token, and that the token may read images. (" + text + ")"
+	}
+	return text
+}
+
+func (s *Server) tryRegistryLogin(ctx context.Context, login store.RegistryLogin) error {
+	credentials := images.Credentials{Username: login.Username, Password: login.Secret}
+	if login.Kind == store.LoginECR {
+		// A fresh token, so the saved key itself is checked.
+		token, _, err := images.ECRToken(ctx, s.images.http, login.Registry, s.images.ecrEndpoint, login.Username, login.Secret, time.Now())
+		if err != nil {
+			return err
+		}
+		credentials = token
+	}
+	client := images.NewClient(func(host string) (images.Credentials, bool) { return credentials, host == login.Registry })
+	return s.images.checkLogin(ctx, client, login.Registry)
 }
 
 func (s *Server) deleteRegistryLogin(w http.ResponseWriter, r *http.Request) {

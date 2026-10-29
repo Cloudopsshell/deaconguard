@@ -253,7 +253,13 @@ func (c *Client) get(ctx context.Context, ref Reference, path, accept string) (*
 
 func (c *Client) request(ctx context.Context, method string, ref Reference, path, accept string) (*http.Response, error) {
 	address := fmt.Sprintf("%s://%s/v2/%s%s", c.Scheme, ref.Registry, ref.Repository, path)
-	key := ref.Registry + "/" + ref.Repository
+	return c.send(ctx, method, address, ref.Registry, ref.String(), "repository:"+ref.Repository+":pull", accept)
+}
+
+// send makes a request to a registry, logging in for scope when the
+// registry asks. what names the image or registry in errors.
+func (c *Client) send(ctx context.Context, method, address, registry, what, scope, accept string) (*http.Response, error) {
+	key := registry + "/" + scope
 	for attempt := 0; attempt < 2; attempt++ {
 		request, err := http.NewRequestWithContext(ctx, method, address, nil)
 		if err != nil {
@@ -279,7 +285,7 @@ func (c *Client) request(ctx context.Context, method string, ref Reference, path
 		response.Body.Close()
 		switch {
 		case response.StatusCode == http.StatusUnauthorized && attempt == 0 && challenge != "":
-			authorization, err := c.login(ctx, ref, challenge)
+			authorization, err := c.login(ctx, registry, what, scope, challenge)
 			if err != nil {
 				return nil, err
 			}
@@ -290,77 +296,162 @@ func (c *Client) request(ctx context.Context, method string, ref Reference, path
 			c.tokens[key] = authorization
 			c.mu.Unlock()
 		case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
-			return nil, fmt.Errorf("%s: %w", ref, ErrUnauthorized)
+			return nil, fmt.Errorf("%s: %w", what, ErrUnauthorized)
 		case response.StatusCode == http.StatusNotFound:
-			return nil, fmt.Errorf("%s: not found in the registry (or it's private and needs a login)", ref)
+			return nil, fmt.Errorf("%s: not found in the registry (or it's private and needs a login)", what)
 		case response.StatusCode == http.StatusTooManyRequests:
-			return nil, fmt.Errorf("%s: the registry is rate-limiting requests; try again later, or add a login for it", ref)
+			return nil, fmt.Errorf("%s: the registry is rate-limiting requests; try again later, or add a login for it", what)
 		default:
-			return nil, fmt.Errorf("%s: the registry answered %s", ref, response.Status)
+			return nil, fmt.Errorf("%s: the registry answered %s", what, response.Status)
 		}
 	}
-	return nil, fmt.Errorf("%s: %w", ref, ErrUnauthorized)
+	return nil, fmt.Errorf("%s: %w", what, ErrUnauthorized)
 }
 
-// login answers a WWW-Authenticate challenge.
-func (c *Client) login(ctx context.Context, ref Reference, challenge string) (string, error) {
+// login answers a WWW-Authenticate challenge, for scope.
+func (c *Client) login(ctx context.Context, registry, what, scope, challenge string) (string, error) {
 	credentials, haveLogin := Credentials{}, false
 	if c.Credentials != nil {
-		credentials, haveLogin = c.Credentials(ref.Registry)
+		credentials, haveLogin = c.Credentials(registry)
 	}
 	scheme, params := parseChallenge(challenge)
 	switch strings.ToLower(scheme) {
 	case "basic":
 		if !haveLogin {
-			return "", fmt.Errorf("%s: %w", ref, ErrUnauthorized)
+			return "", fmt.Errorf("%s: %w", what, ErrUnauthorized)
 		}
 		request, _ := http.NewRequest(http.MethodGet, "http://x", nil)
 		request.SetBasicAuth(credentials.Username, credentials.Password)
 		return request.Header.Get("Authorization"), nil
 	case "bearer":
-		realm, err := url.Parse(params["realm"])
-		if err != nil || (realm.Scheme != "https" && realm.Scheme != c.Scheme) || realm.Host == "" {
-			return "", fmt.Errorf("%s: the registry's login address %q isn't usable", ref, params["realm"])
+		if !haveLogin {
+			credentials = Credentials{}
 		}
-		query := realm.Query()
-		if service := params["service"]; service != "" {
-			query.Set("service", service)
-		}
-		query.Set("scope", "repository:"+ref.Repository+":pull")
-		realm.RawQuery = query.Encode()
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, realm.String(), nil)
+		return c.bearerToken(ctx, what, registry, params, scope, credentials)
+	}
+	return "", fmt.Errorf("%s: the registry asks for a %q login, which DeaconGuard doesn't support", what, scheme)
+}
+
+// bearerToken gets a token from the login service a Bearer challenge names,
+// for scope (none to just log in), with the credentials if there are any.
+// what names the image or registry in errors.
+func (c *Client) bearerToken(ctx context.Context, what, registry string, params map[string]string, scope string, credentials Credentials) (string, error) {
+	realm, err := url.Parse(params["realm"])
+	if err != nil || (realm.Scheme != "https" && realm.Scheme != c.Scheme) || realm.Host == "" {
+		return "", fmt.Errorf("%s: the registry's login address %q isn't usable", what, params["realm"])
+	}
+	query := realm.Query()
+	if service := params["service"]; service != "" {
+		query.Set("service", service)
+	}
+	if scope != "" {
+		query.Set("scope", scope)
+	} else if credentials.Username != "" {
+		// Logging in without a scope, as docker login does.
+		query.Set("account", credentials.Username)
+	}
+	realm.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, realm.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("User-Agent", buildinfo.UserAgent())
+	if credentials.Username != "" {
+		request.SetBasicAuth(credentials.Username, credentials.Password)
+	}
+	response, err := c.HTTP.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("log in to %s: %w", registry, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("%s: %w (the login service answered %s)", what, ErrUnauthorized, response.Status)
+	}
+	var answer struct {
+		Token       string `json:"token"`
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&answer); err != nil {
+		return "", fmt.Errorf("log in to %s: %w", registry, err)
+	}
+	token := answer.Token
+	if token == "" {
+		token = answer.AccessToken
+	}
+	if token == "" {
+		return "", fmt.Errorf("%s: %w", what, ErrUnauthorized)
+	}
+	return "Bearer " + token, nil
+}
+
+// ErrLoginNotAsked means the registry answered without asking for a login,
+// so it didn't check the one given; it is still used when an image needs it.
+var ErrLoginNotAsked = errors.New("the registry answers without a login, so it couldn't check this one; DeaconGuard uses it when an image needs it")
+
+// CheckLogin logs in to a registry the way docker login does: it asks the
+// registry how to log in, logs in with the registry's login, and checks that
+// the registry accepts the result. nil means the login works.
+func (c *Client) CheckLogin(ctx context.Context, registry string) error {
+	address := fmt.Sprintf("%s://%s/v2/", c.Scheme, registry)
+	ask := func(authorization string) (int, string, error) {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 		if err != nil {
-			return "", err
+			return 0, "", err
 		}
 		request.Header.Set("User-Agent", buildinfo.UserAgent())
-		if haveLogin && credentials.Username != "" {
-			request.SetBasicAuth(credentials.Username, credentials.Password)
+		if authorization != "" {
+			request.Header.Set("Authorization", authorization)
 		}
 		response, err := c.HTTP.Do(request)
 		if err != nil {
-			return "", fmt.Errorf("log in to %s: %w", ref.Registry, err)
+			return 0, "", fmt.Errorf("reach %s: %w", registry, err)
 		}
 		defer response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("%s: %w (the login service answered %s)", ref, ErrUnauthorized, response.Status)
-		}
-		var answer struct {
-			Token       string `json:"token"`
-			AccessToken string `json:"access_token"`
-		}
-		if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&answer); err != nil {
-			return "", fmt.Errorf("log in to %s: %w", ref.Registry, err)
-		}
-		token := answer.Token
-		if token == "" {
-			token = answer.AccessToken
-		}
-		if token == "" {
-			return "", fmt.Errorf("%s: %w", ref, ErrUnauthorized)
-		}
-		return "Bearer " + token, nil
+		io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+		return response.StatusCode, response.Header.Get("WWW-Authenticate"), nil
 	}
-	return "", fmt.Errorf("%s: the registry asks for a %q login, which DeaconGuard doesn't support", ref, scheme)
+	status, challenge, err := ask("")
+	switch {
+	case err != nil:
+		return err
+	case status == http.StatusOK:
+		return fmt.Errorf("%s: %w", registry, ErrLoginNotAsked)
+	case status != http.StatusUnauthorized:
+		return fmt.Errorf("%s: the registry answered %s", registry, http.StatusText(status))
+	case challenge == "":
+		return fmt.Errorf("%s: the registry asks for a login without saying how", registry)
+	}
+	credentials, haveLogin := Credentials{}, false
+	if c.Credentials != nil {
+		credentials, haveLogin = c.Credentials(registry)
+	}
+	if !haveLogin || credentials.Username == "" {
+		return fmt.Errorf("%s: %w", registry, ErrUnauthorized)
+	}
+	var authorization string
+	scheme, params := parseChallenge(challenge)
+	switch strings.ToLower(scheme) {
+	case "basic":
+		request, _ := http.NewRequest(http.MethodGet, "http://x", nil)
+		request.SetBasicAuth(credentials.Username, credentials.Password)
+		authorization = request.Header.Get("Authorization")
+	case "bearer":
+		if authorization, err = c.bearerToken(ctx, registry, registry, params, "", credentials); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("%s: the registry asks for a %q login, which DeaconGuard doesn't support", registry, scheme)
+	}
+	switch status, _, err := ask(authorization); {
+	case err != nil:
+		return err
+	case status == http.StatusOK:
+		return nil
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return fmt.Errorf("%s: %w", registry, ErrUnauthorized)
+	default:
+		return fmt.Errorf("%s: the registry answered %s", registry, http.StatusText(status))
+	}
 }
 
 // parseChallenge reads `Bearer realm="…",service="…",scope="…"`.

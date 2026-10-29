@@ -234,3 +234,74 @@ func TestParseChallenge(t *testing.T) {
 		t.Errorf("%s %v", scheme, params)
 	}
 }
+
+func TestCheckLogin(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.URL.Path == "/token":
+			// Logging in without a scope, as docker login does.
+			user, pass, _ := req.BasicAuth()
+			if user != "robot" || pass != "pw" || req.URL.Query().Get("account") != "robot" || req.URL.Query().Get("scope") != "" {
+				http.Error(w, "denied", http.StatusUnauthorized)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "login-token"})
+		case req.URL.Path == "/v2/" && req.Header.Get("Authorization") == "Bearer login-token":
+			w.WriteHeader(http.StatusOK)
+		case req.URL.Path == "/v2/":
+			w.Header().Set("WWW-Authenticate", `Bearer realm="`+server.URL+`/token",service="fake"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer server.Close()
+	registry := strings.TrimPrefix(server.URL, "https://")
+	check := func(user, pass string, have bool) error {
+		client := &Client{HTTP: server.Client(), Scheme: "https", Credentials: func(string) (Credentials, bool) {
+			return Credentials{Username: user, Password: pass}, have
+		}}
+		return client.CheckLogin(context.Background(), registry)
+	}
+	if err := check("robot", "pw", true); err != nil {
+		t.Errorf("the right login: %v", err)
+	}
+	if err := check("robot", "wrong", true); !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("a wrong password: %v, want ErrUnauthorized", err)
+	}
+	if err := check("", "", false); !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("no login: %v, want ErrUnauthorized", err)
+	}
+
+	// A registry with Basic logins, such as ECR's, takes the login directly.
+	basic := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if user, pass, ok := req.BasicAuth(); ok && user == "AWS" && pass == "token" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="https://example.com/"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer basic.Close()
+	for _, test := range []struct {
+		pass string
+		ok   bool
+	}{{"token", true}, {"expired", false}} {
+		client := &Client{HTTP: basic.Client(), Scheme: "https", Credentials: func(string) (Credentials, bool) {
+			return Credentials{Username: "AWS", Password: test.pass}, true
+		}}
+		err := client.CheckLogin(context.Background(), strings.TrimPrefix(basic.URL, "https://"))
+		if test.ok != (err == nil) || (!test.ok && !errors.Is(err, ErrUnauthorized)) {
+			t.Errorf("basic login with %q: %v", test.pass, err)
+		}
+	}
+
+	// A registry that doesn't ask for a login can't check one.
+	open := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer open.Close()
+	client := &Client{HTTP: open.Client(), Scheme: "https", Credentials: func(string) (Credentials, bool) { return Credentials{Username: "u", Password: "p"}, true }}
+	if err := client.CheckLogin(context.Background(), strings.TrimPrefix(open.URL, "https://")); !errors.Is(err, ErrLoginNotAsked) {
+		t.Errorf("an open registry: %v, want ErrLoginNotAsked", err)
+	}
+}
