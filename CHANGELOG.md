@@ -8,10 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-10-29
+
 ### Added
 
 - **Browse a registry:** **Browse** next to a registry login lists its repositories (through the ECR API for Amazon ECR, the registry API's catalog elsewhere) and a repository's tags, newest first, to scan a tag's image.
-- **Watch a repository:** scan each new or re-pushed image in a repository whose tag matches a pattern (a regular expression, previewed against the existing tags), keeping the newest 1 to 20 rescanned daily. Checked every 15 minutes, or at once with **Check now**; on Amazon ECR by push time. ECR keys need `ecr:DescribeRepositories` and `ecr:DescribeImages` for this.
+- **Watch a repository:** scan each new or re-pushed image in a repository whose tag matches a pattern (a regular expression, previewed against the existing tags), keeping the newest 1 to 20 rescanned daily. Checked every 15 minutes, or at once with **Check now**; on Amazon ECR by push time. ECR keys need `ecr:DescribeRepositories` and `ecr:DescribeImages` for this. The database moves to schema 27.
 - **Reports of new pushes:** a new notification event, **Image scan reports**, sent when the scan of a watched repository's new push finishes: counts by severity, known exploited and fixable, what changed since the previous build (new and fixed CVEs), the 5 most urgent vulnerabilities and a link. Each watch chooses which pushes it reports (every one, a minimum severity, known exploited only, or none) and to which channels.
 - **A repository's page:** a watched repository's builds, newest first, with what each scan found, and a chart of vulnerabilities by build.
 - **History per watch:** a watch keeps the newest 50 images it added (up to 500), with their scans, and removes older ones. Images added by hand are never removed.
@@ -246,7 +248,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.9.2...v1.10.0

@@ -5,12 +5,13 @@ description: What changed in each DeaconGuard release, and what to do when you u
 
 One page per release, newest first: what's new, what to do before you upgrade, and anything particular to Kubernetes, the install script and Docker Compose, and known issues. The steps to upgrade are the same for every release: see [Upgrade](../installation/upgrade.md).
 
-**Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.10.0 to 1.11.1, the pages for 1.11.0 and 1.11.1. You can upgrade straight to the newest release; you don't need to install each one in turn.
+**Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.11.0 to 1.12.0, the pages for 1.11.1 and 1.12.0. You can upgrade straight to the newest release; you don't need to install each one in turn.
 
-Releases with nothing to do say so. The last 10 minor lines (now 1.2 to 1.11) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
+Releases with nothing to do say so. The last 10 minor lines (now 1.3 to 1.12) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
 
 | Release | Released | What to do |
 | --- | --- | --- |
+| [1.12.0](./v1-12/v1-12-0.md) | 2026-10-29 | Back up: database schema 27; ECR browsing needs two more IAM actions |
 | [1.11.1](./v1-11/v1-11-1.md) | 2026-10-25 | Allow `raw.githubusercontent.com` if outbound traffic is limited |
 | [1.11.0](./v1-11/v1-11-0.md) | 2026-10-25 | Nothing; new optional Helm settings for Traefik |
 | [1.10.0](./v1-10/v1-10-0.md) | 2026-10-24 | Nothing; new optional Helm settings for the agent Service |
@@ -24,4 +25,3 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.2 to 1.11) ar
 | [1.5.0](./v1-5/v1-5-0.md) | 2026-10-19 | Back up: database schema 23 |
 | [1.4.0](./v1-4/v1-4-0.md) | 2026-10-19 | Nothing |
 | [1.3.0](./v1-3/v1-3-0.md) | 2026-10-19 | Back up: database schema 22 |
-| [1.2.0](./v1-2/v1-2-0.md) | 2026-10-18 | Upgrade agents for the Running containers check |
