@@ -10,7 +10,7 @@ description: Operating systems, accounts and network access DeaconGuard needs.
 - The install script needs `curl`, `sha256sum`, and root: run it with `sudo`, or as root.
 - For the antivirus scan: about 110 MB of disk for ClamAV's signatures, and about 1.5 GB of free memory and swap during a scan. The advanced scan adds about 30 MB for YARA-X and, while it runs, about 200 MB of memory for the rules.
 
-- **The server needs at least 1 GB of memory**, RAM plus swap. It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB (1.6 GB before DeaconGuard 0.5.2, so upgrade small servers). With too little, Linux stops the server mid-scan, and the dashboard says so. To add swap on a small server:
+- **The server needs at least 1 GB of memory**, RAM plus swap. It checks each machine's package list against the distribution's feed, one machine at a time; for an Ubuntu 24.04 machine that briefly needs about 450 MB (1.6 GB before DeaconGuard 0.5.2, so upgrade small servers). It then keeps the parsed feed, up to about 400 MB of feeds, so that later scans of the same release take a fraction of a second instead of tens of seconds; see [Parsed feeds](../supported-distributions.md#parsed-feeds). With too little, Linux stops the server mid-scan, and the dashboard says so. To add swap on a small server:
 
   ```sh
   sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile

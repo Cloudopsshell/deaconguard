@@ -63,6 +63,13 @@ The server itself can run on any of the distributions above except Alpine; only 
 
 **Alpine machines:** the install script and packages need systemd, which Alpine doesn't use, so they don't set up an agent there. Run `deaconguard agent enroll` and `deaconguard agent run` from the [release archive](./installation/manual-install.md) under your own OpenRC service, or run the agent's [container image](./installation/docker.md). Alpine is most common inside containers, which DeaconGuard will scan in a coming release.
 
+## Parsed feeds
+
+Some feeds are large: Canonical's OVAL for one Ubuntu release is hundreds of megabytes of XML, and reading it takes several seconds of CPU, half a minute on a small server. A feed changes at most every 12 hours, so the server reads each one once and keeps it, parsed, for the scans that follow, machines' and images' alike: a second scan of the same release takes a fraction of a second. This applies to Ubuntu's, Debian's, Red Hat's, AlmaLinux's, Oracle Linux's and SUSE's feeds, and Rocky Linux's and Fedora's updateinfo; the others are small enough to read each time.
+
+- **Memory:** parsed feeds take up to about 400 MB, roughly what one Ubuntu release (about 275 MB) takes with Debian's and Red Hat's. When a new one would take more, the one used least recently is let go, and it is read again when a scan needs it. A feed is also let go after 30 minutes without a scan, and a new download replaces the old one.
+- **Changing it:** `DEACONGUARD_FEED_CACHE_MB` sets the budget, such as `700` to keep two Ubuntu releases when the server scans both, or `0` to read the feed for every scan, as before 1.17.0. With Helm, `server.feedCacheMB`. Keep it well under the server's memory limit, which needs about 450 MB more while a feed is read.
+
 ## Feed hosts
 
 The server downloads the advisory data, so it needs HTTPS access to the hosts for the distributions you scan:
