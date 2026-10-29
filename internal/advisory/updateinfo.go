@@ -42,6 +42,44 @@ type updateInfo struct {
 type UpdateInfoSource struct {
 	Data     io.Reader
 	Advisory func(id string) string
+	// updates are Data's security updates, when already parsed.
+	updates []securityUpdate
+}
+
+// securityUpdate is a security update from updateinfo, with its CVEs.
+type securityUpdate struct {
+	update updateInfo
+	cves   []string
+}
+
+// parseUpdateInfo reads the security updates that name CVEs from an
+// updateinfo stream.
+func parseUpdateInfo(stream io.Reader) ([]securityUpdate, error) {
+	updates := make([]securityUpdate, 0, 1024)
+	decoder := xml.NewDecoder(stream)
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			return updates, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read updateinfo: %w", err)
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local != "update" {
+			continue
+		}
+		var update updateInfo
+		if err := decoder.DecodeElement(&update, &start); err != nil {
+			return nil, fmt.Errorf("read an update: %w", err)
+		}
+		if update.Type != "security" {
+			continue
+		}
+		if cves := updateCVEs(update); len(cves) > 0 {
+			updates = append(updates, securityUpdate{update: update, cves: cves})
+		}
+	}
 }
 
 // evaluateUpdateInfo finds the installed packages older than a security
@@ -56,30 +94,15 @@ func evaluateUpdateInfo(sources []UpdateInfoSource, packages []inventory.Package
 	best := make(map[key]Finding)
 	result := DebianEvaluation{Findings: make([]Finding, 0), Unsupported: make([]Unsupported, 0)}
 	for _, source := range sources {
-		decoder := xml.NewDecoder(source.Data)
-		for {
-			token, err := decoder.Token()
-			if errors.Is(err, io.EOF) {
-				break
+		updates := source.updates
+		if updates == nil {
+			var err error
+			if updates, err = parseUpdateInfo(source.Data); err != nil {
+				return DebianEvaluation{}, err
 			}
-			if err != nil {
-				return DebianEvaluation{}, fmt.Errorf("read updateinfo: %w", err)
-			}
-			start, ok := token.(xml.StartElement)
-			if !ok || start.Name.Local != "update" {
-				continue
-			}
-			var update updateInfo
-			if err := decoder.DecodeElement(&update, &start); err != nil {
-				return DebianEvaluation{}, fmt.Errorf("read an update: %w", err)
-			}
-			if update.Type != "security" {
-				continue
-			}
-			cves := updateCVEs(update)
-			if len(cves) == 0 {
-				continue
-			}
+		}
+		for _, parsed := range updates {
+			update, cves := parsed.update, parsed.cves
 			result.Evaluated++
 			link := ""
 			if source.Advisory != nil {

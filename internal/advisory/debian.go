@@ -63,12 +63,19 @@ func EvaluateDebian(target platform.Platform, packages []inventory.Package, trac
 	if target.Family != platform.Debian {
 		return DebianEvaluation{}, fmt.Errorf("Debian tracker cannot evaluate %s", target.Family)
 	}
-	var tracker debianTracker
-	if err := json.Unmarshal(trackerJSON, &tracker); err != nil {
-		return DebianEvaluation{}, fmt.Errorf("parse Debian Security Tracker data: %w", err)
-	}
-	if len(tracker) == 0 {
-		return DebianEvaluation{}, fmt.Errorf("Debian Security Tracker data is empty")
+	// Parsed once per feed: scans share the tracker's data.
+	tracker, err := parsedOnce("debian-tracker", trackerJSON, func() (debianTracker, error) {
+		var tracker debianTracker
+		if err := json.Unmarshal(trackerJSON, &tracker); err != nil {
+			return nil, fmt.Errorf("parse Debian Security Tracker data: %w", err)
+		}
+		if len(tracker) == 0 {
+			return nil, fmt.Errorf("Debian Security Tracker data is empty")
+		}
+		return tracker, nil
+	})
+	if err != nil {
+		return DebianEvaluation{}, err
 	}
 
 	result := DebianEvaluation{Findings: make([]Finding, 0), Unsupported: make([]Unsupported, 0)}

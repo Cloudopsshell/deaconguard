@@ -15,6 +15,7 @@ upgrade notes.
 ### Changed
 
 - Each server line on standard output starts with its level (`INFO`, `WARNING`, `ERROR`), and "Press Ctrl+C to stop." is printed only when the server runs in a terminal, not under systemd or in a container.
+- **Scans no longer read large advisory feeds again each time.** The server reads Ubuntu's, Debian's, Red Hat's, AlmaLinux's, Oracle Linux's and SUSE's feeds, and Rocky Linux's and Fedora's updateinfo, once per download and keeps them parsed for the scans that follow, of machines and images alike. A second scan of an Ubuntu 24.04 machine or image no longer spends several seconds of CPU (half a minute on a small server, which the High CPU log line from 1.16.0 found) reading Canonical's OVAL: it takes about 70 ms. Parsed feeds take up to about 400 MB, the least recently used going first, and go after 30 minutes without a scan; `DEACONGUARD_FEED_CACHE_MB` or the Helm value `server.feedCacheMB` changes it, and `0` turns it off. The Ubuntu feed is also kept in less memory: repeated values once, and no spare room.
 
 ### Fixed
 

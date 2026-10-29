@@ -31,6 +31,10 @@ server:
   # status, duration, account and address. Agents' and the dashboard's
   # routine polls are left out.
   accessLog: false
+  # Memory, in MB, the server may keep parsed advisory feeds in, so that scans
+  # of the same release don't parse them again (Ubuntu's take about 275 MB
+  # each). 0 parses for every scan. Keep it well under resources.limits.memory.
+  feedCacheMB: 400
   # A kubernetes.io/tls secret to serve instead of the self-signed
   # certificate. Agents trust a certificate that the system trusts for the
   # server's name, or its key's fingerprint from their token.
