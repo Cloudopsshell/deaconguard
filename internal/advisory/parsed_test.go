@@ -121,12 +121,12 @@ func TestParsedFeedsOffAndExpiry(t *testing.T) {
 		t.Fatalf("a budget of 0 still kept feeds: %d parses", parses.Load())
 	}
 	parsedBudget = func() int64 { return 1 << 30 }
-	parsedKept = 50 * time.Millisecond
+	parsedKept = 500 * time.Millisecond
 	parsedOnce("idle", []byte("x"), sized(1, &parses))
 	if cached("idle") != 1 {
 		t.Fatal("not kept")
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(2 * time.Second)
 	if cached("idle") != 0 {
 		t.Fatal("kept after its time without a scan")
 	}

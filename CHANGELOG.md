@@ -13,6 +13,7 @@ upgrade notes.
 ### Fixed
 
 - The access log leaves out Kubernetes health checks (requests from `kube-probe`), as it does agents' and the dashboard's routine polls, unless they fail. They added about eight lines a minute to `kubectl logs`.
+- A parsed feed's 30 minutes without a scan count from when its parse finishes, not from when it starts. This also fixes a test that failed on slow machines.
 
 ## [1.17.0] - 2026-10-29
 
