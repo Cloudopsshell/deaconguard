@@ -78,10 +78,12 @@ func waits(r *http.Request) bool {
 }
 
 // heartbeat reports the polls the access log leaves out, as they come every
-// few seconds while nothing happens: an agent asking for its next job, and
-// an open dashboard asking for sudo prompts. They are logged when they fail.
+// few seconds while nothing happens: an agent asking for its next job, an
+// open dashboard asking for sudo prompts, and Kubernetes checking that the
+// server is up. They are logged when they fail.
 func heartbeat(r *http.Request, status int) bool {
-	return status < 400 && (r.URL.Path == agentapi.PathPrefix+"job" || r.URL.Path == "/api/prompts")
+	return status < 400 && (r.URL.Path == agentapi.PathPrefix+"job" || r.URL.Path == "/api/prompts" ||
+		strings.HasPrefix(r.UserAgent(), "kube-probe/"))
 }
 
 // requestInfo is what the handlers learn about a request that the access
