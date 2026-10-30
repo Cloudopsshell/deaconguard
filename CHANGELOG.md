@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- The access log leaves out Kubernetes health checks (requests from `kube-probe`), as it does agents' and the dashboard's routine polls, unless they fail. They added about eight lines a minute to `kubectl logs`.
+
 ## [1.17.0] - 2026-10-29
 
 ### Added
