@@ -512,25 +512,35 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 	path := agent.ConfigPath()
 	switch arguments[0] {
 	case "enroll":
-		token, force := "", false
-		for _, argument := range arguments[1:] {
-			switch {
+		token, name, force := "", "", false
+		const usage = "usage: deaconguard agent enroll TOKEN [--name NAME] [--force]"
+		rest := arguments[1:]
+		for index := 0; index < len(rest); index++ {
+			switch argument := rest[index]; {
 			case argument == "--force":
 				force = true
+			case argument == "--name" && index+1 < len(rest):
+				name = rest[index+1]
+				index++
 			case token == "" && !strings.HasPrefix(argument, "-"):
 				token = argument
 			default:
-				return fmt.Errorf("usage: deaconguard agent enroll TOKEN [--force]")
+				return errors.New(usage)
 			}
 		}
 		if token == "" {
-			return fmt.Errorf("usage: deaconguard agent enroll TOKEN [--force]")
+			return errors.New(usage)
 		}
-		config, err := agent.Enroll(context.Background(), token, path, force)
+		name = enrollName(name)
+		config, err := agent.Enroll(context.Background(), token, path, force, name)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\nSaved %s\n", config.Name(), config.ServerURL, config.HostID, path)
+		what := config.Name()
+		if name != "" {
+			what = fmt.Sprintf("%s (%s)", name, what)
+		}
+		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\nSaved %s\n", what, config.ServerURL, config.HostID, path)
 		if os.Geteuid() == 0 {
 			fmt.Fprintln(output, "Start the agent: sudo systemctl enable --now deaconguard-agent")
 		} else {
@@ -554,7 +564,7 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 		// was reinstalled, or the host removed. Revoke the token to stop that.
 		if token := enrollToken(); errors.Is(err, agent.ErrRemoved) && token != "" {
 			logf("The server no longer knows this agent; enrolling again with the token from the environment.")
-			if config, err = agent.Enroll(ctx, token, path, true); err != nil {
+			if config, err = agent.Enroll(ctx, token, path, true, enrollName("")); err != nil {
 				return err
 			}
 			logf("Enrolled %s with %s as host %s", config.Name(), config.ServerURL, config.HostID)
@@ -749,6 +759,15 @@ func waitForAdmin(listen string, certificate tls.Certificate, output io.Writer) 
 // enrollToken is the enrollment token in the environment, if any: in the file
 // DEACONGUARD_ENROLL_TOKEN_FILE names (such as a mounted secret, which may not
 // exist once every node has enrolled), or in DEACONGUARD_ENROLL_TOKEN.
+// enrollName is the display name to enroll with: name, else
+// DEACONGUARD_NAME; "" keeps the hostname.
+func enrollName(name string) string {
+	if name == "" {
+		name = os.Getenv("DEACONGUARD_NAME")
+	}
+	return strings.TrimSpace(name)
+}
+
 func enrollToken() string {
 	if file := os.Getenv("DEACONGUARD_ENROLL_TOKEN_FILE"); file != "" {
 		contents, err := os.ReadFile(file)
@@ -772,7 +791,7 @@ func loadOrEnroll(ctx context.Context, path string, diagnostics io.Writer) (agen
 		if token := enrollToken(); token != "" {
 			if parsed, parseError := agentapi.ParseToken(token); parseError == nil && parsed.Pin != config.Pin {
 				fmt.Fprintf(diagnostics, "The enrollment token is for a server with another certificate than %s; enrolling with it.\n", config.ServerURL)
-				enrolled, enrollError := agent.Enroll(ctx, token, path, true)
+				enrolled, enrollError := agent.Enroll(ctx, token, path, true, enrollName(""))
 				if enrollError != nil {
 					fmt.Fprintf(diagnostics, "Could not enroll with the token, so keeping the enrollment with %s: %v\n", config.ServerURL, enrollError)
 					return config, nil
@@ -793,7 +812,7 @@ func loadOrEnroll(ctx context.Context, path string, diagnostics io.Writer) (agen
 	if token == "" {
 		return agent.Config{}, err
 	}
-	config, err = agent.Enroll(ctx, token, path, false)
+	config, err = agent.Enroll(ctx, token, path, false, enrollName(""))
 	if err != nil {
 		return agent.Config{}, err
 	}

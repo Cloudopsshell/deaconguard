@@ -220,8 +220,13 @@ func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, errors.New("the agent reported an unknown kind"))
 			return
 		}
+		name, err := store.CleanHostName(request.Name)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 		host, credential, err := store.EnrollAgent(request.Secret, store.AgentEnrollment{
-			Kind: request.Kind, Hostname: request.Hostname, Username: limitText(request.Username, 64), Version: limitText(request.Version, 64),
+			Kind: request.Kind, Hostname: request.Hostname, Name: name, Username: limitText(request.Username, 64), Version: limitText(request.Version, 64),
 			OS: limitText(request.OS, 128), Remote: remote,
 		})
 		if errors.Is(err, store.ErrInvalidEnrollmentToken) {
@@ -308,7 +313,10 @@ func (h *agentHub) scanNewContainers(host store.Host, version string, count int)
 func (h *agentHub) job(w http.ResponseWriter, r *http.Request, host store.Host) {
 	if hostname := r.Header.Get(agentapi.HeaderHostname); store.ValidHostname(hostname) {
 		store.UpdateAgentHost(host.ID, hostname, limitText(r.Header.Get(agentapi.HeaderUsername), 64), limitText(r.Header.Get(agentapi.HeaderOS), 128))
-		host.Address = hostname
+		host.Hostname = hostname
+		if host.Name == "" {
+			host.Address = hostname
+		}
 	}
 	h.presence.checkIn(host)
 	defer h.presence.checkIn(host)

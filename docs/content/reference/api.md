@@ -48,7 +48,7 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `GET /api/summary` | Viewer | The dashboard's numbers: hosts, what to fix, known exploited, overdue |
 | `GET /api/hosts` | Viewer | Every host with its latest results and tags |
 | `GET /api/hosts/{id}` | Viewer | One host, with its scan history |
-| `PATCH /api/hosts/{id}` | Operator | Change a host's settings: `{"auto_scan_containers": true}` for an agent's [automatic container scans](../usage/containers.md#scan-new-containers-automatically), or `{"allow_sudo": true}` for this machine |
+| `PATCH /api/hosts/{id}` | Operator | Change a host's settings: `{"name": "payments-api-prod"}` for its [display name](../usage/agents.md#names) (`""` shows its hostname again), `{"auto_scan_containers": true}` for an agent's [automatic container scans](../usage/containers.md#scan-new-containers-automatically), or `{"allow_sudo": true}` for this machine. Hosts have `address` (what they are called), `hostname` and `name` |
 | `POST /api/hosts/{id}/scans` | Operator | Start a scan: `{"checks": ["packages", "libraries", "containers", "integrity", "malware", "config", "hardening", "antivirus"]}` |
 | `GET /api/diagnostics/cpu?seconds=30` | Admin | A CPU profile of the server over the next 5 to 60 seconds (30 by default), as a `.pprof` file for `go tool pprof` |
 | `POST /api/hosts/{id}/audits` | Operator | Start a [server audit](../usage/audits.md): `{}` |

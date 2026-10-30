@@ -33,7 +33,7 @@ Run as root after installing the package; the install script runs these for you.
 | Command | Does |
 | --- | --- |
 | `deaconguard setup server [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT\|off] [--tls-cert FILE --tls-key FILE] [--admin-user NAME] [--admin-password-file FILE]` | Create the first account, an admin, and start the server service. |
-| `deaconguard setup agent [--token-file FILE] [--force]` | Enroll (asks for the token unless given) and start the agent service. |
+| `deaconguard setup agent [--token-file FILE] [--name NAME] [--force]` | Enroll (asks for the token unless given) and start the agent service. `--name`, or `DEACONGUARD_NAME`, is what the dashboard shows the machine as instead of its hostname; it can be changed there later. |
 
 ## Server and dashboard
 
@@ -56,6 +56,6 @@ On a server installed as a service, run `user` and `token` commands as the servi
 
 | Command | Does |
 | --- | --- |
-| `deaconguard agent enroll TOKEN [--force]` | Enroll with the server that made the token. |
+| `deaconguard agent enroll TOKEN [--name NAME] [--force]` | Enroll with the server that made the token, optionally under a [display name](../usage/agents.md#names). |
 | `deaconguard agent run` | Wait for scans; this is what the `deaconguard-agent` service runs. With a token in its [environment](./environment.md#containers), it enrolls first when needed. |
 | `deaconguard agent status` | Show where this machine is enrolled. |

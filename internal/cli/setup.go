@@ -60,6 +60,7 @@ type serverSetup struct {
 
 type agentSetup struct {
 	tokenFile string
+	name      string
 	force     bool
 }
 
@@ -87,7 +88,7 @@ func runSetup(arguments []string, output, diagnostics io.Writer) error {
 
 const (
 	serverSetupUsage = "usage: deaconguard setup server [--listen ADDRESS:PORT] [--agent-listen ADDRESS:PORT|off] [--tls-cert FILE --tls-key FILE] [--admin-user NAME] [--admin-password-file FILE] [--no-agent | --with-agent]"
-	agentSetupUsage  = "usage: deaconguard setup agent [--token-file FILE] [--force]"
+	agentSetupUsage  = "usage: deaconguard setup agent [--token-file FILE] [--name NAME] [--force]"
 )
 
 func parseServerSetup(arguments []string) (serverSetup, error) {
@@ -164,6 +165,12 @@ func parseAgentSetup(arguments []string) (agentSetup, error) {
 				return options, errors.New(agentSetupUsage)
 			}
 			options.tokenFile = arguments[index+1]
+			index++
+		case "--name":
+			if index+1 >= len(arguments) {
+				return options, errors.New(agentSetupUsage)
+			}
+			options.name = arguments[index+1]
 			index++
 		default:
 			// A token on the command line would be visible to every user in
@@ -483,7 +490,7 @@ func setupServerAgent(account *user.User, listen string, options serverSetup, ou
 	if token == "" {
 		return "", errors.New("deaconguard token create printed no token")
 	}
-	config, err := agent.Enroll(context.Background(), token, path, true)
+	config, err := agent.Enroll(context.Background(), token, path, true, "")
 	if err != nil {
 		return "", err
 	}
@@ -753,11 +760,16 @@ func enrollForSetup(options agentSetup, output, diagnostics io.Writer) (bool, er
 			clear(secret)
 		}
 		// An unreadable or incomplete configuration is replaced.
-		config, err := agent.Enroll(context.Background(), token, path, options.force || !enrolled)
+		name := enrollName(options.name)
+		config, err := agent.Enroll(context.Background(), token, path, options.force || !enrolled, name)
 		if err != nil {
 			return false, err
 		}
-		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\n", local.Hostname(), config.ServerURL, config.HostID)
+		what := local.Hostname()
+		if name != "" {
+			what = fmt.Sprintf("%s (%s)", name, what)
+		}
+		fmt.Fprintf(output, "Enrolled %s with %s as host %s.\n", what, config.ServerURL, config.HostID)
 		changed = true
 	}
 	return changed, nil

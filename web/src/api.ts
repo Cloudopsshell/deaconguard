@@ -21,7 +21,12 @@ export interface SeverityCounts {
 
 export interface Host {
   id: string;
+  /** What the host is called: its display name, else its hostname. */
   address: string;
+  /** What its machine calls itself, which its agent reports. */
+  hostname: string;
+  /** The display name given to it, if any (1.18.0 and later). */
+  name: string;
   username: string;
   allow_sudo: boolean;
   /** "local" is the machine DeaconGuard runs on; "agent" machines run the DeaconGuard agent and
@@ -1308,6 +1313,7 @@ export const api = {
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   setAutoScanContainers: (hostId: string, on: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { auto_scan_containers: on }),
+  renameHost: (hostId: string, name: string) => request<Host>("PATCH", `/api/hosts/${hostId}`, { name }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
   prompts: () => request<Prompt[]>("GET", "/api/prompts"),
   activity: () => request<Activity[]>("GET", "/api/activity"),

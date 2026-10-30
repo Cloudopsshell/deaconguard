@@ -300,6 +300,10 @@ A reusable token enrolls any number of machines until it expires, after 1 to 365
 
 An agent given a token in its environment, `DEACONGUARD_ENROLL_TOKEN_FILE` or `DEACONGUARD_ENROLL_TOKEN`, as the DaemonSet and Compose agents are, enrolls by itself when it isn't enrolled yet. It enrolls again when the token is for a server with another certificate, such as a reinstalled one, or when the server no longer knows it. So removing a node's host on the server while its DaemonSet runs enrolls it again; revoke the token first to stop that.
 
+### Names
+
+A host is shown by its machine's hostname, such as `ip-10-92-0-178` on Amazon EC2. To show it as `payments-api-prod` instead, click **Rename** on its page, or enroll it with `DEACONGUARD_NAME=payments-api-prod` (or `--name`). The name is used everywhere the host is named, including notifications; the hostname stays under it, and the name stays when the hostname changes. See [Names](https://docs.deaconguard.io/usage/agents#names).
+
 The agent stores its own credential in `/etc/deaconguard/agent.json`, readable by root only. Removing the host on the server revokes that credential at once, and the agent service then stops. Use `deaconguard agent status` on the machine to see where it is enrolled, and `journalctl -u deaconguard-agent` to see what it did.
 
 The agent runs the checks and sends back the package list. The server evaluates the list against the advisories, so a compromised or modified agent can report false check results, but it cannot supply its own vulnerability verdicts.

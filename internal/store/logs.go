@@ -146,15 +146,15 @@ func Logs(query LogQuery) ([]LogEntry, bool, error) {
 	}
 	if query.Search != "" {
 		pattern := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(query.Search) + "%"
-		conditions = append(conditions, `(logs.message LIKE ? ESCAPE '\' OR COALESCE(hosts.address, '') LIKE ? ESCAPE '\')`)
-		arguments = append(arguments, pattern, pattern)
+		conditions = append(conditions, `(logs.message LIKE ? ESCAPE '\' OR COALESCE(NULLIF(hosts.display_name, ''), hosts.address, '') LIKE ? ESCAPE '\' OR COALESCE(hosts.address, '') LIKE ? ESCAPE '\')`)
+		arguments = append(arguments, pattern, pattern, pattern)
 	}
 	if query.Before > 0 {
 		conditions = append(conditions, "logs.id < ?")
 		arguments = append(arguments, query.Before)
 	}
 	arguments = append(arguments, query.Limit+1)
-	rows, err := db.Query(`SELECT logs.id, logs.at, logs.source, logs.host_id, COALESCE(hosts.address, ''), logs.level, logs.message
+	rows, err := db.Query(`SELECT logs.id, logs.at, logs.source, logs.host_id, COALESCE(NULLIF(hosts.display_name, ''), hosts.address, ''), logs.level, logs.message
 		FROM logs LEFT JOIN hosts ON hosts.id = logs.host_id
 		WHERE `+strings.Join(conditions, " AND ")+` ORDER BY logs.id DESC LIMIT ?`, arguments...)
 	if err != nil {

@@ -14,6 +14,7 @@ upgrade notes.
 - **New configuration findings:** a new event for medium or worse findings of the security configuration check that its previous run didn't have, such as SSH starting to accept passwords.
 - **Scan results:** a new event, off unless ticked, that sums up every host scan or audit when it finishes, a line per check, even when nothing is found.
 - The digest counts the running containers' images and their known exploited and critical vulnerabilities with a fix.
+- **Host names:** give a host a name of your own, shown instead of its machine's hostname (such as `ip-10-92-0-178` on EC2) on the dashboard, in reports, logs and notifications: **Rename** on the host's page, `DEACONGUARD_NAME` or `--name` when enrolling, or `{"name": …}` through the API. The hostname stays visible under it, and the name stays when the hostname changes. Database schema 28.
 - The API reference lists the notification and maintenance window endpoints.
 
 ### Fixed

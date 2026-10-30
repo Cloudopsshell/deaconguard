@@ -8,6 +8,7 @@ description: Environment variables DeaconGuard and its install script read.
 | Variable | Effect |
 | --- | --- |
 | `DEACONGUARD_TOKEN` | Install an agent and enroll it with this token. The script passes it to setup through a private temporary file, never on a command line. |
+| `DEACONGUARD_NAME` | With `DEACONGUARD_TOKEN`: the [name](../usage/agents.md#names) the dashboard shows the host as, instead of its hostname. |
 | `DEACONGUARD_REGISTRY_USERNAME`, `DEACONGUARD_REGISTRY_PASSWORD` | A login for [`deaconguard image scan`](../usage/images.md#registries-and-logins): a username and a token or password with pull access to the image's registry. |
 | `DEACONGUARD_REGISTRY` | The registry host that login is for, such as `registry.gitlab.com`. When it is set, the login is sent to that registry only, never to another, such as Docker Hub for a public image. The [GitLab template](../usage/ci-cd.md#gitlab-ci) sets it to `$CI_REGISTRY`. |
 | `DEACONGUARD_VERSION` | Install this release, for example `@RELEASE@`, instead of the latest. |
@@ -25,6 +26,7 @@ curl -fsSL https://get.deaconguard.io | DEACONGUARD_VERSION=@RELEASE@ DEACONGUAR
 | `DEACONGUARD_HOME` | The data directory. Default: `/var/lib/deaconguard` for the server service, `~/.local/share/deaconguard` otherwise. |
 | `DEACONGUARD_AGENT_CONFIG` | The agent's configuration file. Default: `/etc/deaconguard/agent.json` for root. |
 | `DEACONGUARD_TOKEN` | Read by `deaconguard setup agent` when no `--token-file` is given. |
+| `DEACONGUARD_NAME` | Read by `deaconguard setup agent` and `deaconguard agent enroll` when no `--name` is given, and by `deaconguard agent run` when it enrolls itself: the host's [name](../usage/agents.md#names) on the dashboard. |
 
 ## Containers
 
