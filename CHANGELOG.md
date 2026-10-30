@@ -8,6 +8,19 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Notifications for running containers:** a containers scan now sends **Known exploited vulnerabilities** and **New critical vulnerabilities** when the images running on a host have ones its previous containers scan didn't, by image: a container started again from the same image isn't news. Before, containers scans sent nothing.
+- **New configuration findings:** a new event for medium or worse findings of the security configuration check that its previous run didn't have, such as SSH starting to accept passwords.
+- **Scan results:** a new event, off unless ticked, that sums up every host scan or audit when it finishes, a line per check, even when nothing is found.
+- The digest counts the running containers' images and their known exploited and critical vulnerabilities with a fix.
+- **Host names:** give a host a name of your own, shown instead of its machine's hostname (such as `ip-10-92-0-178` on EC2) on the dashboard, in reports, logs and notifications: **Rename** on the host's page, `DEACONGUARD_NAME` or `--name` when enrolling, or `{"name": …}` through the API. The hostname stays visible under it, and the name stays when the hostname changes. Database schema 28.
+- The API reference lists the notification and maintenance window endpoints.
+
+### Fixed
+
+- An agent running a long scan, such as an audit, was reported as offline after 2 minutes, and came back when the scan finished. The server now waits while it runs a scan; if the agent never finishes it, the scan fails as before. Scan progress and results also count as checking in.
+
 ## [1.17.1] - 2026-10-30
 
 ### Fixed

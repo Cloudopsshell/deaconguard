@@ -29,23 +29,41 @@ const selectClass =
   "mt-1 block w-full rounded-lg border-0 bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600 dark:bg-slate-950 dark:ring-slate-700";
 
 const eventMeta: Record<NotificationEvent, { label: string; detail: string }> = {
-  exploited: { label: "Known exploited vulnerabilities", detail: "A host has vulnerabilities in CISA's KEV catalog it didn't have at its last scan" },
-  critical: { label: "New critical vulnerabilities", detail: "A host has new critical vulnerabilities an update fixes" },
+  exploited: {
+    label: "Known exploited vulnerabilities",
+    detail: "A host, or a container running on it, has vulnerabilities in CISA's KEV catalog it didn't have at its last scan",
+  },
+  critical: { label: "New critical vulnerabilities", detail: "A host or its running containers have new critical vulnerabilities an update fixes" },
   malware: { label: "Malware", detail: "A scan found malware or signs of compromise" },
   integrity: { label: "Changed system files", detail: "System files differ from what their packages installed" },
   cluster: { label: "New cluster findings", detail: "A Kubernetes cluster has new critical or high findings, such as a privileged workload" },
   exposure: { label: "New network findings", detail: "A network scan found new critical or high findings, such as an exposed database or an expiring certificate" },
+  config: { label: "New configuration findings", detail: "A host's security configuration has new medium or worse findings, such as SSH starting to accept passwords" },
   image_report: {
     label: "Image scan reports",
     detail: "A watched repository's new push was scanned: its counts, what changed since the previous build, and the most urgent vulnerabilities. Each watch chooses which pushes, and to which channels",
   },
   scan_failed: { label: "Failed scans", detail: "A scan failed, so its host's results are out of date" },
+  scan_results: { label: "Scan results", detail: "Every host scan that finishes, with a line per check, even when nothing is found" },
   audit: { label: "Audits", detail: "An audit finished, with its grade" },
   agent_offline: { label: "Agents offline", detail: "An agent stopped checking in" },
   digest: { label: "Digest", detail: "A summary of every host, daily or weekly; email attaches the open vulnerabilities as CSV" },
 };
 
-const instantEvents: NotificationEvent[] = ["exploited", "critical", "malware", "integrity", "cluster", "exposure", "image_report", "scan_failed", "audit", "agent_offline"];
+const instantEvents: NotificationEvent[] = [
+  "exploited",
+  "critical",
+  "malware",
+  "integrity",
+  "cluster",
+  "exposure",
+  "config",
+  "image_report",
+  "scan_failed",
+  "scan_results",
+  "audit",
+  "agent_offline",
+];
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** The editable fields of a channel, with saved secrets left empty so the server keeps them. */

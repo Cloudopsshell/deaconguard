@@ -1,6 +1,6 @@
 ---
 title: Notifications
-description: Email, Slack, Microsoft Teams and webhook notifications for newly exploited vulnerabilities, malware, failed scans and offline agents, and daily or weekly digests.
+description: Email, Slack, Microsoft Teams and webhook notifications for newly exploited vulnerabilities on hosts and in their containers, malware, configuration changes, failed scans and offline agents, a summary of every scan, and daily or weekly digests.
 ---
 
 DeaconGuard tells you when something needs attention, so you don't have to watch the dashboard. Admins set it up under **Settings → Notifications**.
@@ -28,23 +28,25 @@ For Jira and ServiceNow, choose the events that need someone to act, such as kno
 
 | Event | Sent when | Urgency |
 | --- | --- | --- |
-| Known exploited vulnerabilities | A host, or a [registry image](./images.md), has vulnerabilities in CISA's [KEV catalog](./vulnerabilities.md) that its previous scan didn't. | Critical |
-| New critical vulnerabilities | A host has new critical vulnerabilities an update fixes, or an image new critical ones a rebuild fixes. | Warning |
+| Known exploited vulnerabilities | A host, a container running on it, or a [registry image](./images.md) has vulnerabilities in CISA's [KEV catalog](./vulnerabilities.md) that its previous scan didn't. | Critical |
+| New critical vulnerabilities | A host has new critical vulnerabilities an update fixes, or its [running containers](./containers.md) or an image new critical ones a rebuild fixes. | Warning |
 | Malware | A scan finds malware or signs of compromise. | Critical |
 | Changed system files | System files differ from what their packages installed. | Critical |
 | New cluster findings | A [Kubernetes cluster](./kubernetes.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a privileged workload. | Critical, or Warning for high only |
+| New configuration findings | A host's [security configuration](../checks.md) has medium, high or critical findings its previous configuration check didn't, such as SSH starting to accept passwords. Low ones, such as automatic updates being off, aren't sent. | Critical, or Warning |
 | New network findings | A [network target](./network.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a database that now answers on the network or a certificate about to expire. | Critical, or Warning for high only |
 | Image scan reports | A [watched repository](./images.md#reports-of-new-pushes)'s new push was scanned: its counts, what changed since the previous build, and the most urgent vulnerabilities. Each watch chooses which pushes it reports, and to which of these channels. | Critical for critical or known exploited, Warning for high, else Info |
 | Failed scans | A scan of a host, an image or a network target fails, so its results are out of date. | Warning |
+| Scan results | Every host scan or audit that finishes, even when it finds nothing: a line per check, such as "Malware & compromise indicators: nothing found". Off unless you tick it, as it sends a message for every scan. | Warning when a check found something critical or high, else Info |
 | Audits | An [audit](./audits.md) finishes, with its grade and what holds it back. | Warning for D and F |
-| Agents offline | An agent stops checking in for 2 minutes. | Warning |
+| Agents offline | An agent stops checking in for 2 minutes. An agent running a scan, which can take many minutes, isn't counted as offline; if it never finishes, the scan fails instead. | Warning |
 | Digest | Daily, or weekly on chosen days, at a time in a time zone. | |
 
-Only what is new is sent: a vulnerability already reported for a host or an image isn't reported again by its next scan. Image notifications go to every channel subscribed to the event, whatever its tags, since images have no tags; image scan reports go only to the channels a watch chose, when it chose some. Malware and changed system files are reported by every scan that finds them.
+Only what is new is sent: a vulnerability already reported for a host, a container image running on it, or a registry image isn't reported again by its next scan, and neither is a configuration finding. A container started again from the same image isn't news either. So turning a channel on doesn't send what earlier scans found: the [digest](#the-digest) sums that up, or tick **Scan results** to hear from every scan. Image notifications go to every channel subscribed to the event, whatever its tags, since images have no tags; image scan reports go only to the channels a watch chose, when it chose some. Malware and changed system files are reported by every scan that finds them.
 
 ## The digest
 
-The digest sums up every host, or only the channel's tagged hosts: how many have results, which weren't scanned in the last 7 days or failed their last scan, what to fix now by severity, and how many vulnerabilities are known or likely to be exploited, with the known exploited ones to fix first. By email it attaches every open vulnerability as a CSV file, one row per host and package, with severity, CVSS, EPSS and whether it is known exploited.
+The digest sums up every host, or only the channel's tagged hosts: how many have results, which weren't scanned in the last 7 days or failed their last scan, what to fix now by severity, and how many vulnerabilities are known or likely to be exploited, with the known exploited ones to fix first. For hosts with running containers, it adds how many images they run and how many known exploited and critical vulnerabilities with a fix those images have, each image once per host. By email it attaches every open vulnerability as a CSV file, one row per host and package, with severity, CVSS, EPSS and whether it is known exploited.
 
 ## Links
 
@@ -81,7 +83,7 @@ DeaconGuard POSTs `application/json`:
 }
 ```
 
-`event` is `exploited`, `critical`, `malware`, `integrity`, `cluster`, `exposure`, `image_report`, `scan_failed`, `audit`, `agent_offline`, `digest` or `test`; `level` is `critical`, `warning` or `info`. Each request carries `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp` (Unix seconds).
+`event` is `exploited`, `critical`, `malware`, `integrity`, `cluster`, `exposure`, `config`, `image_report`, `scan_failed`, `scan_results`, `audit`, `agent_offline`, `digest` or `test`; `level` is `critical`, `warning` or `info`. Each request carries `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp` (Unix seconds).
 
 ### Checking the signature
 
@@ -101,3 +103,7 @@ def genuine(secret: bytes, headers, body: bytes) -> bool:
 ## Secrets
 
 Mail passwords, webhook addresses (which are secrets themselves for Slack and Teams) and signing secrets are kept in the server's database, readable only by the `deaconguard` user. The dashboard never shows them again: editing a channel keeps them unless you type new ones. Keep [backups](./backup-and-restore.md) as safe as the server. Adding, changing, testing and removing channels are recorded in the audit log.
+
+## Setting up channels from a script
+
+The dashboard's page uses the [API](../reference/api.md#notifications), which an admin's API token can use too, for example to set up the same channels on several servers.

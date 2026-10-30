@@ -120,8 +120,9 @@ func saveConfig(path string, config Config) error {
 }
 
 // Enroll spends token and saves the agent's configuration at path. An existing
-// enrollment is replaced only when replace is set.
-func Enroll(ctx context.Context, tokenText, path string, replace bool) (Config, error) {
+// enrollment is replaced only when replace is set. name, if not empty, is
+// what the server shows the host as instead of its hostname.
+func Enroll(ctx context.Context, tokenText, path string, replace bool, name string) (Config, error) {
 	token, err := agentapi.ParseToken(tokenText)
 	if err != nil {
 		return Config{}, err
@@ -140,7 +141,7 @@ func Enroll(ctx context.Context, tokenText, path string, replace bool) (Config, 
 		return Config{}, err
 	}
 	request := agentapi.EnrollRequest{
-		Secret: token.Secret, Hostname: local.Hostname(), Username: local.Username(), OS: osName(), Version: buildinfo.Version,
+		Secret: token.Secret, Hostname: local.Hostname(), Username: local.Username(), OS: osName(), Version: buildinfo.Version, Name: name,
 	}
 	if cluster != "" {
 		request.Hostname, request.Username, request.OS, request.Kind = cluster, "kubernetes", "Kubernetes", store.KindCluster

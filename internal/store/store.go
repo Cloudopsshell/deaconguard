@@ -10,8 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
 
@@ -19,8 +22,14 @@ import (
 )
 
 type Host struct {
-	ID       string `json:"id"`
-	Address  string `json:"address"`
+	ID string `json:"id"`
+	// Address is what the host is called: its display name when it has one,
+	// else its machine's hostname (or a cluster's name).
+	Address string `json:"address"`
+	// Hostname is what its machine calls itself, which its agent reports on
+	// every check-in; Name the display name someone gave it, if any.
+	Hostname string `json:"hostname"`
+	Name     string `json:"name"`
 	Username string `json:"username"`
 	// AllowSudo lets deeper checks run fixed read-only commands through sudo.
 	AllowSudo bool `json:"allow_sudo"`
@@ -276,6 +285,11 @@ func migrate(db *sql.DB) error {
 	}
 	if version < 27 {
 		if err := execInTx(db, schemaV27); err != nil {
+			return err
+		}
+	}
+	if version < 28 {
+		if err := execInTx(db, schemaV28); err != nil {
 			return err
 		}
 	}
@@ -780,6 +794,12 @@ CREATE TABLE repository_tags (
 ALTER TABLE images ADD COLUMN repository_watch_id TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 27;`
 
+// schemaV28 adds display names: what a host is shown as instead of its
+// machine's hostname.
+const schemaV28 = `
+ALTER TABLE hosts ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
+PRAGMA user_version = 28;`
+
 const schemaV26 = `
 ALTER TABLE users ADD COLUMN oidc_subject TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX users_by_oidc_subject ON users(oidc_subject) WHERE oidc_subject != '';
@@ -912,7 +932,7 @@ func ListHosts() ([]Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query("SELECT id, address, username, allow_sudo, transport, auto_scan_containers, kind FROM hosts ORDER BY created_at, rowid")
+	rows, err := db.Query("SELECT " + hostColumns + " FROM hosts ORDER BY created_at, rowid")
 	if err != nil {
 		return nil, err
 	}
@@ -932,12 +952,68 @@ type rowScanner interface {
 	Scan(destinations ...any) error
 }
 
+const hostColumns = "id, address, display_name, username, allow_sudo, transport, auto_scan_containers, kind"
+
 func scanHost(row rowScanner) (Host, error) {
 	var host Host
-	if err := row.Scan(&host.ID, &host.Address, &host.Username, &host.AllowSudo, &host.Transport, &host.AutoScanContainers, &host.Kind); err != nil {
+	if err := row.Scan(&host.ID, &host.Hostname, &host.Name, &host.Username, &host.AllowSudo, &host.Transport, &host.AutoScanContainers, &host.Kind); err != nil {
 		return Host{}, err
 	}
+	host.Address = host.Hostname
+	if host.Name != "" {
+		host.Address = host.Name
+	}
 	return host, nil
+}
+
+// MaxHostName is the longest display name, in characters.
+const MaxHostName = 80
+
+// CleanHostName trims a display name and checks it: at most MaxHostName
+// characters, on one line.
+func CleanHostName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if utf8.RuneCountInString(name) > MaxHostName {
+		return "", fmt.Errorf("a name has at most %d characters", MaxHostName)
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return "", errors.New("a name can't have line breaks or other control characters")
+		}
+	}
+	return name, nil
+}
+
+// SetHostName gives a host a display name, or with "" takes it away, so it
+// is called by its hostname again. Its past scans are called by it too.
+func SetHostName(id, name string) (Host, error) {
+	name, err := CleanHostName(name)
+	if err != nil {
+		return Host{}, err
+	}
+	db, err := database()
+	if err != nil {
+		return Host{}, err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return Host{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec("UPDATE hosts SET display_name = ? WHERE id = ?", name, id)
+	if err != nil {
+		return Host{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return Host{}, fmt.Errorf("unknown host ID: %s", id)
+	}
+	if _, err := tx.Exec("UPDATE scans SET address = (SELECT COALESCE(NULLIF(display_name, ''), address) FROM hosts WHERE hosts.id = scans.host_id) WHERE host_id = ?", id); err != nil {
+		return Host{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Host{}, err
+	}
+	return GetHost(id)
 }
 
 // ErrLocalHostExists is returned when this machine is already registered.
@@ -970,7 +1046,7 @@ func AddLocalHost(hostname, username string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	host := Host{ID: id, Address: hostname, Username: username, Transport: TransportLocal, Kind: LocalHostKind()}
+	host := Host{ID: id, Address: hostname, Hostname: hostname, Username: username, Transport: TransportLocal, Kind: LocalHostKind()}
 	if err := insertHost(db, host); err != nil {
 		return Host{}, err
 	}
@@ -991,7 +1067,7 @@ func GetHost(id string) (Host, error) {
 	if err != nil {
 		return Host{}, err
 	}
-	host, err := scanHost(db.QueryRow("SELECT id, address, username, allow_sudo, transport, auto_scan_containers, kind FROM hosts WHERE id = ?", id))
+	host, err := scanHost(db.QueryRow("SELECT "+hostColumns+" FROM hosts WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Host{}, fmt.Errorf("unknown host ID: %s", id)
 	}

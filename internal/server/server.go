@@ -700,6 +700,8 @@ func (s *Server) addHost(w http.ResponseWriter, r *http.Request) {
 type updateHostRequest struct {
 	AllowSudo          *bool `json:"allow_sudo"`
 	AutoScanContainers *bool `json:"auto_scan_containers"`
+	// Name is the host's display name; "" goes back to its hostname.
+	Name *string `json:"name"`
 }
 
 func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
@@ -707,7 +709,7 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &request) {
 		return
 	}
-	if request.AllowSudo == nil && request.AutoScanContainers == nil {
+	if request.AllowSudo == nil && request.AutoScanContainers == nil && request.Name == nil {
 		writeError(w, http.StatusBadRequest, errors.New("nothing to update"))
 		return
 	}
@@ -730,6 +732,21 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
 			what = "scan the cluster when it changes"
 		}
 		s.audit(r, "host.containers", host.Address, fmt.Sprintf("%s: %t", what, *request.AutoScanContainers))
+	}
+	if request.Name != nil {
+		before, err := store.GetHost(r.PathValue("id"))
+		if err != nil {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		if host, err = store.SetHostName(before.ID, *request.Name); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if before.Address != host.Address {
+			s.audit(r, "host.rename", host.Address, fmt.Sprintf("was %s; hostname %s", before.Address, host.Hostname))
+			serverLog(host.ID, store.LogInfo, "%s renamed %s to %s", s.actor(r), before.Address, host.Address)
+		}
 	}
 	writeJSON(w, http.StatusOK, host)
 }

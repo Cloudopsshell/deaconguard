@@ -48,7 +48,7 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `GET /api/summary` | Viewer | The dashboard's numbers: hosts, what to fix, known exploited, overdue |
 | `GET /api/hosts` | Viewer | Every host with its latest results and tags |
 | `GET /api/hosts/{id}` | Viewer | One host, with its scan history |
-| `PATCH /api/hosts/{id}` | Operator | Change a host's settings: `{"auto_scan_containers": true}` for an agent's [automatic container scans](../usage/containers.md#scan-new-containers-automatically), or `{"allow_sudo": true}` for this machine |
+| `PATCH /api/hosts/{id}` | Operator | Change a host's settings: `{"name": "payments-api-prod"}` for its [display name](../usage/agents.md#names) (`""` shows its hostname again), `{"auto_scan_containers": true}` for an agent's [automatic container scans](../usage/containers.md#scan-new-containers-automatically), or `{"allow_sudo": true}` for this machine. Hosts have `address` (what they are called), `hostname` and `name` |
 | `POST /api/hosts/{id}/scans` | Operator | Start a scan: `{"checks": ["packages", "libraries", "containers", "integrity", "malware", "config", "hardening", "antivirus"]}` |
 | `GET /api/diagnostics/cpu?seconds=30` | Admin | A CPU profile of the server over the next 5 to 60 seconds (30 by default), as a `.pprof` file for `go tool pprof` |
 | `POST /api/hosts/{id}/audits` | Operator | Start a [server audit](../usage/audits.md): `{}` |
@@ -85,6 +85,22 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `GET /api/trends?days=90&tag=prod` | Viewer | Open vulnerabilities per day |
 | `POST /api/reports` | Operator | Create a [report](../usage/reports.md) of a scan or audit |
 | `GET /api/reports/{id}/download?format=pdf` | Viewer | Download a report as `pdf`, `html`, `xlsx`, `csv` or `json` |
+
+## Notifications
+
+Admins set up [notifications](../usage/notifications.md) with these, as the dashboard's **Settings → Notifications** page does:
+
+| Method and path | Role | Does |
+| --- | --- | --- |
+| `GET /api/notifications` | Admin | The channels, with their secrets left out; the last 100 messages sent and how each went; the dashboard's address; and the events a channel can take |
+| `POST /api/notifications/channels` | Admin | Add a channel: `{"name": "Security team", "kind": "slack", "config": {"url": "https://hooks.slack.com/…"}, "events": ["exploited", "critical", "malware", "config"], "tags": [], "digest": "daily", "digest_time": "08:00", "timezone": "UTC"}`. `kind` is `email`, `slack`, `teams`, `webhook`, `syslog`, `splunk`, `jira` or `servicenow`; `config` takes what that kind needs, as on [Channels](../usage/notifications.md#channels); `events` are the ones under [Events](../usage/notifications.md#events), by their webhook names; `digest` is `none`, `daily` or `weekly` (with `digest_days`, 0 for Sunday) |
+| `PATCH /api/notifications/channels/{id}` | Admin | Change a channel: send every field, as when adding it, and `"enabled": false` to turn it off; secrets left empty are kept |
+| `DELETE /api/notifications/channels/{id}` | Admin | Remove a channel |
+| `POST /api/notifications/channels/{id}/test` | Admin | Send a test message now and answer whether it arrived |
+| `PUT /api/notifications/settings` | Admin | Set the dashboard's address, for links in messages: `{"dashboard_url": "https://deaconguard.example.com"}` |
+| `GET /api/maintenance` | Viewer | The [maintenance windows](../usage/notifications.md#maintenance-windows) |
+| `POST /api/maintenance` | Operator | Add one: `{"name": "Patching", "tags": ["prod"], "starts_at": "2026-11-01T22:00:00Z", "ends_at": "2026-11-02T02:00:00Z", "skip_scans": true}`; no `tags` means every host |
+| `DELETE /api/maintenance/{id}` | Operator | End or remove a maintenance window |
 
 For example, fail a pipeline when a host has a known exploited vulnerability with a fix:
 

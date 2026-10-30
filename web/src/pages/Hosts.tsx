@@ -155,6 +155,11 @@ function HostRow({ host }: { host: HostSummary }) {
           </Link>
           {host.this_server && <ThisServerBadge />}
         </div>
+        {host.name && host.hostname && host.hostname !== host.name && (
+          <p className="font-mono text-xs text-slate-500 dark:text-slate-400" title="Hostname">
+            {host.hostname}
+          </p>
+        )}
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {host.transport === "agent" && (
             <span

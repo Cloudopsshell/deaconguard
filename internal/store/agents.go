@@ -203,6 +203,8 @@ type AgentEnrollment struct {
 	// Kind is KindCluster for a cluster agent; empty is a machine.
 	Kind     string
 	Hostname string
+	// Name is the display name given at enrollment, if any.
+	Name     string
 	Username string
 	Version  string
 	OS       string
@@ -248,9 +250,13 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 	} else if strings.HasPrefix(enrollment.OS, "macOS") {
 		kind = KindMac
 	}
-	host := Host{ID: id, Address: enrollment.Hostname, Username: enrollment.Username, Transport: TransportAgent, AllowSudo: true, Kind: kind}
-	if _, err := tx.Exec(`INSERT INTO hosts (id, address, username, transport, allow_sudo, kind, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)`,
-		host.ID, host.Address, host.Username, host.Transport, host.Kind, now); err != nil {
+	host := Host{ID: id, Address: enrollment.Hostname, Hostname: enrollment.Hostname, Name: enrollment.Name, Username: enrollment.Username,
+		Transport: TransportAgent, AllowSudo: true, Kind: kind}
+	if host.Name != "" {
+		host.Address = host.Name
+	}
+	if _, err := tx.Exec(`INSERT INTO hosts (id, address, display_name, username, transport, allow_sudo, kind, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+		host.ID, host.Hostname, host.Name, host.Username, host.Transport, host.Kind, now); err != nil {
 		return Host{}, "", err
 	}
 	if _, err := tx.Exec(`INSERT INTO agents (host_id, credential_hash, enrolled_at, last_seen_at, version, os, remote)

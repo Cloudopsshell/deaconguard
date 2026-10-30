@@ -91,7 +91,13 @@ func (h *agentHub) stop() {
 func (h *agentHub) expire() {
 	expired, _ := store.ExpireQueuedScans(time.Now().Add(-queuedScanTimeout),
 		fmt.Sprintf("the agent did not pick up the scan within %s; check that it is running", queuedScanTimeout))
-	h.presence.sweep(time.Now())
+	h.mu.Lock()
+	busy := map[string]bool{}
+	for _, active := range h.active {
+		busy[active.host.ID] = true
+	}
+	h.mu.Unlock()
+	h.presence.sweep(time.Now(), busy)
 	for _, id := range expired {
 		if record, err := store.GetScan(id); err == nil {
 			serverLog(record.HostID, store.LogWarning, "The agent on %s did not pick up its scan within %s; check that it is running", record.Address, queuedScanTimeout)
@@ -214,8 +220,13 @@ func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, errors.New("the agent reported an unknown kind"))
 			return
 		}
+		name, err := store.CleanHostName(request.Name)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 		host, credential, err := store.EnrollAgent(request.Secret, store.AgentEnrollment{
-			Kind: request.Kind, Hostname: request.Hostname, Username: limitText(request.Username, 64), Version: limitText(request.Version, 64),
+			Kind: request.Kind, Hostname: request.Hostname, Name: name, Username: limitText(request.Username, 64), Version: limitText(request.Version, 64),
 			OS: limitText(request.OS, 128), Remote: remote,
 		})
 		if errors.Is(err, store.ErrInvalidEnrollmentToken) {
@@ -302,7 +313,10 @@ func (h *agentHub) scanNewContainers(host store.Host, version string, count int)
 func (h *agentHub) job(w http.ResponseWriter, r *http.Request, host store.Host) {
 	if hostname := r.Header.Get(agentapi.HeaderHostname); store.ValidHostname(hostname) {
 		store.UpdateAgentHost(host.ID, hostname, limitText(r.Header.Get(agentapi.HeaderUsername), 64), limitText(r.Header.Get(agentapi.HeaderOS), 128))
-		host.Address = hostname
+		host.Hostname = hostname
+		if host.Name == "" {
+			host.Address = hostname
+		}
 	}
 	h.presence.checkIn(host)
 	defer h.presence.checkIn(host)
@@ -376,6 +390,8 @@ func (h *agentHub) events(w http.ResponseWriter, r *http.Request, host store.Hos
 		writeError(w, http.StatusConflict, errors.New("this agent is not running that scan"))
 		return
 	}
+	// Reporting on its scan is checking in too.
+	h.presence.checkIn(host)
 	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
 	var batch agentapi.Events
 	if !readJSON(w, r, &batch) {
@@ -406,6 +422,7 @@ func (h *agentHub) result(w http.ResponseWriter, r *http.Request, host store.Hos
 		writeError(w, http.StatusConflict, errors.New("this agent is not running that scan"))
 		return
 	}
+	h.presence.checkIn(host)
 	r.Body = http.MaxBytesReader(w, r.Body, agentapi.MaxResultBytes)
 	var result agentapi.Result
 	if !readJSON(w, r, &result) {
