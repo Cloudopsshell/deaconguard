@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"deaconguard/internal/checks"
 	"deaconguard/internal/notify"
 	"deaconguard/internal/store"
 )
@@ -339,4 +340,178 @@ func TestOverdueCountsEachCVEOncePerHost(t *testing.T) {
 	if !result.SLA.Enabled || result.SLA.Overdue != 1 || result.SLA.HostsOverdue != 1 {
 		t.Fatalf("sla: %+v", result.SLA)
 	}
+}
+
+// completeChecks stores a successful scan of host with these check results.
+func completeChecks(t *testing.T, host store.Host, results map[string]any) store.Scan {
+	t.Helper()
+	ids := make([]string, 0, len(results))
+	for id := range results {
+		ids = append(ids, id)
+	}
+	ids, err := checks.Normalize(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.CreateScan(host, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteScan(record.ID, map[string]any{"host_id": host.ID, "checks_run": ids, "check_results": results}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond) // scans started within one second sort by their IDs
+	record, _ = store.GetScan(record.ID)
+	return record
+}
+
+func containerResult(containers ...map[string]any) map[string]any {
+	return map[string]any{"status": "completed", "notes": []string{}, "findings": []any{}, "containers": containers}
+}
+
+func container(name, image string, findings ...map[string]any) map[string]any {
+	return map[string]any{"id": name, "name": name, "image": image, "state": "running", "findings": findings,
+		"severity": map[string]int{}, "exploited": 0, "fixable": 0, "packages": 1, "libraries": 0}
+}
+
+func containerCVE(cve, severity string, exploited, fixable bool) map[string]any {
+	return map[string]any{"rule": cve, "severity": severity, "title": cve, "detail": "", "evidence": "", "exploited": exploited, "fixable": fixable}
+}
+
+func TestContainerAndConfigFindingsAreNotified(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	h := newHook(t)
+	addChannel(t, s, cookie, map[string]any{"name": "slack", "kind": "webhook", "config": map[string]any{"url": h.server.URL},
+		"events": []string{"exploited", "critical", "config"}})
+	host, err := store.AddLocalHost("web-01", "root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliver := func() { s.deliverDue(context.Background(), time.Now()) }
+	kev := containerCVE("CVE-2023-44487", "HIGH", true, true)
+	critical := containerCVE("CVE-2024-6387", "CRITICAL", false, true)
+	unfixed := containerCVE("CVE-2024-0001", "CRITICAL", false, false)
+	passwords := map[string]any{"rule": "config.ssh-password-auth", "severity": "MEDIUM", "title": "SSH password login is enabled", "detail": "", "evidence": ""}
+	firewall := map[string]any{"rule": "config.firewall", "severity": "LOW", "title": "No host firewall", "detail": "", "evidence": ""}
+	config := func(findings ...map[string]any) map[string]any {
+		return map[string]any{"status": "completed", "notes": []string{}, "findings": findings}
+	}
+
+	first := completeChecks(t, host, map[string]any{
+		checks.Containers: containerResult(container("nginx", "nginx:1.27.0", kev, critical, unfixed), container("alpine", "alpine:3.22")),
+		checks.Config:     config(passwords, firewall),
+	})
+	s.scanFinished(host, first.ID, nil)
+	deliver()
+	if events := strings.Join(h.events(), ","); events != "exploited,critical,config" {
+		t.Fatalf("first scan: %s", events)
+	}
+	h.mu.Lock()
+	exploited, criticalMessage, configMessage := h.messages[0], h.messages[1], h.messages[2]
+	h.mu.Unlock()
+	if exploited["title"] != "web-01: 1 new vulnerability known to be exploited in running containers" ||
+		!strings.Contains(strings.Join(anyStrings(exploited["lines"]), "\n"), "nginx:1.27.0: CVE-2023-44487") {
+		t.Fatalf("exploited: %v", exploited)
+	}
+	// A critical vulnerability without a fix isn't reported as one with a fix.
+	if criticalMessage["title"] != "web-01: 1 new critical vulnerability with a fix in running containers" {
+		t.Fatalf("critical: %v", criticalMessage)
+	}
+	// Medium and up for configuration; the low finding is left out.
+	if configMessage["title"] != "web-01: 1 new configuration finding" || configMessage["level"] != notify.LevelWarning {
+		t.Fatalf("config: %v", configMessage)
+	}
+
+	// The same image restarted, under a new container, is not news; a new
+	// image with the same CVE is.
+	second := completeChecks(t, host, map[string]any{
+		checks.Containers: containerResult(container("nginx-2", "nginx:1.27.0", kev, critical), container("api", "api:7", kev)),
+		checks.Config:     config(passwords, firewall),
+	})
+	s.scanFinished(host, second.ID, nil)
+	deliver()
+	if events := h.events(); len(events) != 4 || events[3] != notify.EventExploited {
+		t.Fatalf("second scan: %v", events)
+	}
+	if title := h.last()["title"]; title != "web-01: 1 new vulnerability known to be exploited in running containers" ||
+		!strings.Contains(strings.Join(anyStrings(h.last()["lines"]), "\n"), "api:7: CVE-2023-44487") {
+		t.Fatalf("second: %v", h.last())
+	}
+}
+
+func TestScanResultsSumUpEveryScan(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	h := newHook(t)
+	addChannel(t, s, cookie, map[string]any{"name": "every scan", "kind": "webhook", "config": map[string]any{"url": h.server.URL},
+		"events": []string{"scan_results"}})
+	quiet := newHook(t)
+	addChannel(t, s, cookie, map[string]any{"name": "default", "kind": "webhook", "config": map[string]any{"url": quiet.server.URL},
+		"events": []string{"exploited", "malware", "config"}})
+	host, _ := store.AddLocalHost("web-01", "root")
+	clean := map[string]any{"status": "completed", "notes": []string{}, "findings": []any{}}
+	record := completeChecks(t, host, map[string]any{checks.Malware: clean, checks.Config: clean})
+	s.scanFinished(host, record.ID, nil)
+	s.deliverDue(context.Background(), time.Now())
+	if events := h.events(); len(events) != 1 || events[0] != notify.EventScanResults {
+		t.Fatalf("events: %v", events)
+	}
+	lines := strings.Join(anyStrings(h.last()["lines"]), "\n")
+	if !strings.HasPrefix(h.last()["title"].(string), "web-01: scan finished") || h.last()["level"] != notify.LevelInfo ||
+		!strings.Contains(lines, "Malware & compromise indicators: nothing found") || !strings.Contains(lines, "Security configuration: nothing found") {
+		t.Fatalf("summary: %v", h.last())
+	}
+	// A clean scan sends nothing to channels without the event.
+	if len(quiet.events()) != 0 {
+		t.Fatalf("quiet channel: %v", quiet.events())
+	}
+}
+
+func TestDigestCountsRunningContainers(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	h := newHook(t)
+	channel := addChannel(t, s, cookie, map[string]any{"name": "daily", "kind": "webhook", "config": map[string]any{"url": h.server.URL}, "digest": "daily", "digest_time": "08:00", "timezone": "UTC"})
+	host, _ := store.AddLocalHost("web-01", "root")
+	nginx := container("nginx", "nginx:1.27.0")
+	nginx["exploited"] = 3
+	nginx["fixable_severity"] = map[string]int{"CRITICAL": 2}
+	twin := container("nginx-b", "nginx:1.27.0")
+	twin["exploited"] = 3
+	completeChecks(t, host, map[string]any{checks.Containers: containerResult(nginx, twin, container("alpine", "alpine:3.22"))})
+	saved, _ := store.GetChannel(channel.ID)
+	message, err := digest(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Join(message.Lines, "\n")
+	if !strings.Contains(lines, "Running containers: 2 images on 1 host; 3 known exploited, 2 critical with a fix in the image.") || message.Level != notify.LevelWarning {
+		t.Fatalf("digest: %s (%s)", lines, message.Level)
+	}
+}
+
+func TestBusyAgentsAreNotOffline(t *testing.T) {
+	var quiet []string
+	p := presence{seen: map[string]presenceEntry{}, onQuiet: func(id, _ string, _ time.Time) { quiet = append(quiet, id) }}
+	p.seen["scanning"] = presenceEntry{address: "db-01", at: time.Now().Add(-10 * time.Minute)}
+	p.seen["gone"] = presenceEntry{address: "web-01", at: time.Now().Add(-10 * time.Minute)}
+	p.sweep(time.Now(), map[string]bool{"scanning": true})
+	if len(quiet) != 1 || quiet[0] != "gone" {
+		t.Fatalf("quiet: %v", quiet)
+	}
+	// Once its scan is over, a quiet agent counts as gone.
+	p.sweep(time.Now(), nil)
+	if len(quiet) != 2 || quiet[1] != "scanning" {
+		t.Fatalf("quiet: %v", quiet)
+	}
+}
+
+func anyStrings(value any) []string {
+	list, _ := value.([]any)
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		out = append(out, item.(string))
+	}
+	return out
 }

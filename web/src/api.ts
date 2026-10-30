@@ -262,8 +262,10 @@ export type NotificationEvent =
   | "integrity"
   | "cluster"
   | "exposure"
+  | "config"
   | "image_report"
   | "scan_failed"
+  | "scan_results"
   | "audit"
   | "agent_offline"
   | "digest";

@@ -67,7 +67,7 @@ Those [known to be exploited](./usage/vulnerabilities.md): DeaconGuard checks ev
 
 ### Can DeaconGuard email me, or post to Slack or Teams?
 
-Yes: add a channel under **Settings → Notifications** for email, Slack, Microsoft Teams or any webhook, and choose its events, such as newly exploited vulnerabilities, malware, failed scans, offline agents, or a daily or weekly digest. See [Notifications](./usage/notifications.md).
+Yes: add a channel under **Settings → Notifications** for email, Slack, Microsoft Teams or any webhook, and choose its events, such as newly exploited vulnerabilities on hosts and in their containers, malware, new configuration findings, failed scans, offline agents, a summary of every scan, or a daily or weekly digest. See [Notifications](./usage/notifications.md).
 
 ### Can I script DeaconGuard, or connect it to our SIEM or ticketing?
 
