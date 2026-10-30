@@ -75,4 +75,10 @@ The host's **Running containers** tab shows:
 
 The same findings, named after their container, are in [reports](./reports.md). Through the API, each container in the result has `findings` (those with a fix or known to be exploited, at most 300) and `vulnerabilities` (all of them, at most 1,000), each with `container`, `image`, `source` (`os` or `library`), `package`, `version`, `ecosystem`, `fixed`, `fixable`, `exploited` and `paths`.
 
+## Notifications
+
+A containers scan [notifies](./notifications.md#events) channels that take **Known exploited vulnerabilities** or **New critical vulnerabilities** when the images running on the host have ones its previous containers scan didn't (from 1.18.0). They are compared by image, so a container started again from the same image isn't news, and one already running when you add a channel isn't reported to it; the daily or weekly [digest](./notifications.md#the-digest) counts them all.
+
+## Fixing them
+
 The fix for a container is almost always a **new image**: rebuild it from an updated base image, or update the package in its Dockerfile, then redeploy. Updating packages inside a running container is lost when it restarts.

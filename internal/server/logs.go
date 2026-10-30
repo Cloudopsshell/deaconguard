@@ -75,12 +75,18 @@ func (p *presence) checkIn(host store.Host) {
 	}
 }
 
-// sweep logs agents that stopped checking in.
-func (p *presence) sweep(now time.Time) {
+// sweep logs agents that stopped checking in. An agent running a scan
+// (busy) doesn't ask for work until it is done, which can take many
+// minutes, so it isn't counted as gone; if it never reports back, the scan
+// fails instead.
+func (p *presence) sweep(now time.Time, busy map[string]bool) {
 	p.mu.Lock()
 	var quiet []presenceEntry
 	var ids []string
 	for id, entry := range p.seen {
+		if busy[id] {
+			continue
+		}
 		if now.Sub(entry.at) > agentOffline {
 			quiet = append(quiet, entry)
 			ids = append(ids, id)

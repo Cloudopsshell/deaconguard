@@ -1,7 +1,20 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarClock, ClipboardCheck, Container, FileText, Play, Ship, ShieldCheck, TerminalSquare, Trash2, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarClock,
+  ClipboardCheck,
+  Container,
+  FileText,
+  Pencil,
+  Play,
+  Ship,
+  ShieldCheck,
+  TerminalSquare,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { RunAuditDialog } from "../components/RunAuditDialog";
 import { GradeBadge } from "../lib/audit";
 import { useCan } from "../lib/role";
@@ -16,6 +29,7 @@ import {
   Dialog,
   EmptyState,
   ErrorMessage,
+  Field,
   Loading,
   PageHeader,
   StatusBadge,
@@ -41,6 +55,7 @@ export function HostDetail() {
   const canRemove = useCan("admin");
   const { hostId = "" } = useParams();
   const [removing, setRemoving] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [scanning, setScanning] = useState<{ initial?: CheckId[] } | null>(null);
   const [logScan, setLogScan] = useState<Scan | null>(null);
@@ -69,10 +84,24 @@ export function HostDetail() {
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             {data.address}
             {data.this_server && <ThisServerBadge />}
+            {canOperate && (
+              <button
+                type="button"
+                onClick={() => setRenaming(true)}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+              >
+                <Pencil className="size-3" aria-hidden /> Rename
+              </button>
+            )}
           </span>
         }
         description={
           <>
+            {data.name && data.hostname && data.hostname !== data.name && (
+              <span className="block">
+                {data.kind === "cluster" ? "Cluster" : "Hostname"}: <span className="font-mono">{data.hostname}</span>
+              </span>
+            )}
             {connectionLabel(data)}
             {data.last_report?.lifecycle && data.last_report.lifecycle.state !== "unknown" && (
               <span className="mt-1 flex flex-wrap items-center gap-1.5 text-sm">
@@ -297,6 +326,7 @@ export function HostDetail() {
       <ScanDialog host={data} open={scanning !== null} initial={scanning?.initial} onClose={() => setScanning(null)} />
       <ScanConsole host={data} requested={logScan} onRequestClosed={() => setLogScan(null)} />
       <RemoveHostDialog host={data} open={removing} onClose={() => setRemoving(false)} />
+      {renaming && <RenameDialog host={data} onClose={() => setRenaming(false)} />}
       <RunAuditDialog host={data} open={auditing} onClose={() => setAuditing(false)} />
       <DeleteScanDialog
         scan={deleting}
@@ -589,6 +619,50 @@ export function RemoveHostDialog({ host, open, onClose }: { host: Host; open: bo
           Remove host
         </Button>
       </div>
+    </Dialog>
+  );
+}
+
+/** Gives a host a display name, or takes it away so its hostname shows again. */
+function RenameDialog({ host, onClose }: { host: Host; onClose: () => void }) {
+  const refresh = useRefreshAll();
+  const [name, setName] = useState(host.name);
+  const rename = useMutation({
+    mutationFn: () => api.renameHost(host.id, name),
+    onSuccess: () => {
+      refresh();
+      onClose();
+    },
+  });
+  const what = host.kind === "cluster" ? "cluster name" : "hostname";
+  return (
+    <Dialog open onClose={onClose} title={`Rename ${host.address}`}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          rename.mutate();
+        }}
+        className="space-y-4"
+      >
+        <Field
+          label="Name"
+          autoFocus
+          maxLength={80}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder={host.hostname}
+          hint={`Shown everywhere instead of its ${what}, ${host.hostname}, which stays under the name on this page. Leave it empty to show the ${what} again.`}
+        />
+        <ErrorMessage error={rename.error} />
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" loading={rename.isPending}>
+            Save
+          </Button>
+        </div>
+      </form>
     </Dialog>
   );
 }

@@ -62,6 +62,21 @@ curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent --token-file /run/
 
 `--force` enrolls a machine again even if it is already enrolled.
 
+## Names
+
+A host is shown by its machine's hostname, which its agent sends every time it checks in, such as `ip-10-92-0-178` on Amazon EC2. To show it by a name of your own instead, such as `payments-api-prod` (from 1.18.0):
+
+- **In the dashboard:** **Rename** next to the host's name on its page, for operators and admins. Leave the name empty to show the hostname again.
+- **When enrolling:** set `DEACONGUARD_NAME`, or pass `--name` to `deaconguard setup agent` or `deaconguard agent enroll`:
+
+  ```bash
+  curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.… DEACONGUARD_NAME=payments-api-prod sudo -E sh -
+  ```
+
+- **Through the API:** `PATCH /api/hosts/{id}` with `{"name": "payments-api-prod"}`.
+
+The name is used everywhere the host is named: the Hosts list, its page, scans and their reports, vulnerabilities, the logs and notifications, including the host's earlier scans. Its hostname stays under the name on the Hosts list and the host's page, and searching the logs finds either. If the machine's hostname changes, the host keeps its name. A name has at most 80 characters, on one line; renames are in the audit log.
+
 ## Status and logs
 
 ```bash
@@ -78,7 +93,7 @@ tail /var/log/deaconguard-agent.log                              # what it did
 
 From 0.6.0, the agent also sends its log to the server: the host's page and the [Logs](./dashboard.md#logs) page show it, including the lines from while the server was unreachable.
 
-The agent checks in with the server every 25 seconds. The dashboard shows an agent as offline when it hasn't checked in for 90 seconds; scans you start for it wait up to an hour for it to reconnect.
+The agent checks in with the server every 25 seconds. The dashboard shows an agent as offline when it hasn't checked in for 90 seconds; scans you start for it wait up to an hour for it to reconnect. While it runs a scan, the agent doesn't ask for more work, so the server's log and the **Agents offline** notification wait for it: from 1.18.0, they don't call an agent offline in the middle of a long scan such as an audit.
 
 ## Removing an agent
 

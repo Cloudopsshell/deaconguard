@@ -211,8 +211,10 @@ func deliver(ctx context.Context, delivery store.Delivery) error {
 }
 
 // scanFinished turns a finished scan into notifications: a failure; new
-// vulnerabilities known to be exploited or critical ones with a fix;
-// malware; changed system files; and an audit's grade.
+// vulnerabilities known to be exploited or critical ones with a fix, on the
+// host or in its running containers; new cluster or configuration findings;
+// malware; changed system files; an audit's grade; and, for channels that
+// want every scan, a summary.
 func (s *Server) scanFinished(host store.Host, scanID string, failure error) {
 	hostLink := link("/hosts/" + host.ID)
 	if failure != nil {
@@ -229,8 +231,14 @@ func (s *Server) scanFinished(host store.Host, scanID string, failure error) {
 	if slices.Contains(record.Checks, store.CheckPackages) {
 		s.newVulnerabilities(host, record, scanLink)
 	}
+	if slices.Contains(record.Checks, checks.Containers) {
+		s.newContainerVulnerabilities(host, record, scanLink)
+	}
 	if slices.Contains(record.Checks, checks.Kubernetes) {
-		s.newClusterFindings(host, record, scanLink)
+		s.newFindings(host, record, scanLink, checks.Kubernetes, notify.EventCluster, "HIGH", "new critical or high finding", "new critical or high findings")
+	}
+	if slices.Contains(record.Checks, checks.Config) {
+		s.newFindings(host, record, scanLink, checks.Config, notify.EventConfig, "MEDIUM", "new configuration finding", "new configuration findings")
 	}
 	counts, err := store.ScanCheckCounts(scanID)
 	if err != nil {
@@ -253,6 +261,7 @@ func (s *Server) scanFinished(host store.Host, scanID string, failure error) {
 	if record.Audit {
 		s.auditFinished(host, record)
 	}
+	s.scanResults(host, record, scanLink)
 }
 
 // newVulnerabilities notifies about known exploited vulnerabilities, and
@@ -297,71 +306,92 @@ func (s *Server) newVulnerabilities(host store.Host, record store.Scan, scanLink
 	}
 }
 
-// clusterFindings are a scan's critical and high Kubernetes findings, by rule
-// and title, which name the object.
-func clusterFindings(scanID string) (map[string]checks.Finding, bool) {
+// checkResult is one check's result in a scan, unless the check didn't run
+// or failed.
+func checkResult(scanID, check string) (checks.Result, bool) {
 	report, err := store.GetFullReport(scanID)
 	if err != nil {
-		return nil, false
+		return checks.Result{}, false
 	}
 	encoded, _ := json.Marshal(report["check_results"])
 	var results map[string]checks.Result
 	if json.Unmarshal(encoded, &results) != nil {
-		return nil, false
+		return checks.Result{}, false
 	}
-	result, ok := results[checks.Kubernetes]
-	if !ok || result.Status == checks.StatusFailed {
-		return nil, false
+	result, ok := results[check]
+	if !ok || result.Status == checks.StatusFailed || result.Status == checks.StatusSkipped {
+		return checks.Result{}, false
 	}
-	found := map[string]checks.Finding{}
-	for _, f := range result.Findings {
-		if severity := strings.ToUpper(f.Severity); severity == "CRITICAL" || severity == "HIGH" {
-			found[f.Rule+"\x00"+f.Title] = f
-		}
-	}
-	return found, true
+	return result, true
 }
 
-// newClusterFindings notifies about a cluster's critical and high findings
-// its previous Kubernetes scan didn't have, such as a privileged workload
-// deployed since.
-func (s *Server) newClusterFindings(host store.Host, record store.Scan, scanLink string) {
-	current, ok := clusterFindings(record.ID)
+// previousCheckResult is check's result in the newest successful scan of
+// the host that ran it before record, if any.
+func previousCheckResult(host store.Host, record store.Scan, check string) (checks.Result, bool) {
+	scans, err := store.ListScans(host.ID, 50)
+	if err != nil {
+		return checks.Result{}, false
+	}
+	for _, earlier := range scans {
+		if earlier.ID == record.ID || earlier.Status != store.ScanSucceeded || !slices.Contains(earlier.Checks, check) ||
+			earlier.StartedAt > record.StartedAt {
+			continue
+		}
+		if result, ok := checkResult(earlier.ID, check); ok {
+			return result, true
+		}
+	}
+	return checks.Result{}, false
+}
+
+// severityRank orders severities, most urgent first.
+func severityRank(severity string) int {
+	switch strings.ToUpper(severity) {
+	case "CRITICAL":
+		return 0
+	case "HIGH":
+		return 1
+	case "MEDIUM":
+		return 2
+	case "LOW":
+		return 3
+	}
+	return 4
+}
+
+// newFindings notifies about a check's findings at least as severe as
+// worst that the host's previous run of the check didn't have, by rule and
+// title, which name what they are about: a privileged workload deployed in
+// a cluster, or SSH starting to accept passwords.
+func (s *Server) newFindings(host store.Host, record store.Scan, scanLink, check, event, worst, noun, nouns string) {
+	current, ok := checkResult(record.ID, check)
 	if !ok {
 		return
 	}
-	previous := map[string]checks.Finding{}
-	if scans, err := store.ListScans(host.ID, 50); err == nil {
-		for _, earlier := range scans {
-			if earlier.ID == record.ID || earlier.Status != store.ScanSucceeded || !slices.Contains(earlier.Checks, checks.Kubernetes) ||
-				earlier.StartedAt > record.StartedAt {
-				continue
-			}
-			if found, ok := clusterFindings(earlier.ID); ok {
-				previous = found
-				break
-			}
-		}
+	previous, _ := previousCheckResult(host, record, check)
+	seen := map[string]bool{}
+	for _, f := range previous.Findings {
+		seen[f.Rule+"\x00"+f.Title] = true
 	}
 	var added []checks.Finding
-	critical := false
-	for key, f := range current {
-		if _, seen := previous[key]; !seen {
+	for _, f := range current.Findings {
+		key := f.Rule + "\x00" + f.Title
+		if severityRank(f.Severity) <= severityRank(worst) && !seen[key] {
+			seen[key] = true
 			added = append(added, f)
-			critical = critical || strings.EqualFold(f.Severity, "CRITICAL")
 		}
 	}
 	if len(added) == 0 {
 		return
 	}
-	sort.Slice(added, func(i, j int) bool {
-		if added[i].Severity != added[j].Severity {
-			return strings.EqualFold(added[i].Severity, "CRITICAL")
+	sort.SliceStable(added, func(i, j int) bool {
+		if rank := severityRank(added[i].Severity) - severityRank(added[j].Severity); rank != 0 {
+			return rank < 0
 		}
 		return added[i].Title < added[j].Title
 	})
 	level := notify.LevelWarning
-	if critical {
+	if strings.EqualFold(added[0].Severity, "CRITICAL") {
 		level = notify.LevelCritical
 	}
 	var lines, rules []string
@@ -374,9 +404,138 @@ func (s *Server) newClusterFindings(host store.Host, record store.Scan, scanLink
 	if len(added) > 10 {
 		lines = append(lines, fmt.Sprintf("… and %d more", len(added)-10))
 	}
-	s.emit(notify.Message{Event: notify.EventCluster, Level: level,
-		Title: fmt.Sprintf("%s: %s", host.Address, plural(len(added), "new critical or high finding", "new critical or high findings")),
+	s.emit(notify.Message{Event: event, Level: level,
+		Title: fmt.Sprintf("%s: %s", host.Address, plural(len(added), noun, nouns)),
 		Lines: lines, Link: scanLink, HostID: host.ID, Host: host.Address, ScanID: record.ID, Data: map[string]any{"rules": rules}})
+}
+
+// containerCVEs are the vulnerabilities in a containers check that want
+// says to report, by image and CVE: a container started again from the same
+// image has a new ID but the same vulnerabilities.
+func containerCVEs(result checks.Result, want func(checks.Finding) bool) map[string]map[string]bool {
+	found := map[string]map[string]bool{}
+	for _, container := range result.Containers {
+		if !container.Scanned() {
+			continue
+		}
+		for _, f := range container.Findings {
+			if !want(f) {
+				continue
+			}
+			if found[container.Image] == nil {
+				found[container.Image] = map[string]bool{}
+			}
+			found[container.Image][f.Rule] = true
+		}
+	}
+	return found
+}
+
+// newContainerVulnerabilities notifies about vulnerabilities known to be
+// exploited, and critical ones a rebuild fixes, in the host's running
+// containers that its previous containers scan didn't have.
+func (s *Server) newContainerVulnerabilities(host store.Host, record store.Scan, scanLink string) {
+	current, ok := checkResult(record.ID, checks.Containers)
+	if !ok {
+		return
+	}
+	previous, _ := previousCheckResult(host, record, checks.Containers)
+	report := func(event, level string, want func(checks.Finding) bool, one, many, advice string) {
+		before := containerCVEs(previous, want)
+		var images []string
+		added := map[string][]string{}
+		total := 0
+		var all []string
+		for image, cves := range containerCVEs(current, want) {
+			for cve := range cves {
+				if !before[image][cve] {
+					added[image] = append(added[image], cve)
+				}
+			}
+			if len(added[image]) > 0 {
+				images = append(images, image)
+				sort.Strings(added[image])
+				total += len(added[image])
+				all = append(all, added[image]...)
+			}
+		}
+		if total == 0 {
+			return
+		}
+		sort.Strings(images)
+		var lines []string
+		for index, image := range images {
+			if index == 10 {
+				lines = append(lines, fmt.Sprintf("… and %d more images", len(images)-10))
+				break
+			}
+			lines = append(lines, image+": "+listCVEs(added[image]))
+		}
+		lines = append(lines, advice)
+		slices.Sort(all)
+		s.emit(notify.Message{Event: event, Level: level,
+			Title: fmt.Sprintf("%s: %s in running containers", host.Address, plural(total, one, many)),
+			Lines: lines, Link: scanLink, HostID: host.ID, Host: host.Address, ScanID: record.ID,
+			Data: map[string]any{"cves": slices.Compact(all), "images": images}})
+	}
+	report(notify.EventExploited, notify.LevelCritical, func(f checks.Finding) bool { return f.Exploited },
+		"new vulnerability known to be exploited", "new vulnerabilities known to be exploited",
+		"In CISA's Known Exploited Vulnerabilities catalog: attackers use them. Rebuild these images, or update them, first.")
+	report(notify.EventCritical, notify.LevelWarning, func(f checks.Finding) bool {
+		return strings.EqualFold(f.Severity, "CRITICAL") && f.Fixable
+	}, "new critical vulnerability with a fix", "new critical vulnerabilities with a fix", "Rebuilding the images with updated packages fixes them.")
+}
+
+// scanResults sums up a finished host scan in a line per check, for
+// channels that want to hear about every scan.
+func (s *Server) scanResults(host store.Host, record store.Scan, scanLink string) {
+	counts, err := store.ScanCheckCounts(record.ID)
+	if err != nil {
+		return
+	}
+	names := map[string]string{}
+	for _, definition := range checks.Definitions() {
+		names[definition.ID] = definition.Name
+	}
+	var lines []string
+	severe := 0
+	for _, check := range record.Checks {
+		name := names[check]
+		if name == "" {
+			name = check
+		}
+		count, ran := counts[check]
+		switch {
+		case !ran:
+			lines = append(lines, name+": didn't run")
+		case count.Findings == 0:
+			lines = append(lines, name+": nothing found")
+		case count.Severe > 0:
+			severe += count.Severe
+			lines = append(lines, fmt.Sprintf("%s: %s, %d critical or high", name, plural(count.Findings, "finding", "findings"), count.Severe))
+		default:
+			lines = append(lines, fmt.Sprintf("%s: %s", name, plural(count.Findings, "finding", "findings")))
+		}
+	}
+	level := notify.LevelInfo
+	if severe > 0 {
+		level = notify.LevelWarning
+	}
+	what := "scan"
+	if record.Audit {
+		what = "audit"
+	}
+	title := fmt.Sprintf("%s: %s finished", host.Address, what)
+	if started, err := time.Parse(time.RFC3339, record.StartedAt); err == nil && record.FinishedAt != nil {
+		if finished, err := time.Parse(time.RFC3339, *record.FinishedAt); err == nil {
+			if took := finished.Sub(started).Round(time.Second); took > 0 {
+				title += " in " + took.String()
+			}
+		}
+	}
+	s.emit(notify.Message{Event: notify.EventScanResults, Level: level, Title: title,
+		Lines: lines, Link: scanLink, HostID: host.ID, Host: host.Address, ScanID: record.ID,
+		Data: map[string]any{"checks": record.Checks, "critical_or_high": severe}})
 }
 
 func (s *Server) auditFinished(host store.Host, record store.Scan) {
@@ -479,6 +638,7 @@ func digest(channel store.Channel) (notify.Message, error) {
 	hosts, scanned, failed, stale := 0, 0, 0, 0
 	var severity store.SeverityCounts
 	known, knownFixable, likely := 0, 0, 0
+	var containers containerTotals
 	tagged := map[string]bool{}
 	for _, host := range result.HostSummaries {
 		if !inScope(host.Tags) {
@@ -486,6 +646,9 @@ func digest(channel store.Channel) (notify.Message, error) {
 		}
 		hosts++
 		tagged[host.ID] = true
+		if latest, ok := host.Checks[checks.Containers]; ok {
+			containers.add(latest.ScanID)
+		}
 		if host.LastScan != nil && host.LastScan.Status == store.ScanFailed {
 			failed++
 		}
@@ -523,6 +686,13 @@ func digest(channel store.Channel) (notify.Message, error) {
 		fmt.Sprintf("%d of %d hosts have results; %d not scanned in the last 7 days; %d whose last scan failed.", scanned, hosts, stale, failed),
 		fmt.Sprintf("To fix now: %d critical, %d high, %d medium, %d low.", severity.Critical, severity.High, severity.Medium, severity.Low),
 		fmt.Sprintf("Known exploited (CISA KEV): %d, %d of them with a fix. Likely exploited (EPSS 10%% or more): %d.", known, knownFixable, likely),
+	}
+	if containers.Images > 0 {
+		lines = append(lines, fmt.Sprintf("Running containers: %s on %s; %d known exploited, %d critical with a fix in the image.",
+			plural(containers.Images, "image", "images"), plural(containers.Hosts, "host", "hosts"), containers.Exploited, containers.CriticalFixable))
+		if containers.Exploited > 0 {
+			level = notify.LevelWarning
+		}
 	}
 	if sla, err := store.GetSLA(); err == nil && sla.Enabled {
 		overdue, overdueHosts := map[string]bool{}, map[string]bool{}
@@ -570,13 +740,42 @@ func digest(channel store.Channel) (notify.Message, error) {
 	message := notify.Message{Event: notify.EventDigest, Level: level, Title: fmt.Sprintf("%s summary of %s", period, scope), Lines: lines,
 		Link: link("/"), At: now,
 		Data: map[string]any{"hosts": hosts, "scanned": scanned, "stale": stale, "failed": failed, "to_fix": severity,
-			"known_exploited": known, "known_exploited_fixable": knownFixable, "likely_exploited": likely}}
+			"known_exploited": known, "known_exploited_fixable": knownFixable, "likely_exploited": likely, "containers": containers}}
 	// Only email carries files.
 	if channel.Kind == notify.Email {
 		message.Lines = append(message.Lines, fmt.Sprintf("Attached: every open vulnerability (%d rows), as CSV.", rows))
 		message.Attachment = &notify.Attachment{Name: "deaconguard-vulnerabilities-" + now.Format("2006-01-02") + ".csv", ContentType: "text/csv", Data: table.Bytes()}
 	}
 	return message, nil
+}
+
+// containerTotals sums the running containers in hosts' latest containers
+// scans: each image once per host, however many containers run it.
+type containerTotals struct {
+	Hosts           int `json:"hosts"`
+	Images          int `json:"images"`
+	Exploited       int `json:"known_exploited"`
+	CriticalFixable int `json:"critical_fixable"`
+}
+
+func (t *containerTotals) add(scanID string) {
+	result, ok := checkResult(scanID, checks.Containers)
+	if !ok {
+		return
+	}
+	images := map[string]bool{}
+	for _, container := range result.Containers {
+		if !container.Scanned() || images[container.Image] {
+			continue
+		}
+		images[container.Image] = true
+		t.Exploited += container.Exploited
+		t.CriticalFixable += container.FixableSeverity["CRITICAL"]
+	}
+	if len(images) > 0 {
+		t.Hosts++
+		t.Images += len(images)
+	}
 }
 
 // safeCells keeps spreadsheet tools from reading cells as formulas, since
