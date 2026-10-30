@@ -433,16 +433,18 @@ Admins add channels under **Settings → Notifications**: **email** (through you
 
 | Event | Sent when |
 | --- | --- |
-| Known exploited vulnerabilities | a host has vulnerabilities in CISA's KEV catalog that its previous scan didn't |
-| New critical vulnerabilities | a host has new critical vulnerabilities an update fixes |
+| Known exploited vulnerabilities | a host, or a container running on it, has vulnerabilities in CISA's KEV catalog that its previous scan didn't |
+| New critical vulnerabilities | a host or its running containers have new critical vulnerabilities an update fixes |
 | Malware | a scan finds malware or signs of compromise |
 | Changed system files | system files differ from what their packages installed |
+| New configuration findings | a host's security configuration has new medium or worse findings, such as SSH starting to accept passwords |
 | Failed scans | a scan fails |
+| Scan results | every host scan finishes, with a line per check, even when it finds nothing (off unless ticked) |
 | Audits | an audit finishes, with its grade and what holds it back |
-| Agents offline | an agent stops checking in |
-| Digest | daily, or weekly on chosen days, at a time in a time zone: every host's numbers and the known exploited vulnerabilities to fix first; email attaches every open vulnerability as CSV |
+| Agents offline | an agent stops checking in (not while it runs a scan) |
+| Digest | daily, or weekly on chosen days, at a time in a time zone: every host's numbers, its running containers' known exploited and critical vulnerabilities, and the known exploited vulnerabilities to fix first; email attaches every open vulnerability as CSV |
 
-Only what is new is sent: a vulnerability already reported for a host isn't reported again. Set the dashboard's address on the same page so messages link to the host or scan. **Test** sends a message at once and shows the result; failed messages are retried after 1, 5 and 30 minutes, and the page lists everything sent in the last 30 days. Webhook requests carry `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp`, and, with a secret, `X-DeaconGuard-Signature: sha256=` and the HMAC-SHA256 of the timestamp, a dot, and the body. Passwords, webhook addresses and secrets are kept in the server's database and never shown again; channel changes are in the audit log. See [Notifications](https://docs.deaconguard.io/usage/notifications).
+Only what is new is sent: a vulnerability already reported for a host or a container image isn't reported again, so a new channel doesn't hear about earlier findings; the digest sums them up. Set the dashboard's address on the same page so messages link to the host or scan. **Test** sends a message at once and shows the result; failed messages are retried after 1, 5 and 30 minutes, and the page lists everything sent in the last 30 days. Webhook requests carry `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp`, and, with a secret, `X-DeaconGuard-Signature: sha256=` and the HMAC-SHA256 of the timestamp, a dot, and the body. Passwords, webhook addresses and secrets are kept in the server's database and never shown again; channel changes are in the audit log. See [Notifications](https://docs.deaconguard.io/usage/notifications).
 
 ## Fix deadlines and maintenance windows
 
