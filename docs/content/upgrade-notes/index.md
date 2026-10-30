@@ -5,12 +5,13 @@ description: What changed in each DeaconGuard release, and what to do when you u
 
 One page per release, newest first: what's new, what to do before you upgrade, and anything particular to Kubernetes, the install script and Docker Compose, and known issues. The steps to upgrade are the same for every release: see [Upgrade](../installation/upgrade.md).
 
-**Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.16.0 to 1.17.1, the pages for 1.17.0 and 1.17.1. You can upgrade straight to the newest release; you don't need to install each one in turn.
+**Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.17.0 to 1.18.0, the pages for 1.17.1 and 1.18.0. You can upgrade straight to the newest release; you don't need to install each one in turn.
 
-Releases with nothing to do say so. The last 10 minor lines (now 1.8 to 1.17) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
+Releases with nothing to do say so. The last 10 minor lines (now 1.9 to 1.18) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
 
 | Release | Released | What to do |
 | --- | --- | --- |
+| [1.18.0](./v1-18/v1-18-0.md) | 2026-10-30 | Back up: database schema 28 |
 | [1.17.1](./v1-17/v1-17-1.md) | 2026-10-30 | Nothing; Kubernetes health checks leave the access log |
 | [1.17.0](./v1-17/v1-17-0.md) | 2026-10-29 | Small servers: check the memory for parsed feeds |
 | [1.16.0](./v1-16/v1-16-0.md) | 2026-10-29 | Nothing; slow requests and high CPU are now logged |
@@ -24,5 +25,3 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.8 to 1.17) ar
 | [1.9.2](./v1-9/v1-9-2.md) | 2026-10-24 | Nothing; Helm `--reuse-values` works again |
 | [1.9.1](./v1-9/v1-9-1.md) | 2026-10-23 | Nothing (documentation only) |
 | [1.9.0](./v1-9/v1-9-0.md) | 2026-10-23 | Allow port 8444 from your machines |
-| [1.8.1](./v1-8/v1-8-1.md) | 2026-10-23 | Pipelines with `--fail-on`: end-of-life images now fail |
-| [1.8.0](./v1-8/v1-8-0.md) | 2026-10-22 | Upgrade the server before the agents |
