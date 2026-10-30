@@ -8,9 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.17.1] - 2026-10-30
+
 ### Fixed
 
 - The access log leaves out Kubernetes health checks (requests from `kube-probe`), as it does agents' and the dashboard's routine polls, unless they fail. They added about eight lines a minute to `kubectl logs`.
+- A parsed feed's 30 minutes without a scan count from when its parse finishes, not from when it starts. This also fixes a test that failed on slow machines.
 
 ## [1.17.0] - 2026-10-29
 
@@ -296,7 +299,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.1...HEAD
+[1.17.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.14.0...v1.15.0
