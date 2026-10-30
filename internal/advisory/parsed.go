@@ -79,6 +79,8 @@ func parsedOnce[T any](kind string, data []byte, parse func() (T, error)) (T, er
 		entry.value, entry.err = value, err
 		parsedFeeds.Lock()
 		entry.size = size
+		// The time without a scan counts from when the parse is done.
+		entry.timer.Reset(parsedKept)
 		parsedFeeds.Unlock()
 		close(entry.ready)
 		if err != nil {
