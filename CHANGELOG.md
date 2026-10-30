@@ -8,6 +8,8 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-10-30
+
 ### Added
 
 - **Notifications for running containers:** a containers scan now sends **Known exploited vulnerabilities** and **New critical vulnerabilities** when the images running on a host have ones its previous containers scan didn't, by image: a container started again from the same image isn't news. Before, containers scans sent nothing.
@@ -312,7 +314,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.1...v1.18.0
 [1.17.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.15.0...v1.16.0
