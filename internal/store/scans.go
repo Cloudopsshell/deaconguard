@@ -744,7 +744,7 @@ WITH latest AS (
 		FROM scans WHERE status = 'succeeded' AND checks LIKE '%,packages,%'
 	) WHERE n = 1
 )
-SELECT s.host_id, h.address, s.id, s.started_at, f.cve, f.package, f.installed_version, f.fixed_version,
+SELECT s.host_id, COALESCE(NULLIF(h.display_name, ''), h.address), s.id, s.started_at, f.cve, f.package, f.installed_version, f.fixed_version,
 	f.fix, f.severity, f.url, f.title, f.priority, f.kev, f.kev_due, f.ransomware, f.epss, f.cvss_score, COALESCE(seen.first_seen, '')
 FROM latest
 JOIN scans s ON s.id = latest.id
@@ -763,7 +763,7 @@ func queryLatestFindings(filter string, arguments ...any) ([]AffectedPackage, []
 		return nil, nil, err
 	}
 	now := time.Now()
-	rows, err := db.Query(latestFindings+filter+" ORDER BY h.address, f.package", arguments...)
+	rows, err := db.Query(latestFindings+filter+" ORDER BY COALESCE(NULLIF(h.display_name, ''), h.address), f.package", arguments...)
 	if err != nil {
 		return nil, nil, err
 	}

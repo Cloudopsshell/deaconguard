@@ -92,10 +92,11 @@ curl -fsSL https://get.deaconguard.io | sudo sh -s -- --listen 0.0.0.0:9443
 | Option or variable | Effect |
 | --- | --- |
 | `DEACONGUARD_TOKEN=…` | Enroll an agent with this token. |
+| `DEACONGUARD_NAME=…` (with `sudo -E`) or `--name NAME` | Show the agent's host by this [name](../usage/agents.md#names) instead of its hostname. |
 | `DEACONGUARD_VERSION=@RELEASE@` (with `sudo -E`) or `--version @RELEASE@` | Install that release instead of the latest. |
 | `--server`, `--agent` | Choose the mode explicitly. |
 | Server: `--listen`, `--agent-listen`, `--tls-cert`/`--tls-key`, `--admin-user`/`--admin-password-file` | See [Server](../usage/server.md#setup-options). |
-| Agent: `--token-file FILE`, `--force` | See [Agents](../usage/agents.md#automation). |
+| Agent: `--token-file FILE`, `--name NAME`, `--force` | See [Agents](../usage/agents.md#automation). |
 
 ## Read the script first
 

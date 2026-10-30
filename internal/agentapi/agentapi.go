@@ -124,6 +124,9 @@ type EnrollRequest struct {
 	// Kind is "cluster" for a cluster agent, which checks the Kubernetes
 	// cluster it runs in rather than a machine (1.5.0 and later).
 	Kind string `json:"kind,omitempty"`
+	// Name is the display name to show the host as, instead of its hostname
+	// (1.18.0 and later); empty keeps the hostname.
+	Name string `json:"name,omitempty"`
 }
 
 // EnrollResponse gives the agent its identity. Credential authenticates every

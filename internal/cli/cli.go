@@ -521,8 +521,10 @@ Setup (as root, after installing the .deb or .rpm; install.sh runs these):
                                        and an agent that scans this machine as root;
                                        agents get port 8444 unless --agent-listen says
                                        otherwise (off: they share the dashboard's port)
-  deaconguard setup agent [--token-file FILE] [--force]
-                                       enroll (asks for the token), start the agent service
+  deaconguard setup agent [--token-file FILE] [--name NAME] [--force]
+                                       enroll (asks for the token), start the agent service;
+                                       --name (or DEACONGUARD_NAME) is what the dashboard
+                                       shows this machine as, instead of its hostname
 
 Web UI and server:
   deaconguard serve                       local web UI at http://127.0.0.1:7480, no sign-in
@@ -544,7 +546,8 @@ Web UI and server:
                                        for N days (30 by default, up to 365)
 
 Agent (on each machine to scan):
-  deaconguard agent enroll TOKEN [--force]   enroll with the server that made TOKEN
+  deaconguard agent enroll TOKEN [--name NAME] [--force]
+                                             enroll with the server that made TOKEN
   deaconguard agent run                      wait for scans (the deaconguard-agent service)
   deaconguard agent status
 
