@@ -173,9 +173,11 @@ func TestAccessLog(t *testing.T) {
 		noteUser(r, "admin")
 		w.WriteHeader(status)
 	}))
+	agent := ""
 	call := func(path string) {
 		request := httptest.NewRequest(http.MethodGet, path+"?token=secret", nil)
 		request.RemoteAddr = "192.0.2.7:51000"
+		request.Header.Set("User-Agent", agent)
 		handler.ServeHTTP(httptest.NewRecorder(), request)
 	}
 
@@ -186,10 +188,16 @@ func TestAccessLog(t *testing.T) {
 	d.accessLog = true
 	call("/api/summary")
 	call("/api/prompts")
+	// Kubernetes' health checks.
+	agent = "kube-probe/1.33"
+	call("/api/version")
+	agent = ""
 	status = http.StatusInternalServerError
 	call("/api/prompts")
+	agent = "kube-probe/1.33"
+	call("/api/version")
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
-	if len(lines) != 2 || !strings.HasSuffix(lines[0], "ACCESS GET /api/summary 200 0s user=admin ip=192.0.2.7") || !strings.Contains(lines[1], "ACCESS GET /api/prompts 500") {
+	if len(lines) != 3 || !strings.HasSuffix(lines[0], "ACCESS GET /api/summary 200 0s user=admin ip=192.0.2.7") || !strings.Contains(lines[1], "ACCESS GET /api/prompts 500") || !strings.Contains(lines[2], "ACCESS GET /api/version 500") {
 		t.Fatalf("access log: %q", lines)
 	}
 	if strings.Contains(output.String(), "secret") {

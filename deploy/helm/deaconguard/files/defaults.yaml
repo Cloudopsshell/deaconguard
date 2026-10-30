@@ -29,7 +29,7 @@ server:
   trustedProxies: []
   # A line in the server's log (kubectl logs) for each request: method, path,
   # status, duration, account and address. Agents' and the dashboard's
-  # routine polls are left out.
+  # routine polls, and Kubernetes health checks, are left out.
   accessLog: false
   # Memory, in MB, the server may keep parsed advisory feeds in, so that scans
   # of the same release don't parse them again (Ubuntu's take about 275 MB
