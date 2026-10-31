@@ -80,6 +80,10 @@ var definitions = []Definition{
 		Description: "Checks about 60 security settings against the DeaconGuard Linux baseline: accounts and passwords, SSH, network and kernel settings, services and the firewall, logging, file permissions, updates and time. Also records the machine's inventory.",
 	},
 	{
+		ID: Changes, Name: "Host changes", Sudo: "recommended",
+		Description: "Records the ports open to the network, login accounts, administrators and sudoers rules, SSH keys, enabled services and scheduled jobs, and reports what changed since the previous scan. Takes a few seconds.",
+	},
+	{
 		ID: Antivirus, Name: "Antivirus scan", Sudo: "recommended",
 		Description: "Scans temporary, home, and application directories for malware. Basic runs ClamAV, which the install script sets up; Advanced adds YARA rules.",
 		Warning:     "ClamAV loads its signatures on the host, using about 1 GB of memory, and can take several minutes.",
@@ -173,6 +177,9 @@ type Result struct {
 	Containers []ContainerResult `json:"containers,omitempty"`
 	// Cluster describes the cluster the Kubernetes check read.
 	Cluster *Cluster `json:"cluster,omitempty"`
+	// Snapshot is what the host change check recorded; the server compares
+	// it with the previous one.
+	Snapshot *Snapshot `json:"snapshot,omitempty"`
 }
 
 // Cluster is what the Kubernetes check read of a cluster.
@@ -295,6 +302,8 @@ func Run(id string, executor *Executor, target platform.Platform, now time.Time,
 		result = runConfig(executor, target)
 	case Hardening:
 		result = runHardening(executor, target)
+	case Changes:
+		result = runChanges(executor)
 	case Antivirus:
 		result = runAntivirus(executor, now, inputs)
 	case YARA:
