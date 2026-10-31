@@ -120,7 +120,7 @@ spec:
             - name: DEACONGUARD_AGENT_CONFIG
               value: /var/lib/deaconguard-agent/agent.json
             - name: DEACONGUARD_ENROLL_TOKEN_FILE
-              value: /run/secrets/deaconguard-enrollment/{{ .Values.cluster.enrollment.secretKey }}
+              value: /run/secrets/deaconguard-enrollment/{{ include "deaconguard.clusterEnrollmentKey" . }}
             {{- if $admission }}
             - name: DEACONGUARD_ADMISSION_LISTEN
               value: ":8443"
