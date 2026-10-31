@@ -26,9 +26,19 @@ Kubernetes' own objects (`kube-system`, `kube-public`, `kube-node-lease`, and th
 
 To check a cluster from the server, on a schedule and with notifications, install the **cluster agent** in it: `cluster.enabled=true` in the [Helm chart](../installation/kubernetes.md#4-the-cluster-itself). It enrolls with a token like a machine's agent and appears on **Hosts** as a Kubernetes cluster, with its own page.
 
-The cluster agent checks what the API shows: the objects' settings, not what runs inside the containers. Vulnerable packages and libraries in your pods are found by the [node agent](../installation/kubernetes.md#3-the-agents)'s **Running containers** check, which reads each container's files on its node; see [Who checks what in your pods](../installation/kubernetes.md#who-checks-what-in-your-pods). The dashboard's cluster scan doesn't read running images from their registries the way `kube scan --images` does.
+The cluster agent checks what the API shows: the objects' settings, not what runs inside the containers. Vulnerable packages and libraries in your pods are found by the [node agent](../installation/kubernetes.md#3-the-agents)'s **Running containers** check, which reads each container's files on its node; see [Who checks what in your pods](../installation/kubernetes.md#who-checks-what-in-your-pods). The server also checks the images the pods run; see [Running images](#running-images).
 
 A cluster runs one check, **Kubernetes**: **Scan now** offers only that, and a schedule with the Kubernetes check ticked runs it on every cluster it covers (and its other checks on machines). The cluster agent reads the cluster with the pod's read-only service account and sends what it found to the server, which adds the version's support and Kubernetes' own vulnerabilities, so the agent needs to reach only the API and the server. New critical and high findings, such as a privileged workload deployed since the last scan, are [notified](./notifications.md) as **New cluster findings**; a failed scan as for any host.
+
+### Running images
+
+From 1.20.0, each dashboard scan of a cluster also checks the images its pods run, as [image scans](./images.md) do: their OS packages and libraries, read from the registry as data, never pulled or run. The server does it, so it works for clusters without the [node agent](../installation/kubernetes.md#3-the-agents), such as EKS on Fargate or GKE Autopilot.
+
+- **The build the pods run:** the cluster agent sends each pod's image with the digest its runtime reports, so the server checks that exact build, not whatever the tag points to now. Cluster agents before 1.20.0 send the tags only; the server checks each tag's current build, and the scan says so.
+- **Findings:** each image with vulnerabilities to fix, or known to be exploited, is one finding: how many, the most urgent, and the namespaces and pods that run it. Critical and high ones are [notified](./notifications.md) as **New cluster findings**. The title stays the same while the counts change, so a rebuild with the same kind of problems isn't news; an image newly known to be exploited is. Add the image on the [Images](./images.md) page to see each vulnerability.
+- **Private registries:** the server uses the registry logins saved on the Images page. An image it can't read is listed in the scan's notes.
+- **Light:** each build is read once and its result kept for a day, so later scans, and **Scan when the cluster changes**, only read images they haven't seen; a scan of a cluster whose images are all known takes about a second. A scan reads at most 10 new images, one at a time, within 10 minutes, and at most 100 in all; the next scans read the rest. A failure is retried after an hour. The results are kept in the server's memory, so after a restart the images are read again once.
+- The server reaches the registries itself, as for image scans: Docker Hub, GHCR, your private registries.
 
 ### Scan when the cluster changes
 

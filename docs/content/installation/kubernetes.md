@@ -9,7 +9,7 @@ In Kubernetes, DeaconGuard has three parts. You need the server, and one or both
 | --- | --- | --- | --- | --- |
 | **The server** | Nothing itself: the dashboard and the agent API | A StatefulSet with one pod and a volume for its database, under the **restricted** [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/) | | |
 | **The node agent** (`agent.enabled`) | Each **node, as a machine**: its packages, libraries, configuration, hardening, malware, and the [containers of its pods](../usage/containers.md) | A DaemonSet, one pod per node, **privileged** (it reads the node's filesystem) | [Reusable](../usage/agents.md#reusable-tokens), one for every node | One host per node |
-| **The cluster agent** (`cluster.enabled`) | **Kubernetes itself**, through its API: workloads, RBAC, namespaces, network policies, the version and its CVEs. See [Kubernetes clusters](../usage/kubernetes.md) | One unprivileged pod with a read-only role that can't read secrets, under the **restricted** standard | Any token; it is used once | One host, of type Kubernetes cluster |
+| **The cluster agent** (`cluster.enabled`) | **Kubernetes itself**, through its API: workloads, RBAC, namespaces, network policies, the version and its CVEs; and the server checks the images the pods run (1.20.0 and later). See [Kubernetes clusters](../usage/kubernetes.md) | One unprivileged pod with a read-only role that can't read secrets, under the **restricted** standard | Any token; it is used once | One host, of type Kubernetes cluster |
 
 The node agent reads each node's root filesystem, read-only, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent [installed on the node](./install-script.md). The cluster agent never looks at a node or inside a container: it reads what the API shows.
 
@@ -140,6 +140,7 @@ With a values file, Helm uses the chart's defaults plus the file on each upgrade
 | In your pods | Checked by | How |
 | --- | --- | --- |
 | **Vulnerable packages and libraries** in running containers | The node agent, with the **Running containers** check | It lists each node's containers and reads their files, read-only. See [Running containers](../usage/containers.md) |
+| **Vulnerable images**, the builds the pods run | The cluster agent, with the server | The server reads each build from its registry, as image scans do, without the node agent. See [Running images](../usage/kubernetes.md#running-images) |
 | **Risky configuration**: privileged containers, running as root, host folders, secrets in environment variables; and RBAC, namespaces, network policies | The cluster agent | It reads the objects through the API. See [Kubernetes clusters](../usage/kubernetes.md) |
 | **Malware**: webshells, miners, dropped tools | The node agent, with the malware and antivirus checks | In the node's own folders, and what each running container wrote since it started (1.19.0 and later). See [Malware in containers](../usage/containers.md#malware-in-containers) |
 | **What processes do as they run** | Nothing | DeaconGuard checks at scan time; it doesn't watch processes as they run |

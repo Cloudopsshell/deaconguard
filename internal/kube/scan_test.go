@@ -31,7 +31,8 @@ func fakeAPI(t *testing.T) *httptest.Server {
 		"/api/v1/pods": {
 			// Owned by a ReplicaSet: checked through its Deployment.
 			{"metadata": map[string]any{"name": "web-1", "namespace": "shop", "ownerReferences": []any{map[string]any{"kind": "ReplicaSet"}}},
-				"spec": map[string]any{"containers": []any{map[string]any{"name": "web", "image": "nginx:1.27"}}}},
+				"spec":   map[string]any{"containers": []any{map[string]any{"name": "web", "image": "nginx:1.27"}}},
+				"status": map[string]any{"containerStatuses": []any{map[string]any{"image": "docker.io/library/nginx:1.27", "imageID": "docker.io/library/nginx@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}},
 			// A bare, privileged pod.
 			{"metadata": map[string]any{"name": "debug", "namespace": "shop"},
 				"spec": map[string]any{"containers": []any{map[string]any{"name": "sh", "image": "busybox:1.36", "securityContext": map[string]any{"privileged": true}}}}},
@@ -203,6 +204,16 @@ func TestScanReadsTheCluster(t *testing.T) {
 	if !slices.Contains(report.Images, "busybox:1.36") || !slices.Contains(report.Images, "nginx:1.27") {
 		t.Errorf("images = %v", report.Images)
 	}
+	// The build each pod runs, from its status.
+	var nginx []checks.RunningImage
+	for _, image := range report.Running {
+		if image.Image == "nginx:1.27" {
+			nginx = append(nginx, image)
+		}
+	}
+	if len(nginx) != 1 || nginx[0].Digest != "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" || nginx[0].Pods != 1 || strings.Join(nginx[0].Namespaces, ",") != "shop" {
+		t.Errorf("running nginx = %+v", nginx)
+	}
 	notes := strings.Join(report.Notes, "\n")
 	if !strings.Contains(notes, "CronJobs weren't checked") || !strings.Contains(notes, "were left out") {
 		t.Errorf("notes = %s", notes)
@@ -255,6 +266,21 @@ func TestFlagValueAndVersions(t *testing.T) {
 	for version, provider := range map[string]string{"v1.30.4-eks-a737599": "Amazon EKS", "v1.31.1-gke.1146000": "Google GKE", "v1.31.4+k3s1": "k3s", "v1.31.4": ""} {
 		if got := managedProvider(version); got != provider {
 			t.Errorf("%s: %q", version, got)
+		}
+	}
+}
+
+func TestRunningDigest(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("c", 64)
+	for imageID, want := range map[string]string{
+		"docker.io/library/nginx@" + digest: digest,
+		"docker-pullable://nginx@" + digest: digest,
+		digest:                              "", // an image loaded into the node, with no repository
+		"ghcr.io/acme/app@sha256:short":     "",
+		"":                                  "",
+	} {
+		if got := runningDigest(imageID); got != want {
+			t.Errorf("runningDigest(%q) = %q", imageID, got)
 		}
 	}
 }

@@ -111,6 +111,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		localAvailable: func() error { _, err := local.New(); return err },
 	}
 	s.agents = newAgentHub(s.runner)
+	s.agents.clusterImages = newClusterImages(s)
 	s.runner.onFinish = s.scanFinished
 	s.agents.presence.onQuiet = s.agentQuiet
 	mux := http.NewServeMux()
