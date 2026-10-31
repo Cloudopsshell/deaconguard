@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Plus, RadioTower, TriangleAlert } from "lucide-react";
+import { Check, Copy, KeyRound, Plus, RadioTower, Trash2, TriangleAlert } from "lucide-react";
 import { useCan } from "../lib/role";
-import { api, type EnrollmentToken, type HostSummary, type NewEnrollmentToken } from "../api";
+import { api, type EnrollmentToken, type HostSummary, type NewEnrollmentToken, type TokenHost } from "../api";
 import {
   Button,
   Card,
@@ -20,7 +20,7 @@ import {
   cx,
 } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
-import { ThisServerBadge, agentOnline } from "../lib/hosts";
+import { ClusterBadge, NodeBadge, ThisServerBadge, agentOnline, disconnectedText, groupByCluster } from "../lib/hosts";
 
 export function Agents() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -166,33 +166,10 @@ function AgentList({ onEnroll }: { onEnroll?: () => void }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-            {agents.map((host) => {
-              const online = agentOnline(host);
-              return (
-                <tr key={host.id}>
-                  <Td>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-                        {host.address}
-                      </Link>
-                      {host.this_server && <ThisServerBadge />}
-                    </div>
-                    {host.agent?.remote && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {host.this_server ? `${host.agent.remote}, this server's own agent` : host.agent.remote}
-                        {host.agent.port && ` · port ${host.agent.port}`}
-                      </p>
-                    )}
-                  </Td>
-                  <Td>
-                    <AgentStatus online={online} lastSeen={host.agent?.last_seen_at} />
-                  </Td>
-                  <Td className="text-slate-600 dark:text-slate-300">{host.agent?.os || "—"}</Td>
-                  <Td className="font-mono text-xs text-slate-600 dark:text-slate-300">{host.agent?.version || "—"}</Td>
-                  <Td className="text-sm text-slate-500 dark:text-slate-400">{host.agent ? dateTime(host.agent.enrolled_at) : "—"}</Td>
-                </tr>
-              );
-            })}
+            {groupByCluster(agents).flatMap(({ host, nodes }) => [
+              <AgentRow key={host.id} host={host} nodes={nodes.length} />,
+              ...nodes.map((node) => <AgentRow key={node.id} host={node} node />),
+            ])}
           </tbody>
         </Table>
       )}
@@ -200,13 +177,74 @@ function AgentList({ onEnroll }: { onEnroll?: () => void }) {
   );
 }
 
-export function AgentStatus({ online, lastSeen }: { online: boolean; lastSeen?: string }) {
+export function AgentStatus({ online, lastSeen, disconnected }: { online: boolean; lastSeen?: string; disconnected?: boolean }) {
+  if (disconnected) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-300">
+        <span className="size-2 rounded-full bg-amber-500" aria-hidden />
+        Disconnected
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
       <span className={cx("size-2 rounded-full", online ? "bg-emerald-500" : "bg-slate-400")} aria-hidden />
       {online ? "Online" : "Offline"}
       {!online && lastSeen && <span className="text-xs text-slate-500 dark:text-slate-400">· seen {timeAgo(lastSeen)}</span>}
     </span>
+  );
+}
+
+function AgentRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?: boolean; nodes?: number }) {
+  const online = agentOnline(host);
+  return (
+    <tr className={cx((node || host.kind === "cluster") && "bg-sky-50/40 dark:bg-sky-500/[0.04]")}>
+      <Td className={node ? "pl-10" : undefined}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {node && (
+            <span className="text-slate-400 dark:text-slate-500" aria-hidden>
+              └
+            </span>
+          )}
+          {node && <NodeBadge />}
+          <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+            {host.address}
+          </Link>
+          {host.kind === "cluster" && <ClusterBadge />}
+          {host.this_server && <ThisServerBadge />}
+        </div>
+        {host.agent?.remote && (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {host.kind === "cluster"
+              ? `cluster agent${nodes > 0 ? ` · ${nodes} ${nodes === 1 ? "node" : "nodes"} with a node agent` : ""}`
+              : host.this_server
+                ? `${host.agent.remote}, this server's own agent`
+                : host.agent.remote}
+            {host.agent.port && ` · port ${host.agent.port}`}
+          </p>
+        )}
+        {host.disconnected && <DisconnectedNote host={host} />}
+      </Td>
+      <Td>
+        <AgentStatus online={online} lastSeen={host.agent?.last_seen_at} disconnected={!!host.disconnected} />
+      </Td>
+      <Td className="text-slate-600 dark:text-slate-300">{host.kind === "cluster" ? "Kubernetes" : host.agent?.os || "—"}</Td>
+      <Td className="font-mono text-xs text-slate-600 dark:text-slate-300">{host.agent?.version || "—"}</Td>
+      <Td className="text-sm text-slate-500 dark:text-slate-400">{host.agent ? dateTime(host.agent.enrolled_at) : "—"}</Td>
+    </tr>
+  );
+}
+
+/** Why a host was disconnected, and how to bring it back. */
+export function DisconnectedNote({ host }: { host: HostSummary }) {
+  return (
+    <div className="mt-2 flex max-w-xl gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-600/20 ring-inset dark:bg-amber-500/10 dark:text-amber-100">
+      <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+      <p>
+        {disconnectedText(host)} Its agent is refused and told why; its scans stay here. To reconnect it, enroll it again with a new token: it
+        comes back as this host, with its history.
+      </p>
+    </div>
   );
 }
 
@@ -221,15 +259,21 @@ function TokenList() {
   const queryClient = useQueryClient();
   const { data, error, isPending } = useQuery({ queryKey: ["enrollment-tokens"], queryFn: api.enrollmentTokens });
   const hosts = useQuery({ queryKey: ["hosts"], queryFn: api.hosts });
-  const revoke = useMutation({
-    mutationFn: api.revokeEnrollmentToken,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["enrollment-tokens"] }),
-  });
+  const [revoking, setRevoking] = useState<EnrollmentToken | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const revoked = data?.filter((token) => token.status === "revoked").length ?? 0;
   return (
     <Card>
       <CardHeader
         title="Enrollment tokens"
         description="A one-time token enrolls one machine within 24 hours; a reusable one enrolls any number, such as every node of a Kubernetes cluster, until it expires. The token itself is shown only when it is created."
+        action={
+          revoked > 0 && (
+            <Button variant="secondary" onClick={() => setClearing(true)}>
+              <Trash2 className="size-4" /> Remove revoked tokens ({revoked})
+            </Button>
+          )
+        }
       />
       {isPending ? (
         <Loading />
@@ -308,14 +352,11 @@ function TokenList() {
                             : `enrolled ${token.uses} ${token.uses === 1 ? "machine" : "machines"}${token.used_at ? `, last ${timeAgo(token.used_at)}` : ""}`}
                         </p>
                       )}
+                      {token.reusable && <TokenHosts hosts={token.hosts ?? []} />}
                     </Td>
                     <Td className="text-right">
                       {token.status === "active" && (
-                        <Button
-                          variant="ghost"
-                          loading={revoke.isPending && revoke.variables === token.id}
-                          onClick={() => revoke.mutate(token.id)}
-                        >
+                        <Button variant="ghost" onClick={() => setRevoking(token)}>
                           Revoke
                         </Button>
                       )}
@@ -325,14 +366,133 @@ function TokenList() {
               })}
             </tbody>
           </Table>
-          {revoke.error && (
-            <div className="p-5">
-              <ErrorMessage error={revoke.error} />
-            </div>
-          )}
         </>
       )}
+      {revoking && <RevokeDialog token={revoking} onClose={() => setRevoking(null)} />}
+      <ClearRevokedDialog
+        open={clearing}
+        count={revoked}
+        onClose={() => setClearing(false)}
+        onDone={() => queryClient.invalidateQueries({ queryKey: ["enrollment-tokens"] })}
+      />
     </Card>
+  );
+}
+
+/** The hosts a reusable token enrolled that still exist. */
+function TokenHosts({ hosts }: { hosts: TokenHost[] }) {
+  if (hosts.length === 0) return null;
+  return (
+    <p className="mt-0.5 max-w-xs text-xs text-slate-500 dark:text-slate-400">
+      {hosts.map((host, index) => (
+        <span key={host.id}>
+          {index > 0 && ", "}
+          <Link to={`/hosts/${host.id}`} className={cx("hover:underline", host.disconnected ? "text-amber-700 dark:text-amber-300" : "text-indigo-600 dark:text-indigo-400")}>
+            {host.address}
+          </Link>
+          {host.disconnected && " (disconnected)"}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/**
+ * Revoking stops a token enrolling more machines. The machines it enrolled
+ * are disconnected too unless the admin keeps them, as when a new token
+ * replaces it.
+ */
+function RevokeDialog({ token, onClose }: { token: EnrollmentToken; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const connected = (token.hosts ?? []).filter((host) => !host.disconnected);
+  const [disconnect, setDisconnect] = useState(connected.length > 0);
+  const revoke = useMutation({
+    mutationFn: api.revokeEnrollmentToken,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["enrollment-tokens"] });
+      queryClient.invalidateQueries({ queryKey: ["hosts"] });
+      onClose();
+    },
+  });
+  return (
+    <Dialog open onClose={onClose} title={`Revoke token ${token.id.slice(0, 8)}`}>
+      <div className="space-y-4 text-sm">
+        <p className="text-slate-600 dark:text-slate-300">
+          {token.reusable ? "No more machines can enroll with it." : "It can no longer enroll a machine."}
+        </p>
+        {connected.length > 0 ? (
+          <div className="rounded-lg ring-1 ring-slate-200 dark:ring-slate-700">
+            <label className="flex cursor-pointer gap-3 p-3">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-indigo-600"
+                checked={disconnect}
+                onChange={(event) => setDisconnect(event.target.checked)}
+              />
+              <span>
+                <span className="font-medium">
+                  Also disconnect the {connected.length === 1 ? "machine" : `${connected.length} machines`} it enrolled
+                </span>
+                <span className="mt-0.5 block text-slate-500 dark:text-slate-400">
+                  Their agents are refused from now on and log why; their hosts stay here with their scans and a note saying why. Untick
+                  this when a new token replaces this one and the machines should keep running.
+                </span>
+              </span>
+            </label>
+            <ul className="border-t border-slate-200 px-3 py-2 dark:border-slate-700">
+              {connected.map((host) => (
+                <li key={host.id} className="flex items-center gap-2 py-0.5">
+                  {host.kind === "cluster" ? <ClusterBadge /> : null}
+                  <span className={cx(disconnect && "font-medium text-amber-700 dark:text-amber-300")}>{host.address}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : token.reusable && token.uses > 0 ? (
+          <p className="text-slate-500 dark:text-slate-400">
+            The machines it enrolled before 1.21.0 aren't known, so they stay connected. Remove their hosts to disconnect them.
+          </p>
+        ) : null}
+        {revoke.error && <ErrorMessage error={revoke.error} />}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="danger" loading={revoke.isPending} onClick={() => revoke.mutate({ id: token.id, disconnect: disconnect && connected.length > 0 })}>
+            {disconnect && connected.length > 0 ? `Revoke and disconnect ${connected.length}` : "Revoke"}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function ClearRevokedDialog({ open, count, onClose, onDone }: { open: boolean; count: number; onClose: () => void; onDone: () => void }) {
+  const clear = useMutation({
+    mutationFn: api.deleteRevokedTokens,
+    onSuccess: () => {
+      onDone();
+      onClose();
+    },
+  });
+  return (
+    <Dialog open={open} onClose={onClose} title="Remove revoked tokens">
+      <div className="space-y-4 text-sm">
+        <p className="text-slate-600 dark:text-slate-300">
+          Removes the {count === 1 ? "revoked token" : `${count} revoked tokens`} from this list. The machines they enrolled stay as they are;
+          the audit log keeps the record of each token.
+        </p>
+        {clear.error && <ErrorMessage error={clear.error} />}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="danger" loading={clear.isPending} onClick={() => clear.mutate()}>
+            Remove {count}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

@@ -56,6 +56,12 @@ func containerTempFolders(list []containers.Writable) string {
 // it: the longest matching folder wins, since a volume is mounted inside
 // the writable layer's tree.
 func inContainer(hostPath string, list []containers.Writable) (name, inside string, found bool) {
+	_, name, inside, found = containerOf(hostPath, list)
+	return name, inside, found
+}
+
+// containerOf is inContainer with the container's ID.
+func containerOf(hostPath string, list []containers.Writable) (id, name, inside string, found bool) {
 	best := -1
 	for _, container := range list {
 		for _, dir := range container.Dirs {
@@ -64,21 +70,21 @@ func inContainer(hostPath string, list []containers.Writable) (name, inside stri
 				continue
 			}
 			best = len(dir.HostPath)
-			name, inside, found = container.Name, path.Join(dir.Path, rest), true
+			id, name, inside, found = container.ID, container.Name, path.Join(dir.Path, rest), true
 		}
 	}
-	return name, inside, found
+	return id, name, inside, found
 }
 
 // placeInContainer moves a finding about a host path into its container:
 // the container is named in the title (the dashboard shows it in its own
 // column) and the evidence is the path inside the container.
 func placeInContainer(finding *Finding, hostPath, rest string, list []containers.Writable) {
-	name, inside, found := inContainer(hostPath, list)
+	id, name, inside, found := containerOf(hostPath, list)
 	if !found {
 		return
 	}
-	finding.Container = name
+	finding.Container, finding.ContainerID = name, id
 	finding.Title = name + ": " + finding.Title
 	finding.Evidence = inside + rest
 	// The advice is for the container, not the machine.

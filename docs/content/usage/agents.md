@@ -37,7 +37,23 @@ In Kubernetes, the chart's agents share one token, so it must be reusable even f
 
 On the server's command line: `deaconguard token create --server-url URL --reusable [--days N] [--name NAME] [--quiet]`, where `--days` is 1 to 365 (30 by default) and `--quiet` prints only the token.
 
-The **Enrollment tokens** list marks reusable tokens, with their name, how many machines each has enrolled, and when it was last used. **Revoke** stops it enrolling more machines; the ones it enrolled stay enrolled. Anyone with the token can enroll a machine with your server until then, so keep it in a secret store, and prefer a short lifetime.
+The **Enrollment tokens** list marks reusable tokens, with their name, how many machines each has enrolled, which hosts those are, and when it was last used. Anyone with the token can enroll a machine with your server until it expires or is revoked, so keep it in a secret store, and prefer a short lifetime.
+
+### Revoking a token
+
+**Revoke** stops a token enrolling more machines. From 1.21.0, its dialog lists the machines it enrolled, with **Also disconnect them** ticked:
+
+- **Disconnected** machines' agents are refused from then on. Each agent logs why, such as `this agent was disconnected on 2026-10-31 19:30 UTC by admin: its enrollment token d4f02283 was revoked`, and a scan it was running fails. Their hosts stay, with their scans, marked **Disconnected** on the **Hosts** and **Agents** pages and on their own page, which say who disconnected them, when and why. Scans of a disconnected host are refused.
+- **To reconnect** a disconnected machine, enroll its agent again with a new token. It comes back as the same host, with its history. In Kubernetes, put a new token from **Enroll a machine** > **Kubernetes** in the enrollment secret and delete the agents' pods.
+- **Untick it** when a new token replaces the old one: rotating a cluster's token shouldn't take its nodes offline. The machines stay connected, as before 1.21.0.
+
+The server knows which token enrolled a machine for machines enrolled from 1.21.0 on, and for earlier ones where it is certain: the one-time token that names the host, or the only reusable token that could enroll when the machine did. Machines it can't tie to a token stay connected; remove their hosts to disconnect them.
+
+**Remove revoked tokens** at the top of the list removes every revoked token from it. The machines they enrolled stay as they are, and the **Audit log** page keeps each token's creation and revocation. Unrevoked tokens leave the list 30 days after they are created, or after a reusable one expires.
+
+### When a token is refused
+
+From 1.21.0, the server says why it refuses a token, and the agent prints it: the token was **revoked** (and when), it **expired** (and when), it is a **one-time token already used** to enroll another machine, or the server **doesn't know it**, as when it was made by another server. In Kubernetes, the agent adds what to do: for a used one-time token, that the chart's agents share the secret, so its token must be reusable; otherwise, to put a new token in the secret and delete the pod.
 
 ### Agents that enroll themselves
 
@@ -48,7 +64,7 @@ An agent given a token in its environment, as the [DaemonSet](../installation/ku
 | `DEACONGUARD_ENROLL_TOKEN_FILE` | The path of a file with the token, such as a mounted secret |
 | `DEACONGUARD_ENROLL_TOKEN` | The token itself |
 
-`deaconguard agent run` then enrolls when the agent isn't enrolled yet, when the token is for a server with another certificate (the server was replaced), and when the server no longer knows the agent. So **removing the host of such an agent brings it back** while the token is valid; revoke the token first, or stop the agent.
+`deaconguard agent run` then enrolls when the agent isn't enrolled yet, when the token is for a server with another certificate (the server was replaced), and when the server no longer knows the agent. So **removing the host of such an agent brings it back** while the token is valid; revoke the token first, or stop the agent. A host disconnected when its token was revoked gets its agent back, as the same host, when that agent enrolls with a new token.
 
 ## Automation
 
@@ -99,4 +115,4 @@ The agent checks in with the server every 25 seconds. The dashboard shows an age
 
 ## Removing an agent
 
-Remove the host in the dashboard. That revokes the agent's credential at once, and the agent service stops (on a Mac, launchd doesn't start it again). The credential is stored on the machine in `/etc/deaconguard/agent.json`, readable by root only.
+Remove the host in the dashboard. That revokes the agent's credential at once, and the agent service stops (on a Mac, launchd doesn't start it again). To cut off every machine a token enrolled but keep their history, [revoke the token and disconnect them](#revoking-a-token) instead. The credential is stored on the machine in `/etc/deaconguard/agent.json`, readable by root only.

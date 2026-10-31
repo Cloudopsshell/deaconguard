@@ -21,7 +21,11 @@ import (
 // fakeAPI serves a small cluster to the token "secret".
 func fakeAPI(t *testing.T) *httptest.Server {
 	lists := map[string][]map[string]any{
-		"/api/v1/nodes": {{"metadata": map[string]any{"name": "n1"}, "status": map[string]any{"nodeInfo": map[string]any{"architecture": "arm64"}}}},
+		"/api/v1/nodes": {{"metadata": map[string]any{"name": "n1", "labels": map[string]any{"node-role.kubernetes.io/control-plane": "true"}},
+			"status": map[string]any{"nodeInfo": map[string]any{"architecture": "arm64", "osImage": "Ubuntu 26.04 LTS", "kernelVersion": "7.0.0-22-generic",
+				"containerRuntimeVersion": "containerd://2.2.3", "kubeletVersion": "v1.29.3"},
+				"conditions": []any{map[string]any{"type": "Ready", "status": "True"}},
+				"addresses":  []any{map[string]any{"type": "InternalIP", "address": "10.0.0.5"}}}}},
 		"/api/v1/namespaces": {
 			{"metadata": map[string]any{"name": "shop"}},
 			{"metadata": map[string]any{"name": "safe", "labels": map[string]any{"pod-security.kubernetes.io/enforce": "restricted"}}},
@@ -30,9 +34,11 @@ func fakeAPI(t *testing.T) *httptest.Server {
 		},
 		"/api/v1/pods": {
 			// Owned by a ReplicaSet: checked through its Deployment.
-			{"metadata": map[string]any{"name": "web-1", "namespace": "shop", "ownerReferences": []any{map[string]any{"kind": "ReplicaSet"}}},
-				"spec":   map[string]any{"containers": []any{map[string]any{"name": "web", "image": "nginx:1.27"}}},
-				"status": map[string]any{"containerStatuses": []any{map[string]any{"image": "docker.io/library/nginx:1.27", "imageID": "docker.io/library/nginx@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}},
+			{"metadata": map[string]any{"name": "web-1", "namespace": "shop", "ownerReferences": []any{map[string]any{"kind": "ReplicaSet", "name": "web-abc", "controller": true}}},
+				"spec": map[string]any{"nodeName": "n1", "containers": []any{map[string]any{"name": "web", "image": "nginx:1.27"}}},
+				"status": map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"name": "web", "image": "docker.io/library/nginx:1.27",
+					"imageID": "docker.io/library/nginx@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "containerID": "containerd://c0ffee",
+					"ready": true, "restartCount": 2, "state": map[string]any{"running": map[string]any{}}}}}},
 			// A bare, privileged pod.
 			{"metadata": map[string]any{"name": "debug", "namespace": "shop"},
 				"spec": map[string]any{"containers": []any{map[string]any{"name": "sh", "image": "busybox:1.36", "securityContext": map[string]any{"privileged": true}}}}},
@@ -53,7 +59,7 @@ func fakeAPI(t *testing.T) *httptest.Server {
 				"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"containers": []any{}}}}},
 		},
 		"/apis/apps/v1/replicasets": {
-			{"metadata": map[string]any{"name": "web-abc", "namespace": "shop", "ownerReferences": []any{map[string]any{"kind": "Deployment"}}},
+			{"metadata": map[string]any{"name": "web-abc", "namespace": "shop", "ownerReferences": []any{map[string]any{"kind": "Deployment", "name": "web", "controller": true}}},
 				"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"hostNetwork": true}}}},
 		},
 		"/apis/networking.k8s.io/v1/networkpolicies": {{"metadata": map[string]any{"name": "deny", "namespace": "safe"}}},
@@ -217,6 +223,27 @@ func TestScanReadsTheCluster(t *testing.T) {
 	notes := strings.Join(report.Notes, "\n")
 	if !strings.Contains(notes, "CronJobs weren't checked") || !strings.Contains(notes, "were left out") {
 		t.Errorf("notes = %s", notes)
+	}
+
+	// The inventory, for the cluster view: pods under the workload people
+	// manage, with the containers' IDs and builds.
+	inventory := report.Inventory
+	if inventory == nil || len(inventory.Nodes) != 1 || len(inventory.Namespaces) != 4 || len(inventory.Pods) != 4 {
+		t.Fatalf("inventory: %+v", inventory)
+	}
+	node := inventory.Nodes[0]
+	if node.Name != "n1" || !node.Ready || strings.Join(node.Roles, ",") != "control-plane" || node.Address != "10.0.0.5" || node.OSImage != "Ubuntu 26.04 LTS" || node.Runtime != "containerd://2.2.3" {
+		t.Errorf("node: %+v", node)
+	}
+	web := inventory.Pods[0]
+	if web.Name != "web-1" || web.WorkloadKind != "Deployment" || web.Workload != "web" || web.Node != "n1" || web.Phase != "Running" || len(web.Containers) != 1 {
+		t.Fatalf("pod: %+v", web)
+	}
+	if c := web.Containers[0]; c.ID != "c0ffee" || c.Digest != "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" || !c.Ready || c.Restarts != 2 || c.State != "running" {
+		t.Errorf("container: %+v", c)
+	}
+	if bare := inventory.Pods[1]; bare.Name != "debug" || bare.Workload != "" {
+		t.Errorf("bare pod: %+v", bare)
 	}
 
 	withSystem, _ := Scan(context.Background(), client, Options{IncludeSystem: true, Now: now})

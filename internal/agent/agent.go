@@ -164,10 +164,16 @@ func kubernetesHint(err error, inKubernetes bool) string {
 	if !inKubernetes {
 		return ""
 	}
-	if errors.Is(err, errRejected) && strings.Contains(err.Error(), "HTTP 401") {
+	// Servers before 1.21.0 don't say why; a one-time token is the usual
+	// reason when they don't.
+	if errors.Is(err, errRejected) && strings.Contains(err.Error(), "HTTP 401") &&
+		(strings.Contains(err.Error(), "one-time") || strings.Contains(err.Error(), "invalid, expired, revoked, or already used")) {
 		return ". In Kubernetes, the chart's agents (one per node, and the cluster agent) share the enrollment secret, " +
 			"so its token must be reusable: on the server's Agents page choose Enroll a machine > Kubernetes, put the token in the secret, " +
 			"and delete this pod to retry"
+	}
+	if errors.Is(err, errRejected) && strings.Contains(err.Error(), "HTTP 401") {
+		return ". Put a new token from Enroll a machine > Kubernetes in the enrollment secret, and delete this pod to retry"
 	}
 	if errors.Is(err, errRejected) {
 		return ""
@@ -179,6 +185,23 @@ func kubernetesHint(err error, inKubernetes bool) string {
 
 // ErrRemoved means the server no longer knows this agent.
 var ErrRemoved = errors.New("the server does not recognize this agent; it was removed from the server or its enrollment was lost. Enroll it again with a new token")
+
+// removedError is an ErrRemoved that says why, when the server does: a host
+// disconnected when its token was revoked (1.21.0 and later).
+type removedError struct{ reason string }
+
+func (err removedError) Error() string        { return "the server refused this agent: " + err.reason }
+func (err removedError) Is(target error) bool { return target == ErrRemoved }
+
+// removed turns the server's refusal into ErrRemoved, with the server's
+// reason when it gave one beyond not knowing the agent.
+func removed(err error) error {
+	_, reason, _ := strings.Cut(err.Error(), ": ")
+	if strings.Contains(reason, "disconnected") {
+		return removedError{reason}
+	}
+	return ErrRemoved
+}
 
 // moveRetry is how long an agent waits before trying the server's agent port
 // again after it could not reach it.
@@ -240,7 +263,7 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 		case ctx.Err() != nil:
 			return nil
 		case errors.Is(err, errUnauthorized):
-			return ErrRemoved
+			return removed(err)
 		case err != nil:
 			connected = false
 			if failingSince.IsZero() {
