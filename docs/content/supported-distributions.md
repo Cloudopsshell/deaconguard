@@ -67,8 +67,9 @@ The server itself can run on any of the distributions above except Alpine; only 
 
 Some feeds are large: Canonical's OVAL for one Ubuntu release is hundreds of megabytes of XML, and reading it takes several seconds of CPU, half a minute on a small server. A feed changes at most every 12 hours, so the server reads each one once and keeps it, parsed, for the scans that follow, machines' and images' alike: a second scan of the same release takes a fraction of a second. This applies to Ubuntu's, Debian's, Red Hat's, AlmaLinux's, Oracle Linux's and SUSE's feeds, and Rocky Linux's and Fedora's updateinfo; the others are small enough to read each time.
 
-- **Memory:** parsed feeds take up to about 400 MB, roughly what one Ubuntu release (about 275 MB) takes with Debian's and Red Hat's. When a new one would take more, the one used least recently is let go, and it is read again when a scan needs it. A feed is also let go after 30 minutes without a scan, and a new download replaces the old one.
+- **Memory:** parsed feeds take up to about 400 MB, roughly what one Ubuntu release (about 275 MB) takes with Debian's and Red Hat's; under a memory limit lower than 1 GB, such as a small container's, at most 40% of it. Before a feed is read, the ones used least recently are let go until it fits beside the others, so two large feeds are never held while a third is read; a feed let go is read again when a scan needs it. A feed is also let go after 30 minutes without a scan, and a new download replaces the old one.
 - **Changing it:** `DEACONGUARD_FEED_CACHE_MB` sets the budget, such as `700` to keep two Ubuntu releases when the server scans both, or `0` to read the feed for every scan, as before 1.17.0. With Helm, `server.feedCacheMB`. Keep it well under the server's memory limit, which needs about 450 MB more while a feed is read.
+- **Memory limit:** the server tells the Go runtime the memory limit it runs under, a container's or a systemd unit's `MemoryMax`, and keeps its heap under 85% of it (1.20.3 and later), so it collects memory rather than being stopped by the kernel. `GOMEMLIMIT`, if you set it, is used instead.
 
 ## Feed hosts
 
