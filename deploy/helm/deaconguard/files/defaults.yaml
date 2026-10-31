@@ -35,6 +35,10 @@ server:
   # of the same release don't parse them again (Ubuntu's take about 275 MB
   # each). 0 parses for every scan. Keep it well under resources.limits.memory.
   feedCacheMB: 400
+  # The images clusters' pods run are taken from the node agents' Running
+  # containers scans; the server reads the others from their registries.
+  # false reads none: images no node agent scanned are left unchecked.
+  clusterImageRegistry: true
   # A kubernetes.io/tls secret to serve instead of the self-signed
   # certificate. Agents trust a certificate that the system trusts for the
   # server's name, or its key's fingerprint from their token.

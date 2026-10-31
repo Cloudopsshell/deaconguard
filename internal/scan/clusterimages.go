@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -32,6 +33,64 @@ type ImageSummary struct {
 	FixableSeverity map[string]int
 	// Urgent are the IDs of the most urgent vulnerabilities to fix, at most 5.
 	Urgent []string
+	// Node names the machine whose agent read the build from a running
+	// container, so nothing was downloaded; empty when it was read from
+	// its registry.
+	Node string
+}
+
+// ErrRegistryOff is Check's answer when reading images from registries is
+// turned off: only builds node agents read are checked.
+var ErrRegistryOff = errors.New("reading images from registries is turned off")
+
+// ImageDigest is the digest in a container's image ID, such as
+// docker.io/library/nginx@sha256:…, as crictl and the pods' status report
+// it; "" for an ID without a repository, which no pod's status matches.
+func ImageDigest(imageID string) string {
+	_, digest, found := strings.Cut(imageID, "@")
+	if !found || !strings.HasPrefix(digest, "sha256:") || len(digest) != 71 {
+		return ""
+	}
+	return digest
+}
+
+// NodeImage is a build a node agent read from a running container.
+type NodeImage struct {
+	Digest  string
+	Summary ImageSummary
+}
+
+// NodeImages are the builds of the running containers in a report's
+// Running containers check, once the server has checked them.
+func NodeImages(report map[string]any) []NodeImage {
+	raw, ok := report["check_results"]
+	if !ok || raw == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var results map[string]checks.Result
+	if json.Unmarshal(encoded, &results) != nil {
+		return nil
+	}
+	result, ok := results[checks.Containers]
+	if !ok || result.Status == checks.StatusFailed || result.Status == checks.StatusSkipped {
+		return nil
+	}
+	var list []NodeImage
+	seen := map[string]bool{}
+	for _, container := range result.Containers {
+		digest := ImageDigest(container.ImageID)
+		// Only containers the server checked: running ones, with a result.
+		if digest == "" || seen[digest] || !container.Scanned() || container.Severity == nil {
+			continue
+		}
+		seen[digest] = true
+		list = append(list, NodeImage{Digest: digest, Summary: Summarize(container)})
+	}
+	return list
 }
 
 // Summarize keeps what a cluster scan needs of an image's check.
@@ -101,7 +160,7 @@ func EvaluateClusterImages(report map[string]any, emit func(Event), source Clust
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), ClusterImagesBudget)
 	defer cancel()
-	checked, read, later := 0, 0, 0
+	checked, read, later, fromNodes, off := 0, 0, 0, 0, 0
 	var failures []string
 	for _, image := range list {
 		summary, failure, found := source.Cached(image, platform)
@@ -113,6 +172,11 @@ func EvaluateClusterImages(report map[string]any, emit func(Event), source Clust
 			read++
 			progress.info("Reading %s from its registry", image.Image)
 			summary, failure = source.Check(ctx, image, platform)
+			if errors.Is(failure, ErrRegistryOff) {
+				read--
+				off++
+				continue
+			}
 		}
 		if failure != nil {
 			message := failure.Error()
@@ -123,12 +187,29 @@ func EvaluateClusterImages(report map[string]any, emit func(Event), source Clust
 			continue
 		}
 		checked++
+		if summary.Node != "" {
+			fromNodes++
+		}
 		if finding, ok := imageFinding(image, summary); ok {
 			result.Findings = append(result.Findings, finding)
 		}
 	}
-	result.Notes = append(result.Notes, fmt.Sprintf("Checked %s the pods run for vulnerabilities, as image scans do; each build is read from its registry once a day.",
-		plural(checked, "image", "images")))
+	if checked > 0 {
+		note := fmt.Sprintf("Checked %s the pods run for vulnerabilities", plural(checked, "image", "images"))
+		switch fromNodes {
+		case checked:
+			note += ", all from the node agents' Running containers scans, so nothing was downloaded."
+		case 0:
+			note += ", each read from its registry once a day, as image scans do."
+		default:
+			note += fmt.Sprintf(": %d from the node agents' Running containers scans, so not downloaded, and %d read from their registries once a day.", fromNodes, checked-fromNodes)
+		}
+		result.Notes = append(result.Notes, note)
+	}
+	if off > 0 {
+		result.Notes = append(result.Notes, fmt.Sprintf("%s weren't checked: no node agent scanned their containers in the last day, and reading images from registries is turned off on the server.",
+			plural(off, "image", "images")))
+	}
 	if tagsOnly && checked > 0 {
 		result.Notes = append(result.Notes, "The cluster agent is older than 1.20.0, so each image's tag was checked as it is now, which may be a newer build than the pods run. Upgrade the cluster agent to check the builds they run.")
 	}

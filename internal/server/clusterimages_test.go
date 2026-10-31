@@ -10,6 +10,8 @@ import (
 	"deaconguard/internal/checks"
 	"deaconguard/internal/containers"
 	"deaconguard/internal/images"
+	"deaconguard/internal/scan"
+	"deaconguard/internal/store"
 )
 
 func TestClusterImagesAreReadOnceADay(t *testing.T) {
@@ -74,5 +76,53 @@ func TestClusterImageCacheStaysBounded(t *testing.T) {
 	}
 	if len(cache.entries) != maxClusterImageEntries {
 		t.Fatalf("entries = %d", len(cache.entries))
+	}
+}
+
+func TestClusterImagesComeFromNodeAgentsFirst(t *testing.T) {
+	s := newNetworkTestServer(t)
+	read := 0
+	s.images.read = func(ctx context.Context, client *images.Client, ref images.Reference, platform string) (containers.Inventory, images.Resolved, error) {
+		read++
+		return containers.Inventory{Container: containers.Container{Name: ref.String(), Runtime: "registry"}}, images.Resolved{}, nil
+	}
+	digest := "sha256:" + strings.Repeat("f", 64)
+	other := "sha256:" + strings.Repeat("1", 64)
+	node, _ := store.AddLocalHost("node-1", "root")
+	nginx := container("shop/web/nginx", "nginx:1.25", containerCVE("CVE-2023-44487", "HIGH", true, true))
+	nginx["image_id"], nginx["fixable"], nginx["exploited"] = "docker.io/library/nginx@"+digest, 1, 1
+	nginx["severity"], nginx["fixable_severity"] = map[string]int{"HIGH": 1}, map[string]int{"HIGH": 1}
+	stopped := container("tools/old/sh", "busybox:1")
+	stopped["image_id"], stopped["state"] = "docker.io/library/busybox@"+other, "exited"
+	completeChecks(t, node, map[string]any{checks.Containers: containerResult(nginx, stopped)})
+
+	// A restarted server finds the node agent's scan of the last day.
+	cache := newClusterImages(s)
+	summary, err, found := cache.Cached(checks.RunningImage{Image: "nginx:1.25", Digest: digest}, "linux/amd64")
+	if !found || err != nil || summary.Node != "node-1" || summary.Exploited != 1 || summary.Urgent[0] != "CVE-2023-44487" {
+		t.Fatalf("from the node: %+v, %v, %v", summary, err, found)
+	}
+	// A stopped container wasn't read, so its build isn't known.
+	if _, _, found := cache.Cached(checks.RunningImage{Image: "busybox:1", Digest: other}, "linux/amd64"); found {
+		t.Fatal("a stopped container's image counted as read")
+	}
+	if read != 0 {
+		t.Fatalf("read %d images from registries", read)
+	}
+
+	// Agents' new scans are recorded as they arrive.
+	fresh := newClusterImages(s)
+	fresh.warm.Do(func() {})
+	report := map[string]any{"check_results": map[string]any{checks.Containers: containerResult(nginx)}}
+	fresh.recordNode(node, report)
+	if summary, _, found := fresh.Cached(checks.RunningImage{Image: "nginx:1.25", Digest: digest}, "linux/arm64"); !found || summary.Node != "node-1" {
+		t.Fatalf("recorded: %+v %v", summary, found)
+	}
+
+	// With registry reads off, the rest aren't read.
+	t.Setenv("DEACONGUARD_CLUSTER_IMAGE_REGISTRY", "off")
+	off := newClusterImages(s)
+	if _, err := off.Check(context.Background(), checks.RunningImage{Image: "redis:7"}, "linux/amd64"); !errors.Is(err, scan.ErrRegistryOff) || read != 0 {
+		t.Fatalf("off: %v, read %d", err, read)
 	}
 }

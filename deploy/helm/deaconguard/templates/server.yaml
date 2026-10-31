@@ -140,6 +140,10 @@ spec:
             - name: DEACONGUARD_FEED_CACHE_MB
               # Upgrades that reuse older values have no feedCacheMB: 400.
               value: {{ ternary .Values.server.feedCacheMB 400 (hasKey .Values.server "feedCacheMB") | toString | quote }}
+            {{- if eq (toString .Values.server.clusterImageRegistry) "false" }}
+            - name: DEACONGUARD_CLUSTER_IMAGE_REGISTRY
+              value: "off"
+            {{- end }}
             - name: DEACONGUARD_CLUSTER_AGENT_URL
               value: "https://{{ include "deaconguard.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.server.service.agentPort }}"
           ports:

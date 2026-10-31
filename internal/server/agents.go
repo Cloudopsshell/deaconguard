@@ -51,6 +51,9 @@ type agentHub struct {
 	presence presence
 	// clusterImages checks the images clusters run; nil leaves them unchecked.
 	clusterImages scan.ClusterImages
+	// nodeImages hears about the builds agents read from running
+	// containers, so cluster scans needn't download them again.
+	nodeImages func(host store.Host, report map[string]any)
 }
 
 type agentScan struct {
@@ -475,6 +478,9 @@ func (h *agentHub) complete(scanID string, report map[string]any, inventory *tar
 	}
 	if failure == nil {
 		failure = scan.EvaluateContainers(report, active.log.add)
+	}
+	if failure == nil && h.nodeImages != nil {
+		h.nodeImages(active.host, report)
 	}
 	if failure == nil {
 		failure = scan.EvaluateKubernetes(report, active.log.add)
