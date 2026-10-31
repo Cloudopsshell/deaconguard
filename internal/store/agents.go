@@ -42,9 +42,57 @@ type EnrollmentToken struct {
 	RevokedAt *string `json:"revoked_at"`
 	// Status is active, used, expired, or revoked.
 	Status string `json:"status"`
+	// Hosts are the hosts the token enrolled that still exist (1.21.0 and
+	// later; earlier enrollments where it is certain).
+	Hosts []TokenHost `json:"hosts"`
+}
+
+// TokenHost is a host a token enrolled.
+type TokenHost struct {
+	ID      string `json:"id"`
+	Address string `json:"address"`
+	Kind    string `json:"kind"`
+	// Disconnected is when the host was disconnected, if it was.
+	Disconnected string `json:"disconnected,omitempty"`
 }
 
 var ErrInvalidEnrollmentToken = errors.New("the enrollment token is invalid, expired, revoked, or already used")
+
+// tokenRejected says why a token can't enroll; it is an
+// ErrInvalidEnrollmentToken.
+type tokenRejected struct{ reason string }
+
+func (err tokenRejected) Error() string { return err.reason }
+func (err tokenRejected) Is(target error) bool {
+	return target == ErrInvalidEnrollmentToken
+}
+
+// rejection explains why the token with this secret can't enroll a machine.
+func rejection(tx *sql.Tx, secret string) error {
+	token, err := scanToken(tx.QueryRow("SELECT "+tokenColumns+" FROM enrollment_tokens WHERE secret_hash = ?", HashSecret(secret)))
+	if err != nil {
+		return tokenRejected{"the enrollment token isn't known to this server: it was made by another server, or deleted. Create a new one on the Agents page"}
+	}
+	short := token.ID[:8]
+	switch token.Status {
+	case "revoked":
+		return tokenRejected{fmt.Sprintf("the enrollment token %s was revoked on %s. Create a new one on the Agents page", short, readableTime(*token.RevokedAt))}
+	case "used":
+		return tokenRejected{fmt.Sprintf("the enrollment token %s is a one-time token, already used on %s to enroll another machine. Create a new one, or a reusable one for several machines", short, readableTime(*token.UsedAt))}
+	case "expired":
+		return tokenRejected{fmt.Sprintf("the enrollment token %s expired on %s. Create a new one on the Agents page", short, readableTime(token.ExpiresAt))}
+	}
+	return ErrInvalidEnrollmentToken
+}
+
+// readableTime turns a stored time into one people read, in UTC.
+func readableTime(stored string) string {
+	at, err := time.Parse(time.RFC3339, stored)
+	if err != nil {
+		return stored
+	}
+	return at.UTC().Format("2006-01-02 15:04 UTC")
+}
 
 // TokenOptions makes a reusable token. The zero value makes a one-time token
 // that lasts EnrollmentTokenLifetime.
@@ -165,25 +213,129 @@ func ListEnrollmentTokens() ([]EnrollmentToken, error) {
 		}
 		tokens = append(tokens, token)
 	}
-	return tokens, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	hosts, err := tokenHosts(db, "")
+	if err != nil {
+		return nil, err
+	}
+	for index := range tokens {
+		tokens[index].Hosts = hosts[tokens[index].ID]
+		if tokens[index].Hosts == nil {
+			tokens[index].Hosts = []TokenHost{}
+		}
+	}
+	return tokens, nil
 }
 
-// RevokeEnrollmentToken stops a token from enrolling more machines. Machines
-// it already enrolled stay enrolled.
-func RevokeEnrollmentToken(id string) (EnrollmentToken, error) {
+// tokenHosts lists the hosts each token enrolled, or only token's.
+func tokenHosts(db *sql.DB, token string) (map[string][]TokenHost, error) {
+	rows, err := db.Query(`SELECT agents.token_id, hosts.id, COALESCE(NULLIF(hosts.display_name, ''), hosts.address), hosts.kind, hosts.disconnected_at
+		FROM agents JOIN hosts ON hosts.id = agents.host_id WHERE agents.token_id != '' AND (? = '' OR agents.token_id = ?)
+		ORDER BY hosts.kind = 'cluster' DESC, 3`, token, token)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	hosts := map[string][]TokenHost{}
+	for rows.Next() {
+		var tokenID string
+		var host TokenHost
+		if err := rows.Scan(&tokenID, &host.ID, &host.Address, &host.Kind, &host.Disconnected); err != nil {
+			return nil, err
+		}
+		hosts[tokenID] = append(hosts[tokenID], host)
+	}
+	return hosts, rows.Err()
+}
+
+// GetEnrollmentToken returns a token with the hosts it enrolled.
+func GetEnrollmentToken(id string) (EnrollmentToken, error) {
 	db, err := database()
 	if err != nil {
-		return EnrollmentToken{}, err
-	}
-	if _, err := db.Exec("UPDATE enrollment_tokens SET revoked_at = ? WHERE id = ? AND (reusable = 1 OR used_at IS NULL) AND revoked_at IS NULL",
-		nowText(), id); err != nil {
 		return EnrollmentToken{}, err
 	}
 	token, err := scanToken(db.QueryRow("SELECT "+tokenColumns+" FROM enrollment_tokens WHERE id = ?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return EnrollmentToken{}, fmt.Errorf("unknown enrollment token")
 	}
+	if err != nil {
+		return EnrollmentToken{}, err
+	}
+	hosts, err := tokenHosts(db, id)
+	token.Hosts = hosts[id]
+	if token.Hosts == nil {
+		token.Hosts = []TokenHost{}
+	}
 	return token, err
+}
+
+// RevokeEnrollmentToken stops a token from enrolling more machines. With
+// disconnect, the machines it enrolled are disconnected too: their agents
+// are refused from then on, told why, and their hosts say why on the
+// dashboard; their scans stay. It returns the token and the hosts it
+// disconnected.
+func RevokeEnrollmentToken(id, by string, disconnect bool) (EnrollmentToken, []TokenHost, error) {
+	db, err := database()
+	if err != nil {
+		return EnrollmentToken{}, nil, err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return EnrollmentToken{}, nil, err
+	}
+	defer tx.Rollback()
+	now := nowText()
+	if _, err := tx.Exec("UPDATE enrollment_tokens SET revoked_at = ? WHERE id = ? AND (reusable = 1 OR used_at IS NULL) AND revoked_at IS NULL",
+		now, id); err != nil {
+		return EnrollmentToken{}, nil, err
+	}
+	var disconnected []TokenHost
+	if disconnect {
+		reason := fmt.Sprintf("its enrollment token %s was revoked, with the machines it enrolled", id[:min(8, len(id))])
+		rows, err := tx.Query(`SELECT hosts.id, COALESCE(NULLIF(hosts.display_name, ''), hosts.address), hosts.kind FROM agents
+			JOIN hosts ON hosts.id = agents.host_id WHERE agents.token_id = ? AND hosts.disconnected_at = ''`, id)
+		if err != nil {
+			return EnrollmentToken{}, nil, err
+		}
+		for rows.Next() {
+			var host TokenHost
+			if err := rows.Scan(&host.ID, &host.Address, &host.Kind); err != nil {
+				rows.Close()
+				return EnrollmentToken{}, nil, err
+			}
+			host.Disconnected = now
+			disconnected = append(disconnected, host)
+		}
+		rows.Close()
+		for _, host := range disconnected {
+			if _, err := tx.Exec("UPDATE hosts SET disconnected_at = ?, disconnected_by = ?, disconnect_reason = ? WHERE id = ?",
+				now, by, reason, host.ID); err != nil {
+				return EnrollmentToken{}, nil, err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return EnrollmentToken{}, nil, err
+	}
+	token, err := GetEnrollmentToken(id)
+	return token, disconnected, err
+}
+
+// DeleteRevokedTokens removes every revoked token from the list, and says
+// how many. The hosts they enrolled stay as they are.
+func DeleteRevokedTokens() (int, error) {
+	db, err := database()
+	if err != nil {
+		return 0, err
+	}
+	result, err := db.Exec("DELETE FROM enrollment_tokens WHERE revoked_at IS NOT NULL")
+	if err != nil {
+		return 0, err
+	}
+	removed, err := result.RowsAffected()
+	return int(removed), err
 }
 
 // Agent describes an enrolled agent host.
@@ -233,16 +385,6 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 	}
 	defer tx.Rollback()
 	now := nowText()
-	result, err := tx.Exec(`UPDATE enrollment_tokens SET used_at = ?, uses = uses + 1,
-		host_id = CASE WHEN reusable = 1 THEN NULL ELSE ? END
-		WHERE secret_hash = ? AND (reusable = 1 OR used_at IS NULL) AND revoked_at IS NULL AND expires_at > ?`,
-		now, id, HashSecret(secret), now)
-	if err != nil {
-		return Host{}, "", err
-	}
-	if changed, _ := result.RowsAffected(); changed != 1 {
-		return Host{}, "", ErrInvalidEnrollmentToken
-	}
 	// Agents run the deeper checks as root or through passwordless sudo.
 	kind := KindMachine
 	if enrollment.Kind == KindCluster {
@@ -250,8 +392,46 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 	} else if strings.HasPrefix(enrollment.OS, "macOS") {
 		kind = KindMac
 	}
+	// A machine disconnected when its token was revoked takes its host back
+	// when it enrolls again, with its scans: only an agent enrolled with a
+	// valid token gets here.
+	var reconnected string
+	err = tx.QueryRow(`SELECT id FROM hosts WHERE transport = ? AND kind = ? AND address = ? AND disconnected_at != ''
+		ORDER BY disconnected_at DESC LIMIT 1`, TransportAgent, kind, enrollment.Hostname).Scan(&reconnected)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return Host{}, "", err
+	}
+	if reconnected != "" {
+		id = reconnected
+	}
+	var tokenID string
+	err = tx.QueryRow(`UPDATE enrollment_tokens SET used_at = ?, uses = uses + 1,
+		host_id = CASE WHEN reusable = 1 THEN NULL ELSE ? END
+		WHERE secret_hash = ? AND (reusable = 1 OR used_at IS NULL) AND revoked_at IS NULL AND expires_at > ?
+		RETURNING id`, now, id, HashSecret(secret), now).Scan(&tokenID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Host{}, "", rejection(tx, secret)
+	}
+	if err != nil {
+		return Host{}, "", err
+	}
 	host := Host{ID: id, Address: enrollment.Hostname, Hostname: enrollment.Hostname, Name: enrollment.Name, Username: enrollment.Username,
 		Transport: TransportAgent, AllowSudo: true, Kind: kind}
+	if reconnected != "" {
+		if host, err = scanHost(tx.QueryRow("SELECT "+hostColumns+" FROM hosts WHERE id = ?", id)); err != nil {
+			return Host{}, "", err
+		}
+		if _, err := tx.Exec(`UPDATE hosts SET username = ?, disconnected_at = '', disconnected_by = '', disconnect_reason = '' WHERE id = ?`,
+			enrollment.Username, id); err != nil {
+			return Host{}, "", err
+		}
+		host.Disconnected, host.Username = nil, enrollment.Username
+		if _, err := tx.Exec(`UPDATE agents SET credential_hash = ?, enrolled_at = ?, last_seen_at = ?, version = ?, os = ?, remote = ?, token_id = ?
+			WHERE host_id = ?`, HashSecret(credential), now, now, enrollment.Version, enrollment.OS, enrollment.Remote, tokenID, id); err != nil {
+			return Host{}, "", err
+		}
+		return host, credential, tx.Commit()
+	}
 	if host.Name != "" {
 		host.Address = host.Name
 	}
@@ -259,15 +439,29 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 		host.ID, host.Hostname, host.Name, host.Username, host.Transport, host.Kind, now); err != nil {
 		return Host{}, "", err
 	}
-	if _, err := tx.Exec(`INSERT INTO agents (host_id, credential_hash, enrolled_at, last_seen_at, version, os, remote)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`, host.ID, HashSecret(credential), now, now,
-		enrollment.Version, enrollment.OS, enrollment.Remote); err != nil {
+	if _, err := tx.Exec(`INSERT INTO agents (host_id, credential_hash, enrolled_at, last_seen_at, version, os, remote, token_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, host.ID, HashSecret(credential), now, now,
+		enrollment.Version, enrollment.OS, enrollment.Remote, tokenID); err != nil {
 		return Host{}, "", err
 	}
 	return host, credential, tx.Commit()
 }
 
 var ErrUnknownAgent = errors.New("this agent is not enrolled with the server; it may have been removed")
+
+// AgentDisconnected is why an agent may no longer connect: its host was
+// disconnected. It is an ErrUnknownAgent.
+type AgentDisconnected struct{ Disconnection }
+
+func (err AgentDisconnected) Error() string {
+	message := "this agent was disconnected on " + readableTime(err.At)
+	if err.By != "" {
+		message += " by " + err.By
+	}
+	return message + ": " + err.Reason + ". To reconnect it, enroll it again with a new token; it keeps its host and its scans"
+}
+
+func (err AgentDisconnected) Is(target error) bool { return target == ErrUnknownAgent }
 
 // AuthenticateAgent checks an agent's credential and records that it was seen.
 func AuthenticateAgent(hostID, credential, version, remote, port string) (Host, error) {
@@ -276,7 +470,9 @@ func AuthenticateAgent(hostID, credential, version, remote, port string) (Host, 
 		return Host{}, err
 	}
 	var stored string
-	err = db.QueryRow("SELECT credential_hash FROM agents WHERE host_id = ?", hostID).Scan(&stored)
+	var disconnected Disconnection
+	err = db.QueryRow(`SELECT credential_hash, hosts.disconnected_at, hosts.disconnected_by, hosts.disconnect_reason
+		FROM agents JOIN hosts ON hosts.id = agents.host_id WHERE host_id = ?`, hostID).Scan(&stored, &disconnected.At, &disconnected.By, &disconnected.Reason)
 	if errors.Is(err, sql.ErrNoRows) {
 		HashSecret(credential)
 		return Host{}, ErrUnknownAgent
@@ -286,6 +482,10 @@ func AuthenticateAgent(hostID, credential, version, remote, port string) (Host, 
 	}
 	if subtle.ConstantTimeCompare([]byte(stored), []byte(HashSecret(credential))) != 1 {
 		return Host{}, ErrUnknownAgent
+	}
+	// Only the agent itself learns why: its credential is checked first.
+	if disconnected.At != "" {
+		return Host{}, AgentDisconnected{disconnected}
 	}
 	if _, err := db.Exec("UPDATE agents SET last_seen_at = ?, version = ?, remote = ?, port = ? WHERE host_id = ?",
 		nowText(), version, remote, port, hostID); err != nil {
@@ -339,4 +539,61 @@ func ValidHostname(name string) bool {
 	return strings.IndexFunc(name, func(r rune) bool {
 		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '.' || r == '_')
 	}) < 0
+}
+
+// LinkClusterNodes records which hosts are the nodes of a cluster, from the
+// node names its cluster agent reported: the agent hosts of machines with
+// those names. When two machines share a name, the one enrolled with the
+// cluster's token wins, then one already linked; otherwise neither is
+// linked. Hosts no longer among its nodes are unlinked.
+func LinkClusterNodes(clusterID string, nodeNames []string) error {
+	db, err := database()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var clusterToken string
+	if err := tx.QueryRow("SELECT token_id FROM agents WHERE host_id = ?", clusterID).Scan(&clusterToken); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE hosts SET cluster_id = '' WHERE cluster_id = ?", clusterID); err != nil {
+		return err
+	}
+	for _, name := range nodeNames {
+		rows, err := tx.Query(`SELECT hosts.id, COALESCE(agents.token_id, ''), hosts.cluster_id FROM hosts LEFT JOIN agents ON agents.host_id = hosts.id
+			WHERE hosts.transport = ? AND hosts.kind = ? AND hosts.address = ?`, TransportAgent, KindMachine, name)
+		if err != nil {
+			return err
+		}
+		var candidates [][3]string
+		for rows.Next() {
+			var candidate [3]string
+			if err := rows.Scan(&candidate[0], &candidate[1], &candidate[2]); err != nil {
+				rows.Close()
+				return err
+			}
+			candidates = append(candidates, candidate)
+		}
+		rows.Close()
+		chosen := ""
+		if len(candidates) == 1 {
+			chosen = candidates[0][0]
+		}
+		for _, candidate := range candidates {
+			if chosen == "" && clusterToken != "" && candidate[1] == clusterToken {
+				chosen = candidate[0]
+			}
+		}
+		if chosen == "" {
+			continue
+		}
+		if _, err := tx.Exec("UPDATE hosts SET cluster_id = ? WHERE id = ?", clusterID, chosen); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

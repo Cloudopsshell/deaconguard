@@ -140,17 +140,20 @@ type Finding struct {
 	// library ("library"), the package, its version and ecosystem, the
 	// versions that fix it, and the files it was found in (inside the
 	// container, for a container).
-	Container string   `json:"container,omitempty"`
-	Image     string   `json:"image,omitempty"`
-	Source    string   `json:"source,omitempty"`
-	Package   string   `json:"package,omitempty"`
-	Version   string   `json:"version,omitempty"`
-	Ecosystem string   `json:"ecosystem,omitempty"`
-	Summary   string   `json:"summary,omitempty"`
-	Fixed     string   `json:"fixed,omitempty"`
-	Fixable   bool     `json:"fixable,omitempty"`
-	Exploited bool     `json:"exploited,omitempty"`
-	Paths     []string `json:"paths,omitempty"`
+	Container string `json:"container,omitempty"`
+	// ContainerID is the runtime's ID of that container, for malware found
+	// in it (1.21.0 and later), so a cluster's view finds its pod.
+	ContainerID string   `json:"container_id,omitempty"`
+	Image       string   `json:"image,omitempty"`
+	Source      string   `json:"source,omitempty"`
+	Package     string   `json:"package,omitempty"`
+	Version     string   `json:"version,omitempty"`
+	Ecosystem   string   `json:"ecosystem,omitempty"`
+	Summary     string   `json:"summary,omitempty"`
+	Fixed       string   `json:"fixed,omitempty"`
+	Fixable     bool     `json:"fixable,omitempty"`
+	Exploited   bool     `json:"exploited,omitempty"`
+	Paths       []string `json:"paths,omitempty"`
 }
 
 type Result struct {
@@ -187,6 +190,64 @@ type Cluster struct {
 	// Running are the builds the pods run, from their status, with where;
 	// empty from cluster agents before 1.20.0, which sent Images only.
 	Running []RunningImage `json:"running_images,omitempty"`
+	// Inventory is what the cluster runs, for the dashboard's cluster view:
+	// its nodes, namespaces, workloads and pods (1.21.0 and later).
+	Inventory *ClusterInventory `json:"inventory,omitempty"`
+}
+
+// ClusterInventory is what a cluster runs. Pods are kept up to
+// MaxInventoryPods, so a large cluster's report stays small.
+type ClusterInventory struct {
+	Nodes      []ClusterNode `json:"nodes"`
+	Namespaces []string      `json:"namespaces"`
+	Pods       []ClusterPod  `json:"pods"`
+	// PodsLeftOut counts the pods past MaxInventoryPods.
+	PodsLeftOut int `json:"pods_left_out,omitempty"`
+}
+
+// MaxInventoryPods is the most pods a cluster's inventory lists.
+const MaxInventoryPods = 5000
+
+// ClusterNode is a node as Kubernetes reports it.
+type ClusterNode struct {
+	Name         string   `json:"name"`
+	Ready        bool     `json:"ready"`
+	Roles        []string `json:"roles,omitempty"`
+	Address      string   `json:"address,omitempty"`
+	OSImage      string   `json:"os_image,omitempty"`
+	Kernel       string   `json:"kernel,omitempty"`
+	Runtime      string   `json:"runtime,omitempty"`
+	Kubelet      string   `json:"kubelet,omitempty"`
+	Architecture string   `json:"architecture,omitempty"`
+}
+
+// ClusterPod is a pod, with the workload that runs it: the controller at
+// the top, such as the Deployment of its ReplicaSet; none for a bare pod.
+type ClusterPod struct {
+	Namespace    string             `json:"namespace"`
+	Name         string             `json:"name"`
+	WorkloadKind string             `json:"workload_kind,omitempty"`
+	Workload     string             `json:"workload,omitempty"`
+	Node         string             `json:"node,omitempty"`
+	Phase        string             `json:"phase,omitempty"`
+	Containers   []ClusterContainer `json:"containers"`
+}
+
+// ClusterContainer is a pod's container: its image, the build it runs and
+// its ID in the runtime, which the node agent's Running containers check
+// reports too.
+type ClusterContainer struct {
+	Name     string `json:"name"`
+	Image    string `json:"image"`
+	Digest   string `json:"digest,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Init     bool   `json:"init,omitempty"`
+	Ready    bool   `json:"ready,omitempty"`
+	Restarts int    `json:"restarts,omitempty"`
+	// State is running, waiting or terminated; Reason why, such as
+	// CrashLoopBackOff.
+	State  string `json:"state,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // RunningImage is an image pods run: the reference in their spec, the

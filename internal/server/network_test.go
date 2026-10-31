@@ -298,6 +298,9 @@ func TestReusableTokenEnrollsManyUntilRevoked(t *testing.T) {
 	if len(tokens) != 1 || tokens[0].Status != "active" || tokens[0].Uses != 3 || tokens[0].UsedAt == nil || tokens[0].HostID != nil {
 		t.Fatalf("tokens: %+v", tokens)
 	}
+	if len(tokens[0].Hosts) != 3 {
+		t.Fatalf("the token's hosts: %+v", tokens[0].Hosts)
+	}
 
 	// Revoking stops new machines; the ones enrolled stay.
 	if response := do(t, s, call{method: http.MethodDelete, path: "/api/enrollment-tokens/" + tokenResponse.ID, cookie: cookie}); response.Code != http.StatusOK ||
@@ -309,6 +312,44 @@ func TestReusableTokenEnrollsManyUntilRevoked(t *testing.T) {
 	}
 	if list := decode[[]store.HostSummary](t, do(t, s, call{method: http.MethodGet, path: "/api/hosts", cookie: cookie})); len(list) != 3 {
 		t.Fatalf("hosts after revoking: %d", len(list))
+	}
+}
+
+func TestRevokingATokenDisconnectsItsMachines(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	created := do(t, s, call{method: http.MethodPost, path: "/api/enrollment-tokens", cookie: cookie,
+		body: map[string]any{"server_url": "https://deaconguard.example:8443", "reusable": true}})
+	tokenResponse := decode[enrollmentTokenResponse](t, created)
+	token, _ := agentapi.ParseToken(tokenResponse.Token)
+	identity := decode[agentapi.EnrollResponse](t, do(t, s, call{method: http.MethodPost, path: "/agent/v1/enroll",
+		body: agentapi.EnrollRequest{Secret: token.Secret, Hostname: "node-1", Username: "root"}}))
+	bearer := identity.HostID + "." + identity.Credential
+
+	revoked := do(t, s, call{method: http.MethodDelete, path: "/api/enrollment-tokens/" + tokenResponse.ID + "?disconnect=1", cookie: cookie})
+	reply := decode[revokeResponse](t, revoked)
+	if revoked.Code != http.StatusOK || reply.Status != "revoked" || len(reply.Disconnected) != 1 || reply.Disconnected[0].ID != identity.HostID {
+		t.Fatalf("revoke: %d %s", revoked.Code, revoked.Body.String())
+	}
+	job := do(t, s, call{method: http.MethodGet, path: "/agent/v1/job", bearer: bearer})
+	if job.Code != http.StatusUnauthorized || !strings.Contains(job.Body.String(), "disconnected") || !strings.Contains(job.Body.String(), tokenResponse.ID[:8]) {
+		t.Fatalf("disconnected agent's job: %d %s", job.Code, job.Body.String())
+	}
+	scan := do(t, s, call{method: http.MethodPost, path: "/api/hosts/" + identity.HostID + "/scans", cookie: cookie, body: map[string]any{"checks": []string{"packages"}}})
+	if scan.Code != http.StatusConflict || !strings.Contains(scan.Body.String(), "disconnected") {
+		t.Fatalf("scan of a disconnected host: %d %s", scan.Code, scan.Body.String())
+	}
+	host := decode[store.Host](t, do(t, s, call{method: http.MethodGet, path: "/api/hosts/" + identity.HostID, cookie: cookie}))
+	if host.Disconnected == nil || host.Disconnected.By != "admin" {
+		t.Fatalf("host: %+v", host)
+	}
+
+	if response := do(t, s, call{method: http.MethodDelete, path: "/api/enrollment-tokens", cookie: cookie}); response.Code != http.StatusBadRequest {
+		t.Fatalf("delete without status: %d", response.Code)
+	}
+	cleared := do(t, s, call{method: http.MethodDelete, path: "/api/enrollment-tokens?status=revoked", cookie: cookie})
+	if cleared.Code != http.StatusOK || decode[map[string]int](t, cleared)["removed"] != 1 {
+		t.Fatalf("clear revoked: %d %s", cleared.Code, cleared.Body.String())
 	}
 }
 

@@ -25,7 +25,7 @@ import { isActive, severityStyle, timeAgo } from "../lib/format";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { PackageCountsInline } from "../lib/fixes";
 import { ScanDialog } from "../components/ScanDialog";
-import { ThisServerBadge, agentOnline, shortConnectionLabel } from "../lib/hosts";
+import { ClusterBadge, NodeBadge, ThisServerBadge, agentOnline, disconnectedText, groupByCluster, shortConnectionLabel } from "../lib/hosts";
 import { RemoveHostDialog } from "./HostDetail";
 import { ReleaseBadge } from "../components/ReleaseSupport";
 
@@ -119,10 +119,10 @@ export function Hosts() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-              {data
-                .filter((host) => !tag || host.tags.includes(tag))
-                .map((host) => (
-                  <HostRow key={host.id} host={host} />
+              {groupByCluster(data)
+                .filter(({ host, nodes }) => !tag || [host, ...nodes].some((item) => item.tags.includes(tag)))
+                .map(({ host, nodes }) => (
+                  <HostGroupRows key={host.id} host={host} nodes={nodes} />
                 ))}
             </tbody>
           </Table>
@@ -138,7 +138,19 @@ export function Hosts() {
   );
 }
 
-function HostRow({ host }: { host: HostSummary }) {
+/** A host, and when it is a cluster, its nodes under it. */
+function HostGroupRows({ host, nodes }: { host: HostSummary; nodes: HostSummary[] }) {
+  return (
+    <>
+      <HostRow host={host} nodes={nodes.length} />
+      {nodes.map((node) => (
+        <HostRow key={node.id} host={node} node />
+      ))}
+    </>
+  );
+}
+
+function HostRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?: boolean; nodes?: number }) {
   const navigate = useNavigate();
   const [removing, setRemoving] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -146,13 +158,26 @@ function HostRow({ host }: { host: HostSummary }) {
   const canRemove = useCan("admin");
   const running = isActive(host.last_scan?.status);
   return (
-    <tr onClick={() => navigate(`/hosts/${host.id}`)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
-      <Td>
+    <tr
+      onClick={() => navigate(`/hosts/${host.id}`)}
+      className={cx(
+        "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50",
+        (node || host.kind === "cluster") && "bg-sky-50/40 dark:bg-sky-500/[0.04]",
+      )}
+    >
+      <Td className={node ? "pl-10" : undefined}>
         {/* Name and label stay on one line, so a wide Findings column cannot push the label down. */}
         <div className="flex items-center gap-2 whitespace-nowrap">
+          {node && (
+            <span className="text-slate-400 dark:text-slate-500" aria-hidden>
+              └
+            </span>
+          )}
+          {node && <NodeBadge />}
           <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
             {host.address}
           </Link>
+          {host.kind === "cluster" && <ClusterBadge />}
           {host.this_server && <ThisServerBadge />}
         </div>
         {host.name && host.hostname && host.hostname !== host.name && (
@@ -167,9 +192,13 @@ function HostRow({ host }: { host: HostSummary }) {
               title={agentOnline(host) ? "Agent online" : "Agent offline"}
             />
           )}
-          {shortConnectionLabel(host)}
-          {host.transport === "agent" && (agentOnline(host) ? " · online" : " · offline")}
+          {host.kind === "cluster" ? "cluster agent" : node ? "node agent" : shortConnectionLabel(host)}
+          {host.transport === "agent" && (host.disconnected ? " · disconnected" : agentOnline(host) ? " · online" : " · offline")}
+          {host.kind === "cluster" && nodes > 0 && ` · ${nodes} ${nodes === 1 ? "node" : "nodes"} with an agent`}
         </p>
+        {host.disconnected && (
+          <p className="mt-1 max-w-md text-xs whitespace-normal text-amber-700 dark:text-amber-300">{disconnectedText(host)}</p>
+        )}
         <TagChips tags={host.tags} className="mt-1" />
       </Td>
       <Td className="text-slate-600 dark:text-slate-300">

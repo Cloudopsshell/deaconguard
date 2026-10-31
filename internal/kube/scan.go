@@ -50,6 +50,8 @@ type Report struct {
 	Images  []string              `json:"images"`
 	Running []checks.RunningImage `json:"running_images,omitempty"`
 	Notes   []string              `json:"notes,omitempty"`
+	// Inventory is what the cluster runs, for the dashboard's cluster view.
+	Inventory *checks.ClusterInventory `json:"inventory,omitempty"`
 }
 
 var systemNamespaces = map[string]bool{"kube-system": true, "kube-public": true, "kube-node-lease": true}
@@ -76,29 +78,42 @@ type object struct {
 		Namespace       string            `json:"namespace"`
 		Labels          map[string]string `json:"labels"`
 		OwnerReferences []struct {
-			Kind string `json:"kind"`
+			Kind       string `json:"kind"`
+			Name       string `json:"name"`
+			Controller bool   `json:"controller"`
 		} `json:"ownerReferences"`
 	} `json:"metadata"`
 	Spec struct {
+		NodeName   string `json:"nodeName"`
 		Containers []struct {
+			Name    string   `json:"name"`
 			Image   string   `json:"image"`
 			Command []string `json:"command"`
 			Args    []string `json:"args"`
 		} `json:"containers"`
 		InitContainers []struct {
+			Name  string `json:"name"`
 			Image string `json:"image"`
 		} `json:"initContainers"`
 	} `json:"spec"`
 	// A pod's status names the build each container runs.
 	Status struct {
+		Phase                 string            `json:"phase"`
 		ContainerStatuses     []containerStatus `json:"containerStatuses"`
 		InitContainerStatuses []containerStatus `json:"initContainerStatuses"`
 	} `json:"status"`
 }
 
 type containerStatus struct {
-	Image   string `json:"image"`
-	ImageID string `json:"imageID"`
+	Name         string `json:"name"`
+	Image        string `json:"image"`
+	ImageID      string `json:"imageID"`
+	ContainerID  string `json:"containerID"`
+	Ready        bool   `json:"ready"`
+	RestartCount int    `json:"restartCount"`
+	State        map[string]struct {
+		Reason string `json:"reason"`
+	} `json:"state"`
 }
 
 // runningDigest reads the build's digest from a container status's
@@ -176,19 +191,20 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 		return report, err
 	}
 	report.Version = version.GitVersion
+	inventory := &checks.ClusterInventory{Nodes: []checks.ClusterNode{}, Namespaces: []string{}, Pods: []checks.ClusterPod{}}
+	report.Inventory = inventory
+	// owners maps a ReplicaSet or Job to the controller above it, such as
+	// its Deployment or CronJob, so pods are shown under the workload people
+	// manage.
+	owners := map[string][2]string{}
 	if nodes, err := client.List(ctx, "/api/v1/nodes"); err == nil {
 		architectures := map[string]int{}
 		for _, raw := range nodes {
-			var node struct {
-				Status struct {
-					NodeInfo struct {
-						Architecture string `json:"architecture"`
-					} `json:"nodeInfo"`
-				} `json:"status"`
-			}
+			var node clusterNode
 			if json.Unmarshal(raw, &node) == nil {
 				report.Nodes++
 				architectures[node.Status.NodeInfo.Architecture]++
+				inventory.Nodes = append(inventory.Nodes, node.summary())
 			}
 		}
 		for architecture, count := range architectures {
@@ -244,6 +260,16 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 					spec = append(spec, c.Image)
 				}
 				running.add(ns, spec, append(meta.Status.ContainerStatuses, meta.Status.InitContainerStatuses...))
+				if len(inventory.Pods) < checks.MaxInventoryPods {
+					inventory.Pods = append(inventory.Pods, inventoryPod(meta))
+				} else {
+					inventory.PodsLeftOut++
+				}
+			}
+			if k.kind == "ReplicaSet" || k.kind == "Job" {
+				if owner, ok := controller(meta); ok {
+					owners[ns+"/"+k.kind+"/"+meta.Metadata.Name] = owner
+				}
 			}
 			// A controller's pods and ReplicaSets are checked through it.
 			if len(meta.Metadata.OwnerReferences) > 0 && (k.kind == "Pod" || k.kind == "ReplicaSet" || k.kind == "Job") {
@@ -279,6 +305,11 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 	}
 	sort.Strings(report.Images)
 	report.Running = running.list()
+	for index, pod := range inventory.Pods {
+		if owner, ok := owners[pod.Namespace+"/"+pod.WorkloadKind+"/"+pod.Workload]; ok {
+			inventory.Pods[index].WorkloadKind, inventory.Pods[index].Workload = owner[0], owner[1]
+		}
+	}
 	if skippedSystem > 0 {
 		report.Notes = append(report.Notes, fmt.Sprintf("%d objects of Kubernetes itself (kube-system, built-in roles) were left out: its components need privileges by design", skippedSystem))
 	}
@@ -364,6 +395,9 @@ func checkNamespaces(ctx context.Context, client *Client, podsIn map[string]int,
 		}
 		name := meta.Metadata.Name
 		report.Namespaces++
+		if report.Inventory != nil {
+			report.Inventory.Namespaces = append(report.Inventory.Namespaces, name)
+		}
 		if podsIn[name] == 0 || systemNamespaces[name] {
 			continue
 		}
@@ -570,4 +604,99 @@ func OnlineCVEs(ctx context.Context, version string) ([]checks.Finding, error) {
 		return nil, errors.New(result.Error)
 	}
 	return result.Findings, nil
+}
+
+// clusterNode is what the inventory keeps of a node.
+type clusterNode struct {
+	Metadata struct {
+		Name   string            `json:"name"`
+		Labels map[string]string `json:"labels"`
+	} `json:"metadata"`
+	Status struct {
+		Conditions []struct {
+			Type   string `json:"type"`
+			Status string `json:"status"`
+		} `json:"conditions"`
+		Addresses []struct {
+			Type    string `json:"type"`
+			Address string `json:"address"`
+		} `json:"addresses"`
+		NodeInfo struct {
+			Architecture            string `json:"architecture"`
+			OSImage                 string `json:"osImage"`
+			KernelVersion           string `json:"kernelVersion"`
+			ContainerRuntimeVersion string `json:"containerRuntimeVersion"`
+			KubeletVersion          string `json:"kubeletVersion"`
+		} `json:"nodeInfo"`
+	} `json:"status"`
+}
+
+func (node clusterNode) summary() checks.ClusterNode {
+	info := node.Status.NodeInfo
+	summary := checks.ClusterNode{Name: node.Metadata.Name, OSImage: info.OSImage, Kernel: info.KernelVersion,
+		Runtime: info.ContainerRuntimeVersion, Kubelet: info.KubeletVersion, Architecture: info.Architecture}
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == "Ready" {
+			summary.Ready = condition.Status == "True"
+		}
+	}
+	for _, address := range node.Status.Addresses {
+		if address.Type == "InternalIP" && summary.Address == "" {
+			summary.Address = address.Address
+		}
+	}
+	for label := range node.Metadata.Labels {
+		if role, ok := strings.CutPrefix(label, "node-role.kubernetes.io/"); ok && role != "" {
+			summary.Roles = append(summary.Roles, role)
+		}
+	}
+	sort.Strings(summary.Roles)
+	return summary
+}
+
+// controller is the object that controls meta, as kind and name.
+func controller(meta object) ([2]string, bool) {
+	for _, owner := range meta.Metadata.OwnerReferences {
+		if owner.Controller {
+			return [2]string{owner.Kind, owner.Name}, true
+		}
+	}
+	return [2]string{}, false
+}
+
+// inventoryPod is what the inventory keeps of a pod: its controller (the
+// ReplicaSet or Job until the scan maps those to theirs), node, phase and
+// containers.
+func inventoryPod(meta object) checks.ClusterPod {
+	pod := checks.ClusterPod{Namespace: meta.Metadata.Namespace, Name: meta.Metadata.Name, Node: meta.Spec.NodeName,
+		Phase: meta.Status.Phase, Containers: []checks.ClusterContainer{}}
+	if owner, ok := controller(meta); ok {
+		pod.WorkloadKind, pod.Workload = owner[0], owner[1]
+	}
+	statuses := map[string]containerStatus{}
+	for _, status := range append(meta.Status.ContainerStatuses, meta.Status.InitContainerStatuses...) {
+		statuses[status.Name] = status
+	}
+	add := func(name, image string, init bool) {
+		container := checks.ClusterContainer{Name: name, Image: image, Init: init}
+		if status, ok := statuses[name]; ok {
+			container.Digest = runningDigest(status.ImageID)
+			// containerd://abc…, docker://abc…: the runtime's own ID.
+			if _, id, found := strings.Cut(status.ContainerID, "://"); found {
+				container.ID = id
+			}
+			container.Ready, container.Restarts = status.Ready, status.RestartCount
+			for state, detail := range status.State {
+				container.State, container.Reason = state, detail.Reason
+			}
+		}
+		pod.Containers = append(pod.Containers, container)
+	}
+	for _, c := range meta.Spec.InitContainers {
+		add(c.Name, c.Image, true)
+	}
+	for _, c := range meta.Spec.Containers {
+		add(c.Name, c.Image, false)
+	}
+	return pod
 }

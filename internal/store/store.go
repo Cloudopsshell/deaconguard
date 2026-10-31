@@ -42,6 +42,20 @@ type Host struct {
 	// the macOS checks, or KindCluster for a Kubernetes cluster enrolled with
 	// a cluster agent, which runs only the Kubernetes check.
 	Kind string `json:"kind"`
+	// Disconnected says why the host's agent may no longer connect, when
+	// the token it enrolled with was revoked with its machines (1.21.0 and
+	// later); nil while it may.
+	Disconnected *Disconnection `json:"disconnected,omitempty"`
+	// ClusterID is the cluster a node's host belongs to, when its agent runs
+	// in that cluster (1.21.0 and later).
+	ClusterID string `json:"cluster_id,omitempty"`
+}
+
+// Disconnection is when, by whom and why a host was disconnected.
+type Disconnection struct {
+	At     string `json:"at"`
+	By     string `json:"by"`
+	Reason string `json:"reason"`
 }
 
 // Kinds of host.
@@ -290,6 +304,11 @@ func migrate(db *sql.DB) error {
 	}
 	if version < 28 {
 		if err := execInTx(db, schemaV28); err != nil {
+			return err
+		}
+	}
+	if version < 29 {
+		if err := execInTx(db, schemaV29); err != nil {
 			return err
 		}
 	}
@@ -796,6 +815,28 @@ PRAGMA user_version = 27;`
 
 // schemaV28 adds display names: what a host is shown as instead of its
 // machine's hostname.
+// schemaV29 records the token each agent enrolled with, so revoking a token
+// can disconnect the machines it enrolled; when and why a host was
+// disconnected; and the cluster a node's host belongs to. Agents enrolled
+// before are matched to their token where that is certain: the one-time
+// token that names their host, or the only reusable token that could enroll
+// at the time they did.
+const schemaV29 = `
+ALTER TABLE agents ADD COLUMN token_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE hosts ADD COLUMN disconnected_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE hosts ADD COLUMN disconnected_by TEXT NOT NULL DEFAULT '';
+ALTER TABLE hosts ADD COLUMN disconnect_reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE hosts ADD COLUMN cluster_id TEXT NOT NULL DEFAULT '';
+UPDATE agents SET token_id = (SELECT id FROM enrollment_tokens WHERE host_id = agents.host_id)
+	WHERE EXISTS (SELECT 1 FROM enrollment_tokens WHERE host_id = agents.host_id);
+UPDATE agents SET token_id = (SELECT id FROM enrollment_tokens t WHERE t.reusable = 1 AND t.uses > 0
+		AND t.created_at <= agents.enrolled_at AND t.expires_at > agents.enrolled_at
+		AND (t.revoked_at IS NULL OR t.revoked_at >= agents.enrolled_at))
+	WHERE token_id = '' AND (SELECT count(*) FROM enrollment_tokens t WHERE t.reusable = 1 AND t.uses > 0
+		AND t.created_at <= agents.enrolled_at AND t.expires_at > agents.enrolled_at
+		AND (t.revoked_at IS NULL OR t.revoked_at >= agents.enrolled_at)) = 1;
+PRAGMA user_version = 29;`
+
 const schemaV28 = `
 ALTER TABLE hosts ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 28;`
@@ -952,12 +993,17 @@ type rowScanner interface {
 	Scan(destinations ...any) error
 }
 
-const hostColumns = "id, address, display_name, username, allow_sudo, transport, auto_scan_containers, kind"
+const hostColumns = "id, address, display_name, username, allow_sudo, transport, auto_scan_containers, kind, disconnected_at, disconnected_by, disconnect_reason, cluster_id"
 
 func scanHost(row rowScanner) (Host, error) {
 	var host Host
-	if err := row.Scan(&host.ID, &host.Hostname, &host.Name, &host.Username, &host.AllowSudo, &host.Transport, &host.AutoScanContainers, &host.Kind); err != nil {
+	var disconnected Disconnection
+	if err := row.Scan(&host.ID, &host.Hostname, &host.Name, &host.Username, &host.AllowSudo, &host.Transport, &host.AutoScanContainers, &host.Kind,
+		&disconnected.At, &disconnected.By, &disconnected.Reason, &host.ClusterID); err != nil {
 		return Host{}, err
+	}
+	if disconnected.At != "" {
+		host.Disconnected = &disconnected
 	}
 	host.Address = host.Hostname
 	if host.Name != "" {
