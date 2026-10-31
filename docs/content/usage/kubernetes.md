@@ -32,13 +32,18 @@ A cluster runs one check, **Kubernetes**: **Scan now** offers only that, and a s
 
 ### Running images
 
-From 1.20.0, each dashboard scan of a cluster also checks the images its pods run, as [image scans](./images.md) do: their OS packages and libraries, read from the registry as data, never pulled or run. The server does it, so it works for clusters without the [node agent](../installation/kubernetes.md#3-the-agents), such as EKS on Fargate or GKE Autopilot.
+From 1.20.0, each dashboard scan of a cluster also checks the images its pods run: their OS packages and libraries. From 1.20.1, it takes each build from where it is already known, and downloads only what isn't:
+
+1. **From the node agents, without downloading anything.** A build a [node agent](../installation/kubernetes.md#3-the-agents)'s **Running containers** scan read from a running container in the last day is taken from that scan: the same build, matched by its digest, read from the node's own copy. With the node agent on every node and the Running containers check on a schedule, nothing is downloaded.
+2. **From its registry**, for the others, as [image scans](./images.md) do: read as data, never pulled or run. This covers clusters without the node agent, such as EKS on Fargate or GKE Autopilot. To never read from registries, set `server.clusterImageRegistry: false` in the Helm chart (`DEACONGUARD_CLUSTER_IMAGE_REGISTRY=off` elsewhere); images no node agent read are then left unchecked, and the scan says how many.
+
+The scan's notes say how many images came from each.
 
 - **The build the pods run:** the cluster agent sends each pod's image with the digest its runtime reports, so the server checks that exact build, not whatever the tag points to now. Cluster agents before 1.20.0 send the tags only; the server checks each tag's current build, and the scan says so.
 - **Findings:** each image with vulnerabilities to fix, or known to be exploited, is one finding: how many, the most urgent, and the namespaces and pods that run it. Critical and high ones are [notified](./notifications.md) as **New cluster findings**. The title stays the same while the counts change, so a rebuild with the same kind of problems isn't news; an image newly known to be exploited is. Add the image on the [Images](./images.md) page to see each vulnerability.
 - **Private registries:** the server uses the registry logins saved on the Images page. An image it can't read is listed in the scan's notes.
 - **Light:** each build is read once and its result kept for a day, so later scans, and **Scan when the cluster changes**, only read images they haven't seen; a scan of a cluster whose images are all known takes about a second. A scan reads at most 10 new images, one at a time, within 10 minutes, and at most 100 in all; the next scans read the rest. A failure is retried after an hour. The results are kept in the server's memory, so after a restart the images are read again once.
-- The server reaches the registries itself, as for image scans: Docker Hub, GHCR, your private registries.
+- The server reaches the registries itself, as for image scans: Docker Hub, GHCR, your private registries; only for builds no node agent read, and not at all with `server.clusterImageRegistry: false`.
 
 ### Scan when the cluster changes
 

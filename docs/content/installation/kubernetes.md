@@ -140,7 +140,7 @@ With a values file, Helm uses the chart's defaults plus the file on each upgrade
 | In your pods | Checked by | How |
 | --- | --- | --- |
 | **Vulnerable packages and libraries** in running containers | The node agent, with the **Running containers** check | It lists each node's containers and reads their files, read-only. See [Running containers](../usage/containers.md) |
-| **Vulnerable images**, the builds the pods run | The cluster agent, with the server | The server reads each build from its registry, as image scans do, without the node agent. See [Running images](../usage/kubernetes.md#running-images) |
+| **Vulnerable images**, the builds the pods run | The cluster agent, with the server | The server takes each build from the node agents' Running containers scans, without downloading it, and reads only the others from their registries (1.20.1 and later). See [Running images](../usage/kubernetes.md#running-images) |
 | **Risky configuration**: privileged containers, running as root, host folders, secrets in environment variables; and RBAC, namespaces, network policies | The cluster agent | It reads the objects through the API. See [Kubernetes clusters](../usage/kubernetes.md) |
 | **Malware**: webshells, miners, dropped tools | The node agent, with the malware and antivirus checks | In the node's own folders, and what each running container wrote since it started (1.19.0 and later). See [Malware in containers](../usage/containers.md#malware-in-containers) |
 | **What processes do as they run** | Nothing | DeaconGuard checks at scan time; it doesn't watch processes as they run |
@@ -157,6 +157,7 @@ With a values file, Helm uses the chart's defaults plus the file on each upgrade
 | `server.admin.password` | `""` | Or the password itself, which the chart puts in a secret (it is then also in Helm's release data) |
 | `server.trustedProxies` | `[]` | Networks of the proxies in front of the dashboard, such as the ingress controller's pods; see [Behind a reverse proxy](../security/securing-the-dashboard.md#behind-a-reverse-proxy) |
 | `server.accessLog` | `false` | A line in `kubectl logs` for each request: method, path, status, duration, account and client address. Agents' and the dashboard's routine polls, and the chart's own health checks, are left out. |
+| `server.clusterImageRegistry` | `true` | Read the images clusters run from their registries when no node agent read them; `false` checks only what node agents read (1.20.1 and later). See [Running images](../usage/kubernetes.md#running-images) |
 | `server.feedCacheMB` | `400` | Memory, in MB, for advisory feeds kept parsed between scans, so that scans of the same release don't read them again; `0` reads them for every scan. Keep it well under `server.resources.limits.memory`. See [Parsed feeds](../supported-distributions.md#parsed-feeds). |
 | `server.tls.existingSecret` | `""` | A `kubernetes.io/tls` secret to serve instead of the self-signed certificate |
 | `server.persistence.size`, `.storageClass`, `.existingClaim` | `5Gi`, the default class, none | The database's volume |

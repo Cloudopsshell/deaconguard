@@ -12,6 +12,7 @@ import (
 type fakeImages struct {
 	cached map[string]ImageSummary
 	read   []string
+	off    bool
 }
 
 func (f *fakeImages) Cached(image checks.RunningImage, platform string) (ImageSummary, error, bool) {
@@ -23,6 +24,9 @@ func (f *fakeImages) Cached(image checks.RunningImage, platform string) (ImageSu
 }
 
 func (f *fakeImages) Check(ctx context.Context, image checks.RunningImage, platform string) (ImageSummary, error) {
+	if f.off {
+		return ImageSummary{}, ErrRegistryOff
+	}
 	f.read = append(f.read, image.Image+" "+platform)
 	return ImageSummary{}, nil
 }
@@ -104,5 +108,33 @@ func TestSummarizeKeepsTheMostUrgent(t *testing.T) {
 	summary := Summarize(result)
 	if strings.Join(summary.Urgent, ",") != "CVE-1,CVE-2,CVE-3,CVE-4,CVE-5" || summary.Fixable != 7 {
 		t.Fatalf("summary = %+v", summary)
+	}
+}
+
+func TestClusterImagesSayWhereTheyCameFrom(t *testing.T) {
+	source := &fakeImages{off: true, cached: map[string]ImageSummary{
+		"nginx:1.25": {Fixable: 1, FixableSeverity: map[string]int{"HIGH": 1}, Node: "node-1"},
+		"redis:7":    {},
+	}}
+	report := clusterReport(checks.Cluster{Version: "1.31.2", Running: []checks.RunningImage{
+		{Image: "nginx:1.25", Digest: "sha256:" + strings.Repeat("a", 64)}, {Image: "redis:7"}, {Image: "api:3"}, {Image: "web:4"}}})
+	if err := EvaluateClusterImages(report, nil, source); err != nil {
+		t.Fatal(err)
+	}
+	result := kubernetesResult(t, report)
+	notes := strings.Join(result.Notes, "\n")
+	if len(result.Findings) != 1 || !strings.Contains(notes, "Checked 2 images the pods run for vulnerabilities: 1 from the node agents' Running containers scans, so not downloaded, and 1 read from their registries") ||
+		!strings.Contains(notes, "2 images weren't checked: no node agent scanned their containers in the last day, and reading images from registries is turned off") ||
+		strings.Contains(notes, "next scans") {
+		t.Fatalf("notes = %s", notes)
+	}
+}
+
+func TestImageDigest(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("9", 64)
+	for id, want := range map[string]string{"docker.io/library/nginx@" + digest: digest, digest: "", "nginx@sha256:12": ""} {
+		if got := ImageDigest(id); got != want {
+			t.Errorf("ImageDigest(%q) = %q", id, got)
+		}
 	}
 }
