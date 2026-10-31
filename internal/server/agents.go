@@ -49,6 +49,8 @@ type agentHub struct {
 	wg     sync.WaitGroup
 	// presence logs agents connecting and going quiet.
 	presence presence
+	// clusterImages checks the images clusters run; nil leaves them unchecked.
+	clusterImages scan.ClusterImages
 }
 
 type agentScan struct {
@@ -476,6 +478,9 @@ func (h *agentHub) complete(scanID string, report map[string]any, inventory *tar
 	}
 	if failure == nil {
 		failure = scan.EvaluateKubernetes(report, active.log.add)
+	}
+	if failure == nil && h.clusterImages != nil {
+		failure = scan.EvaluateClusterImages(report, active.log.add, h.clusterImages)
 	}
 	h.runner.finish(active.host, scanID, active.log, report, failure, active.started)
 }

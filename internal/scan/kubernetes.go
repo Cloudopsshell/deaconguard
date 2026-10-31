@@ -20,7 +20,7 @@ import (
 func ClusterResult(report kube.Report) checks.Result {
 	result := checks.Result{Status: checks.StatusCompleted, Notes: report.Notes, Findings: []checks.Finding{},
 		Cluster: &checks.Cluster{Name: report.Cluster, Version: report.Version, Nodes: report.Nodes, Architecture: report.Architecture,
-			Namespaces: report.Namespaces, Workloads: report.Workloads, Images: report.Images}}
+			Namespaces: report.Namespaces, Workloads: report.Workloads, Images: report.Images, Running: report.Running}}
 	if result.Notes == nil {
 		result.Notes = []string{}
 	}
