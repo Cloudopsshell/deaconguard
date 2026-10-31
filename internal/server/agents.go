@@ -124,6 +124,23 @@ func (h *agentHub) expire() {
 	}
 }
 
+// disconnected ends what a host's agent was doing when its host was
+// disconnected: its queued or running scan fails, and its waiting request
+// for a job is answered with why.
+func (h *agentHub) disconnected(hostID string) {
+	message := "the host was disconnected: its enrollment token was revoked"
+	if record, busy, err := store.UnfinishedScan(hostID); err == nil && busy {
+		if _, active := h.activeScan(record.ID, store.Host{ID: hostID}); active {
+			h.complete(record.ID, nil, nil, errors.New(message))
+		} else if store.FailScan(record.ID, message) == nil {
+			if log := h.runner.logFor(record.ID); log != nil {
+				h.runner.publishFailure(record.ID, log, message)
+			}
+		}
+	}
+	h.wake(hostID)
+}
+
 // wake tells hostID's waiting job request that a scan was queued.
 func (h *agentHub) wake(hostID string) {
 	h.mu.Lock()
@@ -347,6 +364,10 @@ func (h *agentHub) job(w http.ResponseWriter, r *http.Request, host store.Host) 
 		// Scans queued by the CLI do not wake the waiter, so look again every few seconds.
 		select {
 		case <-waker:
+			if current, err := store.GetHost(host.ID); err == nil && current.Disconnected != nil {
+				writeError(w, http.StatusUnauthorized, store.AgentDisconnected{Disconnection: *current.Disconnected})
+				return
+			}
 		case <-time.After(3 * time.Second):
 		case <-deadline.C:
 			w.WriteHeader(http.StatusNoContent)
@@ -488,6 +509,9 @@ func (h *agentHub) complete(scanID string, report map[string]any, inventory *tar
 	if failure == nil && h.clusterImages != nil {
 		failure = scan.EvaluateClusterImages(report, active.log.add, h.clusterImages)
 	}
+	if failure == nil {
+		linkClusterNodes(active.host, report)
+	}
 	h.runner.finish(active.host, scanID, active.log, report, failure, active.started)
 }
 
@@ -619,14 +643,54 @@ func (s *Server) listEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tokens)
 }
 
+// revokeEnrollmentToken revokes a token; with ?disconnect=1, the machines
+// it enrolled are disconnected too.
 func (s *Server) revokeEnrollmentToken(w http.ResponseWriter, r *http.Request) {
-	token, err := store.RevokeEnrollmentToken(r.PathValue("id"))
+	disconnect := r.URL.Query().Get("disconnect") == "1"
+	token, disconnected, err := store.RevokeEnrollmentToken(r.PathValue("id"), s.actor(r), disconnect)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	s.audit(r, "token.revoke", token.ID[:8], "")
-	writeJSON(w, http.StatusOK, token)
+	detail := ""
+	if len(disconnected) > 0 {
+		names := make([]string, 0, len(disconnected))
+		for _, host := range disconnected {
+			names = append(names, host.Address)
+			s.agents.disconnected(host.ID)
+			serverLog(host.ID, store.LogWarning, "Disconnected %s: its enrollment token %s was revoked by %s", host.Address, token.ID[:8], s.actor(r))
+		}
+		detail = "disconnected " + strings.Join(names, ", ")
+	}
+	s.audit(r, "token.revoke", token.ID[:8], detail)
+	if disconnected == nil {
+		disconnected = []store.TokenHost{}
+	}
+	writeJSON(w, http.StatusOK, revokeResponse{EnrollmentToken: token, Disconnected: disconnected})
+}
+
+// revokeResponse is the revoked token, as before 1.21.0, with the hosts
+// revoking it disconnected.
+type revokeResponse struct {
+	store.EnrollmentToken
+	Disconnected []store.TokenHost `json:"disconnected"`
+}
+
+// deleteRevokedTokens removes the revoked tokens from the list.
+func (s *Server) deleteRevokedTokens(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("status") != "revoked" {
+		writeError(w, http.StatusBadRequest, errors.New("only revoked tokens can be removed: add ?status=revoked"))
+		return
+	}
+	removed, err := store.DeleteRevokedTokens()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if removed > 0 {
+		s.audit(r, "token.delete_revoked", "", fmt.Sprintf("%d revoked tokens", removed))
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
 var errNeedsNetworkMode = errors.New("agents enroll with a DeaconGuard server on the network: run deaconguard serve --listen 0.0.0.0:8443")

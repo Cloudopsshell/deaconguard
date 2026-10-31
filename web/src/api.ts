@@ -36,6 +36,10 @@ export interface Host {
   auto_scan_containers?: boolean;
   /** "cluster" is a Kubernetes cluster enrolled with the cluster agent; it runs only the Kubernetes check (1.5.0 and later). */
   kind?: "machine" | "cluster" | "mac";
+  /** Set when the token its agent enrolled with was revoked with its machines (1.21.0 and later). */
+  disconnected?: { at: string; by: string; reason: string };
+  /** The cluster a node's host belongs to (1.21.0 and later). */
+  cluster_id?: string;
 }
 
 /** What the Kubernetes check read of a cluster. */
@@ -156,6 +160,116 @@ export interface EnrollmentToken {
   host_id: string | null;
   revoked_at: string | null;
   status: "active" | "used" | "expired" | "revoked";
+  /** The hosts it enrolled that still exist (1.21.0 and later). */
+  hosts?: TokenHost[];
+}
+
+export interface TokenHost {
+  id: string;
+  address: string;
+  kind: "machine" | "cluster" | "mac";
+  /** When it was disconnected, if it was. */
+  disconnected?: string;
+}
+
+/** Problems in a part of a cluster. */
+export interface ViewCounts {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  fixable: number;
+  /** Findings about settings: misconfigurations. */
+  settings: number;
+  malware: number;
+}
+
+export interface ClusterContainerView {
+  name: string;
+  image: string;
+  digest?: string;
+  id?: string;
+  init?: boolean;
+  ready?: boolean;
+  restarts?: number;
+  state?: string;
+  reason?: string;
+  /** "node": the node agent checked this container; "image": the server checked its image. */
+  checked?: "node" | "image" | "";
+  counts: ViewCounts;
+  malware?: CheckFinding[];
+}
+
+export interface ClusterPodView {
+  name: string;
+  node?: string;
+  node_host_id?: string;
+  phase?: string;
+  restarts: number;
+  counts: ViewCounts;
+  containers: ClusterContainerView[];
+}
+
+export interface ClusterWorkloadView {
+  kind: string;
+  name: string;
+  counts: ViewCounts;
+  findings: CheckFinding[];
+  pods: ClusterPodView[];
+}
+
+export interface ClusterNamespaceView {
+  name: string;
+  system: boolean;
+  counts: ViewCounts;
+  pods: number;
+  findings: CheckFinding[];
+  workloads: ClusterWorkloadView[];
+}
+
+export interface ClusterNodeView {
+  name: string;
+  ready: boolean;
+  roles?: string[];
+  address?: string;
+  os_image?: string;
+  kernel?: string;
+  runtime?: string;
+  kubelet?: string;
+  architecture?: string;
+  pods: number;
+  host?: HostSummary;
+  counts: ViewCounts;
+}
+
+export interface ClusterImageView {
+  image: string;
+  digest?: string;
+  namespaces?: string[];
+  pods?: number;
+  checked?: "node" | "image" | "";
+  counts: ViewCounts;
+}
+
+/** A Kubernetes cluster with what it runs beneath it (1.21.0 and later). */
+export interface ClusterView {
+  cluster: HostSummary;
+  scan_id?: string;
+  scanned_at?: string;
+  version?: string;
+  architecture?: string;
+  /** False until a cluster agent of 1.21.0 or later scanned the cluster. */
+  inventory: boolean;
+  counts: ViewCounts;
+  pods: number;
+  containers: number;
+  pods_left_out?: number;
+  nodes: ClusterNodeView[];
+  namespaces: ClusterNamespaceView[];
+  /** Findings about the cluster itself: its roles, API server and version. */
+  findings: CheckFinding[];
+  images: ClusterImageView[];
+  notes: string[];
 }
 
 export interface NewTokenInput {
@@ -622,6 +736,8 @@ export interface CheckFinding {
   evidence: string;
   /** Set on vulnerabilities in libraries, containers and images (server 1.8.0 and later), for grouping. */
   container?: string;
+  /** The container's runtime ID, for malware found in it (1.21.0 and later). */
+  container_id?: string;
   image?: string;
   /** "os" for an OS package, "library" for an application library. */
   source?: "os" | "library" | string;
@@ -1264,7 +1380,10 @@ export const api = {
   setRequireMFA: (required: boolean) => request<{ require_mfa: boolean }>("PATCH", "/api/settings/security", { require_mfa: required }),
   enrollmentTokens: () => request<EnrollmentToken[]>("GET", "/api/enrollment-tokens"),
   createEnrollmentToken: (input: NewTokenInput) => request<NewEnrollmentToken>("POST", "/api/enrollment-tokens", input),
-  revokeEnrollmentToken: (id: string) => request<EnrollmentToken>("DELETE", `/api/enrollment-tokens/${id}`),
+  revokeEnrollmentToken: ({ id, disconnect }: { id: string; disconnect: boolean }) =>
+    request<EnrollmentToken & { disconnected: TokenHost[] }>("DELETE", `/api/enrollment-tokens/${id}${disconnect ? "?disconnect=1" : ""}`),
+  deleteRevokedTokens: () => request<{ removed: number }>("DELETE", "/api/enrollment-tokens?status=revoked"),
+  clusterView: (id: string) => request<ClusterView>("GET", `/api/hosts/${id}/cluster`),
   audit: () => request<AuditEntry[]>("GET", "/api/audit?limit=500"),
   summary: () => request<Summary>("GET", "/api/summary"),
   hosts: () => request<HostSummary[]>("GET", "/api/hosts"),

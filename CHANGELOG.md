@@ -8,6 +8,20 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-10-31
+
+### Added
+
+- **A Kubernetes cluster is one entry**, with what it runs beneath it. On **Hosts** and **Agents**, a cluster is marked **Kubernetes** and its node agents' hosts are listed under it, marked **Node**; a node's page links back to its cluster. The cluster's page has a summary (nodes, namespaces, pods, critical and high vulnerabilities, misconfigurations, malware) and tabs: **Workloads**, a tree of namespace > workload > pod > container where each level adds up the problems under it, each pod links to its node and each container shows its image, its vulnerabilities and any malware in the files it wrote; **Nodes**, with each node's status, system, node agent and problems; **Images**; and **Cluster settings**. The cluster agent now lists the cluster's nodes, namespaces and pods (up to 5000 pods); containers are matched to the node agents' **Running containers** and malware results by the container's ID, so this works with node agents from 1.19.0.
+- **Revoking a token can disconnect the machines it enrolled.** The revoke dialog lists them, with **Also disconnect them** ticked: their agents are refused from then on and log who disconnected them, when and why, a running scan of theirs fails, and their hosts stay with their scans, marked **Disconnected** with the reason. Enrolled again with a new token, a disconnected machine comes back as the same host. The **Enrollment tokens** list shows the hosts each reusable token enrolled.
+- **Remove revoked tokens**, on the **Enrollment tokens** list, removes every revoked token from it.
+
+### Changed
+
+- A refused enrollment token says why: revoked (and when), expired (and when), a one-time token already used, or unknown to this server. In Kubernetes, the agent's advice matches: only a used one-time token is told that the chart's agents need a reusable one.
+- The server records which token enrolled each agent (database schema 29). Agents enrolled before are matched to their token where that is certain.
+- Malware found in a container's files records the container's ID as well as its name.
+
 ## [1.20.3] - 2026-10-31
 
 ### Fixed
@@ -370,7 +384,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.3...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.21.0...HEAD
+[1.21.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.3...v1.21.0
 [1.20.3]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.2...v1.20.3
 [1.20.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.1...v1.20.2
 [1.20.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.0...v1.20.1
