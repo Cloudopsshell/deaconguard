@@ -70,6 +70,15 @@ for release in $releases; do
 	render "$release cluster agent" "$values" --set server.enabled=false --set cluster.enabled=true \
 		--set cluster.name=prod --set cluster.enrollment.existingSecret=deaconguard-cluster-enrollment &&
 		expect "$release cluster agent" 'kind: ClusterRole' present || ok=no
+	render "$release shared enrollment" "$values" --set server.enabled=false --set agent.enabled=true --set cluster.enabled=true \
+		--set enrollment.existingSecret=shared-token &&
+		expect "$release shared enrollment" 'secretName: shared-token' present &&
+		expect "$release shared enrollment" 'secretName: deaconguard-enrollment' absent &&
+		expect "$release shared enrollment" 'secretName: deaconguard-cluster-enrollment' absent || ok=no
+	render "$release own enrollment kept" "$values" --set server.enabled=false --set agent.enabled=true --set cluster.enabled=true \
+		--set enrollment.existingSecret=shared-token --set cluster.enrollment.existingSecret=cluster-only &&
+		expect "$release own enrollment kept" 'secretName: cluster-only' present &&
+		expect "$release own enrollment kept" 'secretName: shared-token' present || ok=no
 	if [ "$ok" = yes ]; then echo "ok   upgrade from $release"; else failed=1; fi
 done
 exit "$failed"

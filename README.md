@@ -187,17 +187,17 @@ helm install deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard --versio
   -n deaconguard --set server.admin.existingSecret=deaconguard-admin
 ```
 
-Open the dashboard with `kubectl -n deaconguard port-forward svc/deaconguard 8443:8443`, or an ingress (`server.ingress.*`; set `server.trustedProxies` to the ingress controller's network so sign-in limits and the audit log see each client's address). Without the secret, the server waits for it and says which one to create. On the **Agents** page, choose **Enroll a machine**, then **Many machines**, with the server address `https://deaconguard.deaconguard.svc:8444` (not `127.0.0.1`, which a port-forward puts there), and:
+Open the dashboard with `kubectl -n deaconguard port-forward svc/deaconguard 8443:8443`, or an ingress (`server.ingress.*`; set `server.trustedProxies` to the ingress controller's network so sign-in limits and the audit log see each client's address). Without the secret, the server waits for it and says which one to create. On the **Agents** page, choose **Enroll a machine**, then **Kubernetes**: a reusable token for the server's in-cluster address, `https://deaconguard.deaconguard.svc:8444`, which every agent of the chart shares. Then:
 
 ```sh
 kubectl create namespace deaconguard-agent --save-config
 kubectl -n deaconguard-agent create secret generic deaconguard-enrollment --from-literal=token='deaconguard1.…'
 helm install deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard --version X.Y.Z \
-  -n deaconguard-agent --set server.enabled=false --set agent.enabled=true \
-  --set agent.enrollment.existingSecret=deaconguard-enrollment
+  -n deaconguard-agent --set server.enabled=false --set enrollment.existingSecret=deaconguard-enrollment \
+  --set agent.enabled=true --set cluster.enabled=true --set cluster.name=production
 ```
 
-Each node enrolls once, by its node name, and keeps its identity in `/var/lib/deaconguard-agent` on the node. The agent reads the node's root filesystem, read-only at `/host`, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent installed on the node. Machines outside the cluster reach the agent port through a private load balancer of its own, `--set server.agentService.enabled=true`, so the dashboard's port stays inside: see [Agents outside the cluster](https://docs.deaconguard.io/installation/kubernetes#agents-outside-the-cluster).
+`agent.enabled` runs the node agent on every node; `cluster.enabled` the cluster agent, which checks the cluster itself through its API. Both enroll with the one token in `enrollment.existingSecret`, which must be reusable, since each node is one more agent. Each node enrolls once, by its node name, and keeps its identity in `/var/lib/deaconguard-agent` on the node. The agent reads the node's root filesystem, read-only at `/host`, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent installed on the node. Machines outside the cluster reach the agent port through a private load balancer of its own, `--set server.agentService.enabled=true`, so the dashboard's port stays inside: see [Agents outside the cluster](https://docs.deaconguard.io/installation/kubernetes#agents-outside-the-cluster).
 
 **Kubernetes with Kustomize:** [deploy/kustomize](deploy/kustomize) has the same server and agent, plus an [ingress example](deploy/kustomize/examples/ingress-nginx.yaml): `kubectl apply -k "https://github.com/Cloudopsshell/deaconguard/deploy/kustomize/server?ref=vX.Y.Z"`, and `…/deploy/kustomize/agent?ref=vX.Y.Z`.
 
@@ -279,7 +279,7 @@ To run the server in the foreground without systemd, use `deaconguard serve --li
 
 ## Scan other machines with the agent
 
-1. On the server's **Agents** page, click **Enroll a machine**. Check the address agents will use to reach the server, then click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same. For many machines, such as a Kubernetes cluster's nodes or a fleet built from one image, choose **Many machines** instead, or add `--reusable`: see [Reusable tokens](#reusable-tokens).
+1. On the server's **Agents** page, click **Enroll a machine**. Check the address agents will use to reach the server, then click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same. For many machines, such as a fleet built from one image, choose **Many machines** instead, or add `--reusable`; for the Helm chart's agents in a Kubernetes cluster, choose **Kubernetes**: see [Reusable tokens](#reusable-tokens).
 2. On the machine to scan, run the command the dialog shows, as a user with sudo rights (as root, leave out `sudo -E`). It installs the same version as the server, enrolls the machine with the token, and starts the agent:
 
    ```sh

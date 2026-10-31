@@ -46,84 +46,88 @@ kubectl -n deaconguard port-forward svc/deaconguard 8443:8443
 
 and go to `https://127.0.0.1:8443`. The certificate is self-signed until you [give it one](#certificates-and-ingress).
 
-### 2. A reusable token
+### 2. One token for the agents
 
-On the **Agents** page, choose **Enroll a machine**, then **Many machines**. As the server address, use the Service's agent port, which the dialog fills in when you opened the dashboard through `port-forward`:
+Every agent the chart runs enrolls with the same token: the node agent on each node, and the cluster agent. On the **Agents** page, choose **Enroll a machine**, then **Kubernetes** (DeaconGuard 1.20.2 and later). It makes the right token for this:
 
-```text
-https://deaconguard.deaconguard.svc:8444
-```
+- **Reusable**, since several agents use it: one per node, plus the cluster agent. A one-time token enrolls only the first agent to start; the others are refused with "already used".
+- **For the server's address inside the cluster**, which pods reach, filled in from the chart:
 
-Not `https://127.0.0.1:8444`: through a port-forward, `127.0.0.1` is your own computer, and in an agent's pod or on another machine it is that pod or machine, so the agent would never reach the server. The dialog warns about loopback addresses.
+  ```text
+  https://deaconguard.deaconguard.svc:8444
+  ```
 
-Give the token a name, such as the cluster's, pick how long it lasts, and create it. Or, from the command line:
+  Not the dashboard's public name, which pods often can't reach on port 8444 (the agent load balancer admits only its `loadBalancerSourceRanges`), and not `https://127.0.0.1:8444`, which in a pod is the pod itself.
+
+The dialog then shows the command for the secret and the values that use it. Or create the token from the command line:
 
 ```bash
 kubectl -n deaconguard exec deaconguard-0 -- deaconguard token create \
   --server-url https://deaconguard.deaconguard.svc:8444 --reusable --days 90 --name production --quiet
 ```
 
+Each agent uses the token once, to enroll, and keeps its own identity afterwards: the token can expire, or be [revoked](../usage/agents.md#reusable-tokens), without stopping them. New nodes need a token that is still valid.
+
 ### 3. The agents
+
+Put the token in a secret, in the namespace of the release that runs the agents, replacing `deaconguard1.…` with the whole token the dialog shows, and install the chart there with both agents:
 
 ```bash
 kubectl create namespace deaconguard-agent --save-config
 kubectl label namespace deaconguard-agent pod-security.kubernetes.io/enforce=privileged
 kubectl -n deaconguard-agent create secret generic deaconguard-enrollment --from-literal=token='deaconguard1.…'
 helm install deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard \
-  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" \
-  -n deaconguard-agent --set server.enabled=false --set agent.enabled=true \
-  --set agent.enrollment.existingSecret=deaconguard-enrollment
+  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard-agent \
+  --set server.enabled=false --set enrollment.existingSecret=deaconguard-enrollment \
+  --set agent.enabled=true --set cluster.enabled=true --set cluster.name=production
 ```
 
-Each node appears on the **Agents** page within a minute, named after the node, and the token's row counts them. Scan or [audit](../usage/audits.md) them like any other host.
+`enrollment.existingSecret` gives the token to every agent of the release. Leave out `agent.enabled` or `cluster.enabled` to run only the other.
+
+- **The node agent** (`agent.enabled`): each node appears on the **Agents** page within a minute, named after the node, and the token's row counts them. Scan or [audit](../usage/audits.md) them like any other host.
+- **The cluster agent** (`cluster.enabled`): see [the cluster itself](#4-the-cluster-itself).
+
+`helm install` prints which secret each agent reads, and whether a token is still missing.
 
 ### 4. The cluster itself
 
-The node agents check the nodes. To check the cluster too, turn on the cluster agent (DeaconGuard 1.5.0 and later). It is unprivileged, so it can run in the server's namespace and release, or in the node agents'.
+The node agents check the nodes; the cluster agent checks the cluster (DeaconGuard 1.5.0 and later): its workloads, RBAC, namespaces, Kubernetes version, and the images its pods run. The cluster appears on **Hosts** as `production` (`cluster.name`), a Kubernetes cluster, and runs the Kubernetes check only: from **Scan now**, or on a [schedule](../usage/dashboard.md#schedules) with the Kubernetes check ticked. It keeps its identity on a small volume (16 MiB), so the cluster needs a default storage class, or `cluster.persistence.storageClass`.
 
-Create a token on the **Agents** page, **Enroll a machine**, with the server address `https://deaconguard.deaconguard.svc:8444` as in [step 2](#2-a-reusable-token). One-time or reusable both work; the cluster agent uses it once. Put it in a secret, replacing `deaconguard1.…` with the whole token the dialog shows:
-
-```bash
-kubectl -n deaconguard create secret generic deaconguard-cluster-enrollment --from-literal=token='deaconguard1.…'
-```
-
-Then turn it on in the server's release (with the node agents' release instead, use its name and namespace, and create the secret there):
+It is unprivileged, so it can run in the server's release instead of the node agents'. Then put the secret in the server's namespace and turn it on there:
 
 ```bash
+kubectl -n deaconguard create secret generic deaconguard-enrollment --from-literal=token='deaconguard1.…'
 helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
   --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard --reset-then-reuse-values \
-  --set cluster.enabled=true --set cluster.name=production \
-  --set cluster.enrollment.existingSecret=deaconguard-cluster-enrollment
+  --set enrollment.existingSecret=deaconguard-enrollment --set cluster.enabled=true --set cluster.name=production
 ```
 
-The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs the Kubernetes check only: from **Scan now**, or on a [schedule](../usage/dashboard.md#schedules) with the Kubernetes check ticked. It keeps its identity on a small volume (16 MiB), so the cluster needs a default storage class, or `cluster.persistence.storageClass`. The upgrade leaves the server's pod as it is.
+The upgrade leaves the server's pod as it is.
 
 ### With a values file
 
-The same settings in a values file, for `helm install` or `helm upgrade` with `-f values.yaml`. The server and the cluster agent share a release:
+The same settings in values files, for `helm install` or `helm upgrade` with `-f`. The server's release, under the restricted Pod Security Standard:
 
 ```yaml
-# values.yaml, release deaconguard in the deaconguard namespace
+# values.yaml: release deaconguard, namespace deaconguard
 server:
   admin:
     existingSecret: deaconguard-admin
-cluster:
-  enabled: true
-  name: production
-  enrollment:
-    existingSecret: deaconguard-cluster-enrollment
 ```
 
-The node agents need the privileged Pod Security Standard, so give them a release of their own in a namespace labelled for it, as in [step 3](#3-the-agents), rather than loosening the server's namespace:
+The agents' release, in a namespace labelled privileged, as in [step 3](#3-the-agents):
 
 ```yaml
-# agent-values.yaml, release deaconguard-agent in the deaconguard-agent namespace
+# agent-values.yaml: release deaconguard-agent, namespace deaconguard-agent
 server:
   enabled: false
+enrollment:
+  existingSecret: deaconguard-enrollment   # one reusable token for every agent below
 agent:
-  enabled: true
-  enrollment:
-    existingSecret: deaconguard-enrollment
+  enabled: true                            # every node, and its pods' containers
+cluster:
+  enabled: true                            # the cluster itself, and its images
+  name: production                         # its name on Hosts
 ```
 
 ```bash
@@ -133,7 +137,11 @@ helm upgrade --install deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deac
   --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard-agent -f agent-values.yaml
 ```
 
+**Everything in one release.** On a cluster whose namespaces don't enforce a Pod Security Standard (k3s doesn't by default), one release can run the server and both agents: put `enrollment`, `agent` and `cluster` from `agent-values.yaml` into `values.yaml`, without `server.enabled: false`, and create the secret in `deaconguard`. The server's namespace then also runs the node agent's privileged pods, so whoever may manage pods in it can read every node; keep separate releases when others administer that namespace.
+
 With a values file, Helm uses the chart's defaults plus the file on each upgrade, so keep every setting you use in it.
+
+**One token or two.** `agent.enrollment` and `cluster.enrollment` take the same settings as `enrollment`, to give one agent a token of its own, such as a one-time token for the cluster agent, or to revoke the nodes' token without touching the cluster agent. Left empty, as they are by default, both use `enrollment`. Releases from before 1.20.2 that set them keep working unchanged.
 
 ### Who checks what in your pods
 
@@ -169,15 +177,16 @@ With a values file, Helm uses the chart's defaults plus the file on each upgrade
 | `server.agentRoute.enabled`, `.host`, `.entryPoints` | off, none, `[websecure]` | Agents outside the cluster through Traefik on port 443, with TLS passed through (chart 1.11.0 and later); see [With Traefik](#with-traefik) |
 | `server.resources` | 100m CPU, 256 MiB requested; 1 GiB limit | The server needs about 450 MB while it checks an Ubuntu machine's packages |
 | `agent.enabled` | `false` | Install the agent DaemonSet |
-| `agent.enrollment.existingSecret`, `.secretKey` | `""`, `token` | The secret with the reusable token |
-| `agent.enrollment.token` | `""` | Or the token itself, which the chart puts in a secret |
+| `enrollment.existingSecret`, `.secretKey` | `""`, `token` | The secret with the reusable token every agent of the release uses: the node agents and the cluster agent (1.20.2 and later) |
+| `enrollment.token` | `""` | Or the token itself, which the chart puts in a secret (it is then also in Helm's release data) |
+| `agent.enrollment.existingSecret`, `.secretKey`, `.token` | `""`, `token`, `""` | The node agents' own token instead of `enrollment`'s; must be reusable |
 | `agent.identityPath` | `/var/lib/deaconguard-agent` | Where each node keeps its agent's identity |
 | `agent.resources` | 50m CPU, 128 MiB requested; 2.5 GiB limit | ClamAV, when the node has it, runs inside this limit and needs about 1.5 GB |
 | `agent.tolerations` | every taint | Which nodes get an agent; with `agent.nodeSelector` and `agent.affinity` |
 | `agent.priorityClassName` | `""` | |
 | `cluster.enabled` | `false` | Install the cluster agent, which checks the cluster through its API |
 | `cluster.name` | `kubernetes` | The cluster's name on the server |
-| `cluster.enrollment.existingSecret`, `.secretKey`, `.token` | `""`, `token`, `""` | Its enrollment token, as for the agents |
+| `cluster.enrollment.existingSecret`, `.secretKey`, `.token` | `""`, `token`, `""` | The cluster agent's own token instead of `enrollment`'s; a one-time token is enough for it alone |
 | `cluster.persistence.size`, `.storageClass` | `16Mi`, the default class | The volume that keeps its identity |
 | `cluster.resources` | 20m CPU, 64 MiB requested; 256 MiB limit | |
 | `cluster.admission.enabled`, `.severity` | `false`, `medium` | [Warnings as workloads are applied](../usage/kubernetes.md#warnings-as-workloads-are-applied): a validating webhook in warn mode, with a certificate the chart makes |
@@ -187,7 +196,7 @@ With a values file, Helm uses the chart's defaults plus the file on each upgrade
 
 The chart works the same from GitOps tools and CI/CD pipelines. Keep the values in Git, and keep secrets out of it:
 
-- **The admin password** and **the agents' enrollment token** go in Kubernetes secrets that your secret tool creates, such as Sealed Secrets, SOPS or External Secrets. The values only name them (`server.admin.existingSecret`, `agent.enrollment.existingSecret`). If the chart is applied before the secret exists, the server waits for it and creates the account once the secret is mounted.
+- **The admin password** and **the agents' enrollment token** go in Kubernetes secrets that your secret tool creates, such as Sealed Secrets, SOPS or External Secrets. The values only name them (`server.admin.existingSecret`, `enrollment.existingSecret`). If the chart is applied before the secret exists, the server waits for it and creates the account once the secret is mounted.
 - **To upgrade**, change the chart's version in Git, after reading the [upgrade notes](../upgrade-notes/index.md). These tools render the chart from the new version's defaults plus your values every time, so there is no `--reuse-values` to think about.
 
 The server's values, as on this page:
@@ -233,7 +242,7 @@ spec:
         existingSecret: deaconguard-admin
 ```
 
-To move to a new minor release, change `semver` (or `tag`) in Git. The agent DaemonSet is a second `OCIRepository` and `HelmRelease` in the agent's namespace, with the values from [the agents](#3-the-agents) (`server.enabled: false`, `agent.enabled: true`, `agent.enrollment.existingSecret`).
+To move to a new minor release, change `semver` (or `tag`) in Git. The agent DaemonSet is a second `OCIRepository` and `HelmRelease` in the agent's namespace, with the values from [the agents](#3-the-agents) (`server.enabled: false`, `enrollment.existingSecret`, `agent.enabled: true`, and `cluster.enabled: true` for the cluster agent).
 
 ### Argo CD
 
@@ -486,6 +495,8 @@ On k3s, put the same `ports:` block in the `HelmChartConfig`'s `valuesContent`. 
 | **403** on the dashboard, for everyone, you included | Traefik doesn't see client addresses | [Keep client addresses](#traefik-must-see-client-addresses) |
 | The **Audit log** shows `10.x` addresses for sign-ins | The same | The same |
 | **403** from your address only | It isn't in `allowSourceRanges` | Add it; find it with `curl -s https://api.ipify.org` |
+| An agent in the cluster fails with `HTTP 401` and "already used" | Several agents share a one-time token: the first to start used it | Create a reusable token with **Enroll a machine** > **Kubernetes**, replace the secret's token, and delete the waiting pods |
+| An agent in the cluster fails with `i/o timeout` enrolling with the dashboard's name | The token has the server's public address, which pods can't reach on 8444 | Create the token with the in-cluster address, `https://deaconguard.deaconguard.svc:8444`, as **Enroll a machine** > **Kubernetes** does |
 | An agent's enrollment fails with `context deadline exceeded` | The machine's address isn't in `server.agentService.loadBalancerSourceRanges`, or a firewall blocks 8444 | Add its public address to both. On the machine, `curl -sk -o /dev/null -w '%{http_code}\n' https://ADDRESS:8444/agent/v1/job` prints `401` once it gets through; run the install command again |
 | A host shows **from 10.42.0.1** (or another cluster address) | The agent Service rewrites addresses, or the agent's connection is older than the change | Set `server.agentService.externalTrafficPolicy: Local`, then `sudo systemctl restart deaconguard-agent` on the machine |
 | A host shows **Traefik's address**, with `agentRoute` | Expected: Traefik passes TLS through and connects to the server itself | Use the agent Service if you need each agent's address |

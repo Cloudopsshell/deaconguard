@@ -8,6 +8,19 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.20.2] - 2026-10-31
+
+### Added
+
+- **One enrollment token for the chart's agents:** the Helm chart's new `enrollment.existingSecret` (or `enrollment.token`) gives one token to every agent the release runs, the node agents and the cluster agent. `agent.enrollment` and `cluster.enrollment` still work, as overrides; left empty, both use `enrollment`.
+- **Enroll a machine > Kubernetes** on the Agents page: a reusable token for the server's address inside the cluster, with the `kubectl` command for the secret and the Helm values to use it.
+
+### Changed
+
+- The chart's notes after `helm install` and `helm upgrade` say which secret each agent reads, warn when agents share one that its token must be reusable, and, when no token is set, give the commands for one secret for all of them.
+- An agent in Kubernetes that can't enroll says why: a token another agent already used (it must be reusable, as the chart's agents share it), or a server address pods can't reach (use `https://SERVICE.NAMESPACE.svc:8444`).
+- The **Many machines** option no longer shows Kubernetes commands; **Kubernetes** does.
+
 ## [1.20.1] - 2026-10-31
 
 ### Changed
@@ -350,7 +363,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.1...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.2...HEAD
+[1.20.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.1...v1.20.2
 [1.20.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.19.0...v1.20.0
 [1.19.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.18.0...v1.19.0
