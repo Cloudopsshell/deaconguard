@@ -141,7 +141,7 @@ With a values file, Helm uses the chart's defaults plus the file on each upgrade
 | --- | --- | --- |
 | **Vulnerable packages and libraries** in running containers | The node agent, with the **Running containers** check | It lists each node's containers and reads their files, read-only. See [Running containers](../usage/containers.md) |
 | **Risky configuration**: privileged containers, running as root, host folders, secrets in environment variables; and RBAC, namespaces, network policies | The cluster agent | It reads the objects through the API. See [Kubernetes clusters](../usage/kubernetes.md) |
-| **Malware** | The node agent, in the node's own folders | Container files aren't scanned for malware yet |
+| **Malware**: webshells, miners, dropped tools | The node agent, with the malware and antivirus checks | In the node's own folders, and what each running container wrote since it started (1.19.0 and later). See [Malware in containers](../usage/containers.md#malware-in-containers) |
 | **What processes do as they run** | Nothing | DeaconGuard checks at scan time; it doesn't watch processes as they run |
 
 ### Values

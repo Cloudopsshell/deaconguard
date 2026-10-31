@@ -5,6 +5,7 @@
 package checks
 
 import (
+	"deaconguard/internal/containers"
 	"fmt"
 	"strings"
 	"time"
@@ -250,9 +251,15 @@ func (result *Result) finish(partial bool) Result {
 	return *result
 }
 
-// Inputs carries what some checks need besides the host: the YARA rules.
+// Inputs carries what some checks need besides the host: the YARA rules,
+// and the running containers' own files for the malware checks.
 type Inputs struct {
 	YARA YARAInput
+	// Containers are the running containers, with the folders of their
+	// writable files; ContainersSkipped counts those whose folders couldn't
+	// be found.
+	Containers        []containers.Writable
+	ContainersSkipped int
 }
 
 // Run executes one check. The package check is run by the scan itself.
@@ -270,15 +277,15 @@ func Run(id string, executor *Executor, target platform.Platform, now time.Time,
 	case Integrity:
 		result = runIntegrity(executor, target)
 	case Malware:
-		result = runMalware(executor)
+		result = runMalware(executor, inputs)
 	case Config:
 		result = runConfig(executor, target)
 	case Hardening:
 		result = runHardening(executor, target)
 	case Antivirus:
-		result = runAntivirus(executor, now)
+		result = runAntivirus(executor, now, inputs)
 	case YARA:
-		result = runYARA(executor, inputs.YARA)
+		result = runYARA(executor, inputs)
 	default:
 		return Result{Status: StatusFailed, Error: fmt.Sprintf("unknown check %q", id), Findings: []Finding{}, Notes: []string{}}
 	}

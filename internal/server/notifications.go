@@ -247,10 +247,23 @@ func (s *Server) scanFinished(host store.Host, scanID string, failure error) {
 	}
 	malware := counts[checks.Malware].Findings + counts[checks.Antivirus].Findings + counts[checks.YARA].Findings
 	if malware > 0 {
+		lines := []string{"Look at the scan now; treat the host as compromised until you know otherwise."}
+		data := map[string]any{"findings": malware}
+		if names := malwareContainers(scanID); len(names) > 0 {
+			shown := names
+			if len(shown) > 5 {
+				shown = shown[:5]
+			}
+			line := "In " + plural(len(names), "container", "containers") + ": " + strings.Join(shown, ", ")
+			if len(names) > len(shown) {
+				line += fmt.Sprintf(" and %d more", len(names)-len(shown))
+			}
+			lines = append(lines, line+".")
+			data["containers"] = names
+		}
 		s.emit(notify.Message{Event: notify.EventMalware, Level: notify.LevelCritical,
 			Title: fmt.Sprintf("%s: malware or signs of compromise found (%s)", host.Address, plural(malware, "finding", "findings")),
-			Lines: []string{"Look at the scan now; treat the host as compromised until you know otherwise."},
-			Link:  scanLink, HostID: host.ID, Host: host.Address, ScanID: scanID, Data: map[string]any{"findings": malware}})
+			Lines: lines, Link: scanLink, HostID: host.ID, Host: host.Address, ScanID: scanID, Data: data})
 	}
 	if changed := counts[checks.Integrity].Severe; changed > 0 {
 		s.emit(notify.Message{Event: notify.EventIntegrity, Level: notify.LevelCritical,
@@ -308,6 +321,26 @@ func (s *Server) newVulnerabilities(host store.Host, record store.Scan, scanLink
 
 // checkResult is one check's result in a scan, unless the check didn't run
 // or failed.
+// malwareContainers names the containers the malware checks found
+// something in, in order.
+func malwareContainers(scanID string) []string {
+	var names []string
+	seen := map[string]bool{}
+	for _, check := range []string{checks.Malware, checks.Antivirus, checks.YARA} {
+		result, ok := checkResult(scanID, check)
+		if !ok {
+			continue
+		}
+		for _, finding := range result.Findings {
+			if finding.Container != "" && !seen[finding.Container] {
+				seen[finding.Container] = true
+				names = append(names, finding.Container)
+			}
+		}
+	}
+	return names
+}
+
 func checkResult(scanID, check string) (checks.Result, bool) {
 	report, err := store.GetFullReport(scanID)
 	if err != nil {

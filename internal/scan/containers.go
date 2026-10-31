@@ -70,6 +70,20 @@ func collectContainers(executor *checks.Executor) checks.Result {
 	return result
 }
 
+// runningContainers lists the running containers and finds their own
+// files, for the malware checks. It needs root, as collectContainers does;
+// without it, or with no container tools, there are none.
+func runningContainers(executor *checks.Executor) ([]containers.Writable, int) {
+	if os.Geteuid() != 0 {
+		return nil, 0
+	}
+	output, _, _, err := executor.RunPrivileged(containers.ListCommand, 1<<20, 2*time.Minute)
+	if err != nil && len(output) == 0 {
+		return nil, 0
+	}
+	return containers.FindWritable(containers.ParseList(output))
+}
+
 // EvaluateContainers checks the containers an agent read, in place in the
 // report's check results, as a scan run here would have.
 func EvaluateContainers(report map[string]any, emit func(Event)) error {
