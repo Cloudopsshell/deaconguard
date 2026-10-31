@@ -29,9 +29,11 @@ The agent runs on each machine you want to scan. It connects **out** to the serv
 
 A reusable token enrolls **any number of machines** until it expires or you revoke it: every node of a [Kubernetes cluster](../installation/kubernetes.md), including nodes added later, or a fleet built from one image.
 
-1. In **Agents → Enroll a machine**, choose **Many machines**.
+1. In **Agents → Enroll a machine**, choose **Many machines** for a fleet, or **Kubernetes** for the Helm chart's agents.
 2. Give it a name, such as the cluster's, and pick how long it lasts: 7, 30, 90, 180 or 365 days.
-3. Click **Create token**. The dialog shows the `kubectl` commands that put it in the agent DaemonSet's secret; the token alone and the install command for a machine are under the dialog's details.
+3. Click **Create token**. For **Kubernetes**, the dialog fills in the server's address inside the cluster, and shows the `kubectl` command for the secret and the Helm values that give it to every agent of the chart, the node agents and the cluster agent (1.20.2 and later); see [Install in Kubernetes](../installation/kubernetes.md#2-one-token-for-the-agents). For **Many machines**, the token alone and the install command for a machine are under the dialog's details.
+
+In Kubernetes, the chart's agents share one token, so it must be reusable even for a single node with the cluster agent: a one-time token enrolls only the first to start, and the agent that comes second says so in its log.
 
 On the server's command line: `deaconguard token create --server-url URL --reusable [--days N] [--name NAME] [--quiet]`, where `--days` is 1 to 365 (30 by default) and `--quiet` prints only the token.
 

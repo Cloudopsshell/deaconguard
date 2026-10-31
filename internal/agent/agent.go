@@ -148,13 +148,33 @@ func Enroll(ctx context.Context, tokenText, path string, replace bool, name stri
 	}
 	var response agentapi.EnrollResponse
 	if err := client.call(ctx, http.MethodPost, "enroll", request, &response, 30*time.Second); err != nil {
-		return Config{}, fmt.Errorf("enroll with %s: %w", token.ServerURL, err)
+		return Config{}, fmt.Errorf("enroll with %s: %w%s", token.ServerURL, err, kubernetesHint(err, os.Getenv("KUBERNETES_SERVICE_HOST") != ""))
 	}
 	config := Config{ServerURL: token.ServerURL, Pin: token.Pin, HostID: response.HostID, Credential: response.Credential, Cluster: cluster}
 	if err := saveConfig(path, config); err != nil {
 		return Config{}, fmt.Errorf("enrolled, but could not save %s: %w", path, err)
 	}
 	return config, nil
+}
+
+// kubernetesHint explains, for an agent in a Kubernetes pod, the two usual
+// reasons it can't enroll: a token that another agent of the chart used
+// first, and a server address only machines outside the cluster reach.
+func kubernetesHint(err error, inKubernetes bool) string {
+	if !inKubernetes {
+		return ""
+	}
+	if errors.Is(err, errRejected) && strings.Contains(err.Error(), "HTTP 401") {
+		return ". In Kubernetes, the chart's agents (one per node, and the cluster agent) share the enrollment secret, " +
+			"so its token must be reusable: on the server's Agents page choose Enroll a machine > Kubernetes, put the token in the secret, " +
+			"and delete this pod to retry"
+	}
+	if errors.Is(err, errRejected) {
+		return ""
+	}
+	return ". From a pod, a server in the same cluster is reached at https://SERVICE.NAMESPACE.svc:8444, such as " +
+		"https://deaconguard.deaconguard.svc:8444, not at the dashboard's public name: create the token with that address " +
+		"(Enroll a machine > Kubernetes fills it in)"
 }
 
 // ErrRemoved means the server no longer knows this agent.

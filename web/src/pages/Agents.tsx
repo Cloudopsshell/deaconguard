@@ -351,9 +351,12 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
       : agentPort
         ? `${window.location.protocol}//${window.location.hostname}:${agentPort}`
         : window.location.origin;
-  const serverUrl = edited ?? suggested;
+  const [kind, setKind] = useState<EnrollKind>("one");
+  const reusable = kind !== "one";
+  // Agents in a cluster reach a server in it at its Service, not at the
+  // dashboard's public name: the address pods can use.
+  const serverUrl = edited ?? (kind === "kubernetes" && clusterUrl ? clusterUrl : suggested);
   const setServerUrl = setEdited;
-  const [reusable, setReusable] = useState(false);
   const [days, setDays] = useState(30);
   const [name, setName] = useState("");
   const [created, setCreated] = useState<NewEnrollmentToken | null>(null);
@@ -368,7 +371,8 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
   function close() {
     setCreated(null);
-    setReusable(false);
+    setKind("one");
+    setEdited(null);
     setName("");
     create.reset();
     onClose();
@@ -380,8 +384,10 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
   }
 
   return (
-    <Dialog open={open} onClose={close} title={reusable ? "Enroll machines" : "Enroll a machine"}>
-      {created?.reusable ? (
+    <Dialog open={open} onClose={close} title={kind === "kubernetes" ? "Enroll a Kubernetes cluster" : reusable ? "Enroll machines" : "Enroll a machine"}>
+      {created?.reusable && kind === "kubernetes" ? (
+        <KubernetesTokenCreated token={created} onDone={close} />
+      ) : created?.reusable ? (
         <ReusableTokenCreated token={created} onDone={close} />
       ) : created ? (
         <div className="space-y-4 text-sm">
@@ -419,26 +425,32 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4">
-          <div role="radiogroup" aria-label="Token" className="grid gap-2 sm:grid-cols-2">
-            {[
-              { value: false, label: "One machine", detail: "A one-time token, valid for 24 hours." },
-              { value: true, label: "Many machines", detail: "A reusable token, for a Kubernetes cluster or a fleet." },
-            ].map((kind) => (
+          <div role="radiogroup" aria-label="Token" className="grid gap-2 sm:grid-cols-3">
+            {(
+              [
+                { value: "one", label: "One machine", detail: "A one-time token, valid for 24 hours." },
+                { value: "many", label: "Many machines", detail: "A reusable token, for a fleet or Docker Compose." },
+                { value: "kubernetes", label: "Kubernetes", detail: "One reusable token for the chart's node and cluster agents." },
+              ] as { value: EnrollKind; label: string; detail: string }[]
+            ).map((option) => (
               <button
-                key={kind.label}
+                key={option.label}
                 type="button"
                 role="radio"
-                aria-checked={reusable === kind.value}
-                onClick={() => setReusable(kind.value)}
+                aria-checked={kind === option.value}
+                onClick={() => {
+                  setKind(option.value);
+                  setEdited(null);
+                }}
                 className={cx(
                   "rounded-lg px-3 py-2 text-left ring-1 ring-inset transition-colors",
-                  reusable === kind.value
+                  kind === option.value
                     ? "bg-indigo-50/60 ring-2 ring-indigo-600 dark:bg-indigo-500/10 dark:ring-indigo-400"
                     : "ring-slate-200 hover:bg-slate-50 dark:ring-slate-700 dark:hover:bg-slate-800/60",
                 )}
               >
-                <span className="block text-sm font-semibold">{kind.label}</span>
-                <span className="block text-xs text-slate-500 dark:text-slate-400">{kind.detail}</span>
+                <span className="block text-sm font-semibold">{option.label}</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400">{option.detail}</span>
               </button>
             ))}
           </div>
@@ -468,9 +480,13 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
             </div>
           )}
           <Field
-            label="Server address the machine will connect to"
+            label={kind === "kubernetes" ? "Server address the cluster's pods will connect to" : "Server address the machine will connect to"}
             hint={
-              agentPort
+              kind === "kubernetes"
+                ? clusterUrl
+                  ? "This server's address inside its cluster, which pods in it reach. For agents in another cluster, use an address that cluster reaches, such as the agent Service's."
+                  : "An address the cluster's pods reach: for a server in the same cluster, https://SERVICE.NAMESPACE.svc:8444, not the dashboard's public name."
+                : agentPort
                 ? `This server takes agents on port ${agentPort}, apart from the dashboard. It must be reachable from the machine; change the name or address if agents reach this server another way.`
                 : "Must be reachable from the machine. Change it if agents reach this server by another name or address."
             }
@@ -509,21 +525,40 @@ function EnrollDialog({ open, onClose }: { open: boolean; onClose: () => void })
   );
 }
 
-// ReusableTokenCreated shows a reusable token once, with how to use it in
-// Kubernetes, with Docker Compose, and on single machines.
-function ReusableTokenCreated({ token, onDone }: { token: NewEnrollmentToken; onDone: () => void }) {
+type EnrollKind = "one" | "many" | "kubernetes";
+
+// KubernetesTokenCreated shows a reusable token once, with the secret and
+// the Helm values that give it to every agent of the chart.
+function KubernetesTokenCreated({ token, onDone }: { token: NewEnrollmentToken; onDone: () => void }) {
+  // The server's namespace, from its Service address, is where its release is.
+  const host = (() => {
+    try {
+      return new URL(token.server_url).hostname;
+    } catch {
+      return "";
+    }
+  })();
+  const parts = host.split(".");
+  const namespace = parts.length >= 3 && parts[2] === "svc" ? parts[1] : "deaconguard";
   return (
     <div className="space-y-4 text-sm">
       <p className="text-slate-600 dark:text-slate-300">
-        This token enrolls every machine that uses it until {dateTime(token.expires_at)}. In Kubernetes, put it in a secret
-        for the agent DaemonSet, which runs one agent on each node:
+        1. Put the token in a secret, in the namespace of the release that runs the agents (the server&apos;s, {" "}
+        <span className="font-mono">{namespace}</span>, to run them alongside it):
       </p>
       <CopyBlock
-        text={`kubectl create namespace deaconguard-agent --save-config\nkubectl -n deaconguard-agent create secret generic deaconguard-enrollment --from-literal=token='${token.token}'`}
-        label="Copy the kubectl commands"
+        text={`kubectl -n ${namespace} create secret generic deaconguard-enrollment --from-literal=token='${token.token}'`}
+        label="Copy the kubectl command"
+      />
+      <p className="text-slate-600 dark:text-slate-300">2. Add this to the release&apos;s values, and run helm upgrade:</p>
+      <CopyBlock
+        text={`enrollment:\n  existingSecret: deaconguard-enrollment\nagent:\n  enabled: true      # every node, and its pods' containers\ncluster:\n  enabled: true      # the cluster itself, and its images\n  name: production   # its name on Hosts`}
+        label="Copy the values"
       />
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Then install the agent with the Helm chart or Kustomize, as{" "}
+        Both agents use this one token; leave out either block to run only the other. Each node and the cluster appear on Hosts
+        within a minute, and keep their identity afterwards, so the token can expire without stopping them. The node agent
+        needs privileged pods: on a namespace with an enforced Pod Security Standard, give it a release of its own, as{" "}
         <a
           href="https://docs.deaconguard.io/installation/kubernetes"
           target="_blank"
@@ -532,11 +567,31 @@ function ReusableTokenCreated({ token, onDone }: { token: NewEnrollmentToken; on
         >
           Install in Kubernetes
         </a>{" "}
-        shows. With Docker Compose, put it in the agent's <code className="font-mono">enrollment-token</code> file.
+        shows.
       </p>
-      <p className="text-xs text-slate-500 dark:text-slate-400">
-        To check the cluster itself (workloads, RBAC, namespaces, its Kubernetes version), the chart's cluster agent enrolls
-        with a token too, and the cluster appears on Hosts: set <code className="font-mono">cluster.enabled=true</code>.
+      <p className="flex gap-2 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-200">
+        <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <span>
+          This token is shown only once, and enrolls every agent that uses it until {dateTime(token.expires_at)}. Keep it in the
+          secret only, and revoke it below when no more nodes will join. Agents it enrolled stay enrolled.
+        </span>
+      </p>
+      <div className="flex justify-end pt-2">
+        <Button onClick={onDone}>Done</Button>
+      </div>
+    </div>
+  );
+}
+
+// ReusableTokenCreated shows a reusable token once, with how to use it with
+// Docker Compose and on many machines.
+function ReusableTokenCreated({ token, onDone }: { token: NewEnrollmentToken; onDone: () => void }) {
+  return (
+    <div className="space-y-4 text-sm">
+      <p className="text-slate-600 dark:text-slate-300">
+        This token enrolls every machine that uses it until {dateTime(token.expires_at)}. On each machine, run the install
+        command; with Docker Compose, put it in the agent&apos;s <code className="font-mono">enrollment-token</code> file. For
+        Kubernetes, choose <span className="font-medium">Kubernetes</span> instead, which shows the secret and the Helm values.
       </p>
       <details className="text-xs text-slate-500 dark:text-slate-400">
         <summary className="cursor-pointer">The token alone, or the install command for a machine</summary>

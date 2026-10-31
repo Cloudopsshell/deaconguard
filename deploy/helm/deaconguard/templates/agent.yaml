@@ -53,7 +53,7 @@ spec:
             - name: DEACONGUARD_AGENT_CONFIG
               value: /var/lib/deaconguard-agent/agent.json
             - name: DEACONGUARD_ENROLL_TOKEN_FILE
-              value: /run/secrets/deaconguard-enrollment/{{ .Values.agent.enrollment.secretKey }}
+              value: /run/secrets/deaconguard-enrollment/{{ include "deaconguard.enrollmentKey" . }}
           {{- with .Values.agent.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
