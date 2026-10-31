@@ -8,6 +8,13 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.20.3] - 2026-10-31
+
+### Fixed
+
+- **The server could run out of memory in a container** while it checked images on several Ubuntu releases in a row, as a cluster scan does: with Helm's 1 GiB limit, Kubernetes stopped it (OOMKilled). The server now tells the Go runtime the memory limit it runs under (a container's, or a systemd unit's `MemoryMax`), so memory is collected before the limit is reached, and it lets go of a parsed feed before it reads another one that wouldn't fit beside it, rather than after. Checking Ubuntu 20.04 to 26.04 and Debian 12 back to back under 1 GiB now peaks at 817 MB instead of 936 MB and settles at 640 MB instead of 889 MB. `GOMEMLIMIT`, when set, still wins.
+- Under a memory limit lower than 1 GiB, parsed feeds take at most 40% of it by default, instead of 400 MB.
+
 ## [1.20.2] - 2026-10-31
 
 ### Added
@@ -363,7 +370,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.2...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.3...HEAD
+[1.20.3]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.2...v1.20.3
 [1.20.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.1...v1.20.2
 [1.20.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.19.0...v1.20.0

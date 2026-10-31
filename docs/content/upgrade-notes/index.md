@@ -11,6 +11,7 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.11 to 1.20) a
 
 | Release | Released | What to do |
 | --- | --- | --- |
+| [1.20.3](./v1-20/v1-20-3.md) | 2026-10-31 | Nothing |
 | [1.20.2](./v1-20/v1-20-2.md) | 2026-10-31 | Nothing; optionally move the chart's agents to one token |
 | [1.20.1](./v1-20/v1-20-1.md) | 2026-10-31 | Nothing; run the node agent to avoid downloads |
 | [1.20.0](./v1-20/v1-20-0.md) | 2026-10-31 | Upgrade the cluster agent too; the server reaches your images' registries |
