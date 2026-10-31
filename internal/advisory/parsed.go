@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"deaconguard/internal/memlimit"
 )
 
 // Parsing a large feed, such as Canonical's OVAL for a release (hundreds of
@@ -23,7 +25,12 @@ var parsedKept = 30 * time.Minute
 // defaultParsedBudget is the memory parsed feeds may take, in bytes: one
 // Ubuntu release's OVAL (about 275 MB) with Debian's and Red Hat's. Set
 // DEACONGUARD_FEED_CACHE_MB to change it, or to 0 to parse for every scan.
-const defaultParsedBudget = 400 << 20
+// Under a memory limit, such as a container's, the default is at most
+// limitShare percent of it: parsing a feed takes about as much again.
+const (
+	defaultParsedBudget = 400 << 20
+	limitShare          = 40
+)
 
 // parsedBudget reads the budget once; tests change it.
 var parsedBudget = sync.OnceValue(func() int64 {
@@ -32,8 +39,15 @@ var parsedBudget = sync.OnceValue(func() int64 {
 			return megabytes << 20
 		}
 	}
-	return defaultParsedBudget
+	return budgetUnder(memlimit.Limit())
 })
+
+func budgetUnder(limit int64) int64 {
+	if limit > 0 {
+		return min(defaultParsedBudget, limit/100*limitShare)
+	}
+	return defaultParsedBudget
+}
 
 type parsedEntry struct {
 	ready    chan struct{}
@@ -49,6 +63,9 @@ var parsedFeeds = struct {
 	entries map[string]*parsedEntry
 	// parsing serializes parses, so that each one's memory can be measured.
 	parsing sync.Mutex
+	// largest is the most memory a parsed feed has taken: what the next
+	// parse is expected to need room for.
+	largest int64
 }{entries: map[string]*parsedEntry{}}
 
 // parsedOnce returns kind's feed data parsed by parse, parsing it only when
@@ -75,7 +92,7 @@ func parsedOnce[T any](kind string, data []byte, parse func() (T, error)) (T, er
 	entry.lastUsed = time.Now()
 	parsedFeeds.Unlock()
 	if !found {
-		value, size, err := measuredParse(parse)
+		value, size, err := measuredParse(key, budget, parse)
 		entry.value, entry.err = value, err
 		parsedFeeds.Lock()
 		entry.size = size
@@ -100,16 +117,52 @@ func parsedOnce[T any](kind string, data []byte, parse func() (T, error)) (T, er
 // measuredParse parses, and says how much memory the result holds: the
 // growth over the parse of the heap memory in use, between two collections,
 // which counts the pages its many small objects take, not only the objects.
-func measuredParse[T any](parse func() (T, error)) (T, int64, error) {
+// Room is made first, so the feeds kept and the one being parsed fit in the
+// budget together, rather than only once the parse is done.
+func measuredParse[T any](key string, budget int64, parse func() (T, error)) (T, int64, error) {
 	parsedFeeds.parsing.Lock()
 	defer parsedFeeds.parsing.Unlock()
+	makeRoom(key, budget)
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
 	value, err := parse()
 	runtime.GC()
 	runtime.ReadMemStats(&after)
-	return value, max(0, int64(after.HeapInuse)-int64(before.HeapInuse)), err
+	size := max(0, int64(after.HeapInuse)-int64(before.HeapInuse))
+	if err == nil {
+		parsedFeeds.Lock()
+		parsedFeeds.largest = max(parsedFeeds.largest, size)
+		parsedFeeds.Unlock()
+	}
+	return value, size, err
+}
+
+// makeRoom drops the least recently used parsed feeds while they and a
+// feed as large as the largest one parsed so far would take more than
+// budget. Scans using a dropped feed keep their copy until they are done.
+func makeRoom(parsing string, budget int64) {
+	parsedFeeds.Lock()
+	defer parsedFeeds.Unlock()
+	for {
+		total := parsedFeeds.largest
+		var oldest string
+		var oldestEntry *parsedEntry
+		for key, entry := range parsedFeeds.entries {
+			total += entry.size
+			if key == parsing || entry.size == 0 {
+				continue
+			}
+			if oldestEntry == nil || entry.lastUsed.Before(oldestEntry.lastUsed) {
+				oldest, oldestEntry = key, entry
+			}
+		}
+		if total <= budget || oldestEntry == nil {
+			return
+		}
+		oldestEntry.timer.Stop()
+		delete(parsedFeeds.entries, oldest)
+	}
 }
 
 // keepWithinBudget drops the least recently used parsed feeds while all of

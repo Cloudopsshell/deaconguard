@@ -12,9 +12,13 @@ func resetParsed(t *testing.T, budget int64) {
 	t.Helper()
 	previousBudget, previousKept := parsedBudget, parsedKept
 	parsedBudget = func() int64 { return budget }
+	parsedFeeds.Lock()
+	parsedFeeds.largest = 0
+	parsedFeeds.Unlock()
 	t.Cleanup(func() {
 		parsedBudget, parsedKept = previousBudget, previousKept
 		parsedFeeds.Lock()
+		parsedFeeds.largest = 0
 		for key, entry := range parsedFeeds.entries {
 			entry.timer.Stop()
 			delete(parsedFeeds.entries, key)
@@ -109,6 +113,40 @@ func TestParsedFeedsStayWithinBudget(t *testing.T) {
 	}
 	if cached("huge") != 0 {
 		t.Fatal("a feed over the budget was kept")
+	}
+}
+
+func TestParsedFeedsMakeRoomBeforeParsing(t *testing.T) {
+	resetParsed(t, 100<<20)
+	var parses atomic.Int32
+	parsedOnce("a", []byte("a"), sized(60, &parses))
+	// A second feed as large wouldn't fit beside a: a goes before the parse,
+	// so both are never in memory at once.
+	parsedOnce("b", []byte("b"), func() ([]byte, error) {
+		if cached("a") != 0 {
+			t.Error("a was still kept while b was parsed")
+		}
+		return sized(60, &parses)()
+	})
+	if cached("a") != 0 || cached("b") != 1 {
+		t.Fatalf("after b: a %d, b %d", cached("a"), cached("b"))
+	}
+	// Small feeds still fit beside it.
+	resetParsed(t, 100<<20)
+	parsedOnce("c", []byte("c"), sized(20, &parses))
+	parsedOnce("d", []byte("d"), sized(20, &parses))
+	if cached("c") != 1 || cached("d") != 1 {
+		t.Fatalf("small feeds: c %d, d %d", cached("c"), cached("d"))
+	}
+}
+
+func TestBudgetUnderAMemoryLimit(t *testing.T) {
+	for _, test := range []struct{ limit, want int64 }{
+		{0, 400 << 20}, {4 << 30, 400 << 20}, {1 << 30, 400 << 20}, {512 << 20, 512 << 20 / 100 * 40},
+	} {
+		if got := budgetUnder(test.limit); got != test.want {
+			t.Errorf("budgetUnder(%d) = %d, want %d", test.limit, got, test.want)
+		}
 	}
 }
 
