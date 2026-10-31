@@ -4,8 +4,9 @@
 # in settings an upgraded release lacks from it.
 #
 # The server and the agents are usually two releases, in two namespaces: the
-# server runs under the restricted Pod Security Standard, and the agents need
-# privileged, since each reads its node.
+# server runs under the restricted Pod Security Standard, and the node agents
+# need privileged, since each reads its node. The cluster agent is
+# unprivileged and can share the server's release.
 
 image:
   repository: ghcr.io/cloudopsshell/deaconguard
@@ -13,6 +14,32 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
+
+# The enrollment token every agent of this release uses: the node agent on
+# each node (agent.enabled) and the cluster agent (cluster.enabled), one
+# secret for all of them. Create the token on the server's Agents page with
+# Enroll a machine > Kubernetes, which makes a reusable token for the
+# server's in-cluster address, and shows this command:
+#
+#   kubectl -n NAMESPACE create secret generic deaconguard-enrollment --from-literal=token='deaconguard1.…'
+#
+# then set existingSecret: deaconguard-enrollment. Or put the token in
+# enrollment.token, which the chart puts in a secret (it is then also in
+# Helm's release data).
+#
+# The token must be reusable ("Many machines") whenever more than one agent
+# uses it: every node runs one, and the cluster agent is one more. A
+# one-time token enrolls only the first agent to start; the others are
+# refused with "already used". Each agent uses the token once, to enroll,
+# and keeps its own identity afterwards, so the token can expire or be
+# revoked later without stopping them; new nodes then need a new one.
+#
+# agent.enrollment and cluster.enrollment can give an agent a token of its
+# own instead; they're empty, so both use this one.
+enrollment:
+  existingSecret: ""
+  secretKey: token
+  token: ""
 
 server:
   enabled: true
@@ -119,9 +146,9 @@ server:
 
 agent:
   enabled: false
-  # A reusable token from the server's Agents page, in an existing secret
-  # (recommended), or in enrollment.token, which the chart puts in a secret.
-  # Each node uses it once, to enroll.
+  # Leave empty to use the shared enrollment token above. Set to give the
+  # node agents a token of their own: an existing secret, or a token the
+  # chart puts in a secret. It must be reusable, since every node uses it.
   enrollment:
     existingSecret: ""
     secretKey: token
@@ -152,9 +179,9 @@ cluster:
   enabled: false
   # The cluster's name on the server.
   name: kubernetes
-  # A token from the server's Agents page, in an existing secret
-  # (recommended), or in enrollment.token, which the chart puts in a secret.
-  # The cluster agent uses it once, to enroll.
+  # Leave empty to use the shared enrollment token above. Set to give the
+  # cluster agent a token of its own: an existing secret, or a token the
+  # chart puts in a secret. A one-time token is enough for it alone.
   enrollment:
     existingSecret: ""
     secretKey: token

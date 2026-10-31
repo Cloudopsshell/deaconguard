@@ -27,17 +27,41 @@ For agents on machines outside the cluster, set server.agentService.enabled=true
 {{- end }}
 Use the address an agent reaches when you create its token on the Agents page; not 127.0.0.1, which only the server's own pod can use.
 {{- end }}
+{{- $agentSecret := include "deaconguard.enrollmentSecret" . }}
+{{- $clusterSecret := include "deaconguard.clusterEnrollmentSecret" . }}
+{{- $missing := list }}
+{{- if and .Values.agent.enabled (not (include "deaconguard.agentHasToken" .)) }}{{ $missing = append $missing $agentSecret }}{{ end }}
+{{- if and .Values.cluster.enabled (not (include "deaconguard.clusterHasToken" .)) }}{{ $missing = append $missing $clusterSecret }}{{ end }}
 {{- if .Values.agent.enabled }}
 
-The DeaconGuard agent runs on every node{{ if not (or .Values.agent.enrollment.existingSecret .Values.agent.enrollment.token) }}, and waits for its token:
-  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "deaconguard.enrollmentSecret" . }} --from-literal={{ .Values.agent.enrollment.secretKey }}='TOKEN'
-  kubectl -n {{ .Release.Namespace }} rollout restart daemonset/{{ include "deaconguard.agentName" . }}{{ end }}.
-Each node appears on the server's Agents page, by its node name.
+The node agent runs on every node, enrolling with the token in the secret {{ $agentSecret }}.
+Each node appears on the server's Agents and Hosts pages, by its node name.
 {{- end }}
 {{- if .Values.cluster.enabled }}
 
-The cluster agent checks this cluster through its API, read-only{{ if not (or .Values.cluster.enrollment.existingSecret .Values.cluster.enrollment.token) }}, and waits for its token:
-  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "deaconguard.clusterEnrollmentSecret" . }} --from-literal={{ .Values.cluster.enrollment.secretKey }}='TOKEN'
-  kubectl -n {{ .Release.Namespace }} rollout restart statefulset/{{ include "deaconguard.clusterName" . }}{{ end }}.
+The cluster agent checks this cluster through its API, read-only, enrolling with the token in the secret {{ $clusterSecret }}.
 The cluster appears on the server's Hosts page as {{ .Values.cluster.name }}; scan it with the Kubernetes check.
+{{- end }}
+{{- if or .Values.agent.enabled .Values.cluster.enabled }}
+{{- if and .Values.agent.enabled .Values.cluster.enabled (eq $agentSecret $clusterSecret) }}
+
+Both agents share that secret, and every node uses it too: its token must be reusable.
+On the Agents page, choose Enroll a machine > Kubernetes. A one-time token enrolls only the
+first agent to start; the others are refused with "already used".
+{{- else if .Values.agent.enabled }}
+
+The token must be reusable, since every node uses it: on the Agents page, choose Enroll a machine > Kubernetes.
+{{- end }}
+{{- if $missing }}
+
+No token is set yet; the agents wait for it. On the Agents page, choose Enroll a machine > Kubernetes,
+which makes a reusable token for this cluster's address. Put it in one secret for every agent:
+  kubectl -n {{ .Release.Namespace }} create secret generic deaconguard-enrollment --from-literal=token='TOKEN'
+and add to your values, then helm upgrade:
+  enrollment:
+    existingSecret: deaconguard-enrollment
+(Or create the {{ if gt (len (uniq $missing)) 1 }}secrets{{ else }}secret{{ end }} this release reads now: {{ uniq $missing | join ", " }}.) Agents enroll within a minute or so of it.
+{{- end }}
+The token's server address must be one the pods reach: https://SERVICE.NAMESPACE.svc:8444 for a server in this cluster,
+not the dashboard's public name.
 {{- end }}
