@@ -71,7 +71,7 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
                   {byContainer ? (
                     <>
                       <Th>Container</Th>
-                      <Th>Where in the container</Th>
+                      <Th>{findings.every((finding) => finding.container) ? "Where in the container" : "Where"}</Th>
                     </>
                   ) : (
                     <Th>Evidence</Th>
@@ -91,7 +91,9 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
                     {byContainer ? (
                       <>
                         <Td>
-                          <p className="font-medium break-all">{finding.container}</p>
+                          <p className="font-medium break-all">
+                            {finding.container || <span className="font-normal text-slate-500 dark:text-slate-400">This machine</span>}
+                          </p>
                           <p className="font-mono text-xs break-all text-slate-500 dark:text-slate-400">{finding.image}</p>
                         </Td>
                         <Td className="max-w-md font-mono text-xs break-all whitespace-pre-line text-slate-700 dark:text-slate-300">

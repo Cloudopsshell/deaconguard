@@ -30,7 +30,7 @@ For Jira and ServiceNow, choose the events that need someone to act, such as kno
 | --- | --- | --- |
 | Known exploited vulnerabilities | A host, a container running on it, or a [registry image](./images.md) has vulnerabilities in CISA's [KEV catalog](./vulnerabilities.md) that its previous scan didn't. | Critical |
 | New critical vulnerabilities | A host has new critical vulnerabilities an update fixes, or its [running containers](./containers.md) or an image new critical ones a rebuild fixes. | Warning |
-| Malware | A scan finds malware or signs of compromise. | Critical |
+| Malware | A scan finds malware or signs of compromise, on the machine or in its running containers, which the message names. | Critical |
 | Changed system files | System files differ from what their packages installed. | Critical |
 | New cluster findings | A [Kubernetes cluster](./kubernetes.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a privileged workload. | Critical, or Warning for high only |
 | New configuration findings | A host's [security configuration](../checks.md) has medium, high or critical findings its previous configuration check didn't, such as SSH starting to accept passwords. Low ones, such as automatic updates being off, aren't sent. | Critical, or Warning |
