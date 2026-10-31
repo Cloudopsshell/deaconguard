@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,9 +45,11 @@ type Report struct {
 	Architecture string        `json:"architecture,omitempty"`
 	Workloads    int           `json:"workloads"`
 	Findings     []iac.Finding `json:"findings"`
-	// Images are the images running pods use, for image scans.
-	Images []string `json:"images"`
-	Notes  []string `json:"notes,omitempty"`
+	// Images are the images running pods use, for image scans; Running the
+	// builds they run, with where.
+	Images  []string              `json:"images"`
+	Running []checks.RunningImage `json:"running_images,omitempty"`
+	Notes   []string              `json:"notes,omitempty"`
 }
 
 var systemNamespaces = map[string]bool{"kube-system": true, "kube-public": true, "kube-node-lease": true}
@@ -86,6 +89,80 @@ type object struct {
 			Image string `json:"image"`
 		} `json:"initContainers"`
 	} `json:"spec"`
+	// A pod's status names the build each container runs.
+	Status struct {
+		ContainerStatuses     []containerStatus `json:"containerStatuses"`
+		InitContainerStatuses []containerStatus `json:"initContainerStatuses"`
+	} `json:"status"`
+}
+
+type containerStatus struct {
+	Image   string `json:"image"`
+	ImageID string `json:"imageID"`
+}
+
+// runningDigest reads the build's digest from a container status's
+// imageID, such as docker.io/library/nginx@sha256:… or, with Docker,
+// docker-pullable://nginx@sha256:…; an image ID without a repository
+// (sha256:… alone, for an image loaded into the node) names no build a
+// registry has.
+func runningDigest(imageID string) string {
+	_, digest, found := strings.Cut(imageID, "@")
+	if !found || !digestPattern.MatchString(digest) {
+		return ""
+	}
+	return digest
+}
+
+var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// runningImages collects the builds pods run, by image and digest.
+type runningImages map[string]*checks.RunningImage
+
+func (r runningImages) add(namespace string, spec []string, statuses []containerStatus) {
+	digests := map[string]string{}
+	for _, status := range statuses {
+		if digest := runningDigest(status.ImageID); digest != "" {
+			digests[status.Image] = digest
+		}
+	}
+	for _, image := range spec {
+		digest := digests[image]
+		if digest == "" {
+			// The status names the image as the runtime resolved it, such
+			// as docker.io/library/nginx:1.27 for nginx:1.27.
+			for name, d := range digests {
+				if strings.HasSuffix(name, "/"+image) || strings.HasSuffix(name, "/library/"+image) {
+					digest = d
+				}
+			}
+		}
+		key := image + "@" + digest
+		entry := r[key]
+		if entry == nil {
+			entry = &checks.RunningImage{Image: image, Digest: digest}
+			r[key] = entry
+		}
+		entry.Pods++
+		if !slices.Contains(entry.Namespaces, namespace) {
+			entry.Namespaces = append(entry.Namespaces, namespace)
+		}
+	}
+}
+
+func (r runningImages) list() []checks.RunningImage {
+	list := make([]checks.RunningImage, 0, len(r))
+	for _, entry := range r {
+		sort.Strings(entry.Namespaces)
+		list = append(list, *entry)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].Image != list[j].Image {
+			return list[i].Image < list[j].Image
+		}
+		return list[i].Digest < list[j].Digest
+	})
+	return list
 }
 
 // Scan reads the cluster and checks it. Only list and get are used.
@@ -130,6 +207,7 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 	podsIn := map[string]int{}
 	dashboardFound := false
 	images := map[string]bool{}
+	running := runningImages{}
 	var apiServers []object
 	skippedSystem := 0
 	for _, k := range kinds {
@@ -157,9 +235,15 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 				for _, c := range meta.Spec.Containers {
 					images[c.Image] = true
 				}
+				var spec []string
+				for _, c := range meta.Spec.Containers {
+					spec = append(spec, c.Image)
+				}
 				for _, c := range meta.Spec.InitContainers {
 					images[c.Image] = true
+					spec = append(spec, c.Image)
 				}
+				running.add(ns, spec, append(meta.Status.ContainerStatuses, meta.Status.InitContainerStatuses...))
 			}
 			// A controller's pods and ReplicaSets are checked through it.
 			if len(meta.Metadata.OwnerReferences) > 0 && (k.kind == "Pod" || k.kind == "ReplicaSet" || k.kind == "Job") {
@@ -194,6 +278,7 @@ func Scan(ctx context.Context, client *Client, options Options) (Report, error) 
 		report.Images = append(report.Images, image)
 	}
 	sort.Strings(report.Images)
+	report.Running = running.list()
 	if skippedSystem > 0 {
 		report.Notes = append(report.Notes, fmt.Sprintf("%d objects of Kubernetes itself (kube-system, built-in roles) were left out: its components need privileges by design", skippedSystem))
 	}
