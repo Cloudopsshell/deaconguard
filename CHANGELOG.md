@@ -8,6 +8,22 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-10-31
+
+### Added
+
+- **Malware in containers:** the malware, Basic and Advanced antivirus checks now also scan what each running container wrote since it started, on Docker, Podman and Kubernetes nodes alike: its writable layer and its Kubernetes emptyDir volumes, where webshells, miners and dropped tools land. Findings name the container (`namespace/pod/container` on Kubernetes) with the path inside it, and malware notifications list the containers. The image's own files and other volumes are left out. The scanners never follow a link inside a container's folders, and nothing in a container is run.
+- Crypto miners and other suspicious processes found by the malware check are named after the container they run in.
+
+### Changed
+
+- **Lighter antivirus scans:** ClamAV scans every folder, the machine's and the containers', in one run, loading its signatures once; the YARA rules are compiled once per scan instead of once per folder, about a fifth of the time and a third of the memory per folder. Both run at the lowest disk priority as well as CPU priority, and folders a container left empty are skipped.
+- The Kubernetes installation page sets out the server, the node agent and the cluster agent, and who checks what in your pods.
+
+### Fixed
+
+- The FAQ said container contents aren't scanned; the Running containers check has done so since 1.2.0.
+
 ## [1.18.0] - 2026-10-30
 
 ### Added
@@ -314,7 +330,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.18.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.19.0...HEAD
+[1.19.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.1...v1.18.0
 [1.17.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.0...v1.17.1
 [1.17.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.16.0...v1.17.0

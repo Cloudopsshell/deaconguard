@@ -13,6 +13,7 @@ import (
 
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
+	"deaconguard/internal/containers"
 	"deaconguard/internal/lifecycle"
 	"deaconguard/internal/local"
 	"deaconguard/internal/osv"
@@ -118,6 +119,10 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 		executor.AsRoot()
 	}
 	sudoNoted := false
+	// The malware checks also scan the running containers' own files; the
+	// containers are listed once for all of them.
+	var running []containers.Writable
+	runningSkipped, listed := 0, false
 	for _, id := range checkIDs {
 		progress.startPhase(id, checkName(id))
 		phaseStarted := time.Now()
@@ -140,6 +145,13 @@ func runTarget(machine target.Target, host store.Host, checkIDs []string, option
 			continue
 		}
 		var inputs checks.Inputs
+		if (id == checks.Malware || id == checks.Antivirus || id == checks.YARA) && detected.Family != platform.MacOS {
+			if !listed {
+				running, runningSkipped = runningContainers(executor)
+				listed = true
+			}
+			inputs.Containers, inputs.ContainersSkipped = running, runningSkipped
+		}
 		if id == checks.YARA {
 			if options.YARARules != nil {
 				inputs.YARA = options.YARARules()

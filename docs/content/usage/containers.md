@@ -46,6 +46,31 @@ This needs root, which the agent has. A local `deaconguard serve` that doesn't r
 
 Containers with the same contents, such as replicas of one image, are checked once.
 
+## Malware in containers
+
+From 1.19.0, the malware checks look inside running containers too, on Docker, Podman and Kubernetes nodes alike. They need no option: they run on what each check already scans.
+
+| Check | In each running container |
+| --- | --- |
+| **Malware & compromise indicators** (`malware`) | Executables in its `/tmp`, `/var/tmp` and `/dev/shm`; crypto miners and programs running from temporary folders or memory are found among the machine's processes, and named after their container |
+| **Antivirus scan, Basic** (`antivirus`) | ClamAV on the files it wrote |
+| **Antivirus scan, Advanced** (`yara`) | ClamAV and the YARA rules on the files it wrote |
+
+**What is scanned** is what each container wrote since it started: its **writable layer**, where every file it created or changed is, and its Kubernetes **emptyDir** volumes, the scratch space of pods with a read-only root file system. That is where a webshell, a miner or a dropped tool lands. Left out:
+
+- **The image's own files.** They are the same in every container of the image and were there before it ran. Check images on the [Images](./images.md) page.
+- **Other volumes**, such as PersistentVolumes, Docker volumes and host folders. Folders of the machine's own that the scans cover, such as `/srv` or `/var/www`, are scanned as the machine's.
+- **Stopped containers**, and containers on a storage driver other than overlay (btrfs, ZFS); the report counts those.
+
+**How**, safely and lightly:
+
+- The agent finds each container's folders on the host from the kernel's mount tables, not from anything in the container, and gives them to the scanners as starting points.
+- The scanners **never follow a link** inside them, so a container can't point one at the host's files and have them reported, or read, in its name. Nothing in a container is run.
+- **One scan for all of them**: ClamAV loads its signatures once for the machine and every container; the YARA rules are compiled once. A container that wrote nothing costs nothing, and a pod's emptyDir shared by its containers is scanned once.
+- The same limits as the machine's scan: lowest CPU and disk priority, files over 50 MB skipped, at most 600 container folders per scan.
+
+A finding in a container names it, as `namespace/pod/container` on Kubernetes, with the path inside the container; the dashboard shows it in its own column. [Malware notifications](./notifications.md) list the containers.
+
 ## Scan new containers automatically
 
 On an agent's host page, turn on **Scan new containers automatically** (operators and admins). The agent then looks at the running containers about once a minute; when new ones have started, it tells the server, which queues a Running containers scan of that machine. So a container you deploy is checked within about two minutes, without waiting for the next scheduled scan.

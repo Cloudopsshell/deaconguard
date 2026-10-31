@@ -46,9 +46,10 @@ not json
 	if !strings.Contains(strings.Join(result.Notes, " "), "YARA Forge core 2026-10-04") {
 		t.Fatalf("notes = %v", result.Notes)
 	}
-	// The rules reach the scan on standard input, never in the command.
+	// The rules reach the scan on standard input, never in the command,
+	// after the containers' folders (none here).
 	for i, command := range host.commands {
-		if command == yaraScanCommand && string(host.stdin[i]) != "rule x { condition: true }" {
+		if command == yaraScanCommand && string(host.stdin[i]) != yaraRulesMarker+"\nrule x { condition: true }" {
 			t.Fatalf("stdin = %q", host.stdin[i])
 		}
 	}
@@ -67,7 +68,7 @@ func TestYARAWithSudoPasswordSendsPasswordThenRules(t *testing.T) {
 		t.Fatalf("result = %+v", result)
 	}
 	last := len(host.commands) - 1
-	if !strings.HasPrefix(host.commands[last], "sudo -S -p '' -- sh -c ") || string(host.stdin[last]) != "secret\nRULES" {
+	if !strings.HasPrefix(host.commands[last], "sudo -S -p '' -- sh -c ") || string(host.stdin[last]) != "secret\n"+yaraRulesMarker+"\nRULES" {
 		t.Fatalf("command = %q, stdin = %q", host.commands[last], host.stdin[last])
 	}
 }
