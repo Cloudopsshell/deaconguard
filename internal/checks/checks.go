@@ -184,6 +184,19 @@ type Cluster struct {
 	Namespaces   int      `json:"namespaces"`
 	Workloads    int      `json:"workloads"`
 	Images       []string `json:"images,omitempty"`
+	// Running are the builds the pods run, from their status, with where;
+	// empty from cluster agents before 1.20.0, which sent Images only.
+	Running []RunningImage `json:"running_images,omitempty"`
+}
+
+// RunningImage is an image pods run: the reference in their spec, the
+// digest of the build running, when the runtime reports one, and the
+// namespaces and number of pods that run it.
+type RunningImage struct {
+	Image      string   `json:"image"`
+	Digest     string   `json:"digest,omitempty"`
+	Namespaces []string `json:"namespaces,omitempty"`
+	Pods       int      `json:"pods,omitempty"`
 }
 
 // ForHost leaves out the checks a kind of host doesn't run: a cluster runs

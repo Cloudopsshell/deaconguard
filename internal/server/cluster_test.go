@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"deaconguard/internal/agentapi"
+	"deaconguard/internal/checks"
 	"deaconguard/internal/iac"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
@@ -37,6 +39,9 @@ func TestClustersRunOnlyTheKubernetesCheck(t *testing.T) {
 	t.Cleanup(func() { scan.ClusterVersionChecks = nil })
 	clusterID, bearer := enrollTestCluster(t, s, cookie, "prod-eu")
 	machineID, _ := enrollTestAgent(t, s, cookie, "web-01", "1.5.0")
+	images := &fakeClusterImages{summaries: map[string]scan.ImageSummary{
+		"nginx:1.25": {Fixable: 4, Exploited: 1, FixableSeverity: map[string]int{"HIGH": 4}, Urgent: []string{"CVE-2023-44487"}}}}
+	s.agents.clusterImages = images
 
 	if host, _ := store.GetHost(clusterID); !host.IsCluster() || host.Address != "prod-eu" {
 		t.Fatalf("cluster host = %+v", host)
@@ -66,7 +71,9 @@ func TestClustersRunOnlyTheKubernetesCheck(t *testing.T) {
 		"address": "prod-eu", "os": "Kubernetes v1.29.3", "checks_run": []string{"kubernetes"},
 		"check_results": map[string]any{"kubernetes": map[string]any{
 			"status": "completed", "summary": "1 finding", "notes": []string{},
-			"cluster":  map[string]any{"name": "prod-eu", "version": "v1.29.3", "nodes": 3, "namespaces": 5, "workloads": 12},
+			"cluster": map[string]any{"name": "prod-eu", "version": "v1.29.3", "nodes": 3, "namespaces": 5, "workloads": 12, "architecture": "arm64",
+				"running_images": []map[string]any{{"image": "nginx:1.25", "digest": "sha256:" + strings.Repeat("a", 64), "namespaces": []string{"shop"}, "pods": 2},
+					{"image": "alpine:3.22", "namespaces": []string{"tools"}, "pods": 1}}},
 			"findings": []map[string]any{{"rule": "DG-K8S-001", "severity": "CRITICAL", "title": "Deployment shop/web: container web is privileged", "detail": "", "evidence": "k8s/shop/deployment/web"}},
 		}},
 	}}
@@ -81,8 +88,15 @@ func TestClustersRunOnlyTheKubernetesCheck(t *testing.T) {
 	}
 	results := detail.Report["check_results"].(map[string]any)["kubernetes"].(map[string]any)
 	findings := results["findings"].([]any)
-	if len(findings) != 2 || !strings.Contains(results["summary"].(string), "Kubernetes v1.29.3, 3 nodes, 12 workloads: 2 findings (1 critical, 1 high)") {
-		t.Fatalf("the server didn't add the version's findings: %v", results)
+	if len(findings) != 3 || !strings.Contains(results["summary"].(string), "Kubernetes v1.29.3, 3 nodes, 12 workloads: 3 findings (1 critical, 2 high)") {
+		t.Fatalf("the server didn't add the version's and the images' findings: %v", results)
+	}
+	// The images the pods run are checked on the server, for the nodes' platform.
+	if strings.Join(images.asked, ",") != "nginx:1.25 linux/arm64,alpine:3.22 linux/arm64" {
+		t.Fatalf("images checked: %v", images.asked)
+	}
+	if !strings.Contains(fmt.Sprint(findings), "Image nginx:1.25 has vulnerabilities known to be exploited") {
+		t.Fatalf("no image finding: %v", findings)
 	}
 
 	// A schedule runs each host's own checks: packages on the machine, the
@@ -171,4 +185,18 @@ func TestNewClusterFindingsAreNotified(t *testing.T) {
 	if strings.Count(titles, "prod-eu: 1 new critical or high finding") != 2 {
 		t.Fatalf("titles: %s", titles)
 	}
+}
+
+type fakeClusterImages struct {
+	summaries map[string]scan.ImageSummary
+	asked     []string
+}
+
+func (f *fakeClusterImages) Cached(image checks.RunningImage, platform string) (scan.ImageSummary, error, bool) {
+	return scan.ImageSummary{}, nil, false
+}
+
+func (f *fakeClusterImages) Check(_ context.Context, image checks.RunningImage, platform string) (scan.ImageSummary, error) {
+	f.asked = append(f.asked, image.Image+" "+platform)
+	return f.summaries[image.Image], nil
 }

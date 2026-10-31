@@ -8,6 +8,16 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-10-31
+
+### Added
+
+- **Running images of clusters:** each dashboard scan of a cluster also checks the images its pods run, on the server, as image scans do, so clusters without the node agent (EKS on Fargate, GKE Autopilot) get their images' vulnerabilities too. The cluster agent sends the digest of each build the pods run, so that build is checked, not the tag's current one; each image with vulnerabilities to fix or known to be exploited is a finding naming the namespaces and pods that run it, notified as New cluster findings. Private registries use the logins on the Images page.
+
+### Changed
+
+- Cluster image checks stay light: each build is read once and kept for a day (failures for an hour), one image at a time, at most 10 new images per scan within 10 minutes and 100 in all, so later scans and Scan when the cluster changes take about a second.
+
 ## [1.19.0] - 2026-10-31
 
 ### Added
@@ -330,7 +340,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.19.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.0...HEAD
+[1.20.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.19.0...v1.20.0
 [1.19.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.1...v1.18.0
 [1.17.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.0...v1.17.1
