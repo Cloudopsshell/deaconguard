@@ -157,10 +157,12 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/enrollment-tokens", s.needs(store.RoleAdmin, s.listEnrollmentTokens))
 	mux.HandleFunc("POST /api/enrollment-tokens", s.needs(store.RoleAdmin, s.createEnrollmentToken))
 	mux.HandleFunc("DELETE /api/enrollment-tokens/{id}", s.needs(store.RoleAdmin, s.revokeEnrollmentToken))
+	mux.HandleFunc("DELETE /api/enrollment-tokens", s.needs(store.RoleAdmin, s.deleteRevokedTokens))
 	mux.HandleFunc("GET /api/summary", s.summary)
 	mux.HandleFunc("GET /api/hosts", s.listHosts)
 	mux.HandleFunc("POST /api/hosts", s.needs(store.RoleAdmin, s.addHost))
 	mux.HandleFunc("GET /api/hosts/{id}", s.getHost)
+	mux.HandleFunc("GET /api/hosts/{id}/cluster", s.clusterView)
 	mux.HandleFunc("PATCH /api/hosts/{id}", s.needs(store.RoleOperator, s.updateHost))
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.needs(store.RoleAdmin, s.removeHost))
 	mux.HandleFunc("PUT /api/hosts/{id}/tags", s.needs(store.RoleOperator, s.setHostTags))
@@ -870,6 +872,10 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	}
 	if host.Transport == store.TransportAgent && !s.network {
 		writeError(w, http.StatusConflict, errors.New("agent hosts are scanned when DeaconGuard serves on the network (deaconguard serve --listen 0.0.0.0:8443)"))
+		return
+	}
+	if host.Disconnected != nil {
+		writeError(w, http.StatusConflict, fmt.Errorf("%s was disconnected: %s. Enroll its agent again with a new token to scan it", host.Address, host.Disconnected.Reason))
 		return
 	}
 	if err := checkAgentVersion(host, selected); err != nil {

@@ -43,10 +43,11 @@ import { PackageCountsInline, packageBadge } from "../lib/fixes";
 import { useRefreshAll } from "../lib/hooks";
 import { ReportBody } from "./ScanReport";
 import { HostLog } from "../components/HostLog";
-import { ThisServerBadge, agentOnline, connectionLabel } from "../lib/hosts";
+import { ClusterBadge, NodeBadge, ThisServerBadge, agentOnline, connectionLabel } from "../lib/hosts";
+import { ClusterOverview } from "../components/ClusterOverview";
 import { TagEditor } from "../components/Tags";
 import { TrendChart } from "../components/TrendChart";
-import { AgentStatus } from "./Agents";
+import { AgentStatus, DisconnectedNote } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 import { ReleaseBadge } from "../components/ReleaseSupport";
 
@@ -67,22 +68,39 @@ export function HostDetail() {
     refetchInterval: (query) => (isActive(query.state.data?.last_scan?.status) ? 2000 : false),
   });
 
+  const cluster = useQuery({
+    queryKey: ["host", data?.cluster_id],
+    queryFn: () => api.host(data!.cluster_id!),
+    enabled: !!data?.cluster_id,
+  });
+
   if (isPending) return <Loading />;
   if (error) return <ErrorMessage error={error} />;
 
   const running = isActive(data.last_scan?.status);
   return (
     <>
-      <Link
-        to="/hosts"
-        className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-      >
-        <ArrowLeft className="size-4" /> Hosts
-      </Link>
+      <div className="mb-4 flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400">
+        <Link to="/hosts" className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-slate-100">
+          <ArrowLeft className="size-4" /> Hosts
+        </Link>
+        {data.cluster_id && cluster.data && (
+          <>
+            <span aria-hidden>/</span>
+            <Link to={`/hosts/${cluster.data.id}`} className="hover:text-slate-900 dark:hover:text-slate-100">
+              {cluster.data.address}
+            </Link>
+            <span aria-hidden>/</span>
+            <span>nodes</span>
+          </>
+        )}
+      </div>
       <PageHeader
         title={
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             {data.address}
+            {data.kind === "cluster" && <ClusterBadge />}
+            {data.cluster_id && <NodeBadge />}
             {data.this_server && <ThisServerBadge />}
             {canOperate && (
               <button
@@ -116,7 +134,16 @@ export function HostDetail() {
             {data.transport === "agent" && <ContainerScanToggle host={data} />}
             {data.transport === "agent" && (
               <span className="mt-1 block">
-                <AgentStatus online={agentOnline(data)} lastSeen={data.agent?.last_seen_at} />
+                <AgentStatus online={agentOnline(data)} lastSeen={data.agent?.last_seen_at} disconnected={!!data.disconnected} />
+              </span>
+            )}
+            {data.cluster_id && cluster.data && (
+              <span className="mt-1 block text-sm">
+                A node of the Kubernetes cluster{" "}
+                <Link to={`/hosts/${cluster.data.id}`} className="text-indigo-600 hover:underline dark:text-indigo-400">
+                  {cluster.data.address}
+                </Link>
+                : its node agent checks the machine and the containers it runs.
               </span>
             )}
             <span className="mt-1 flex items-center gap-1.5 text-sm">
@@ -172,7 +199,18 @@ export function HostDetail() {
         }
       />
 
-      {data.transport === "agent" && !agentOnline(data) && (
+      {data.disconnected && (
+        <Card className="mb-6 border-l-4 border-amber-500">
+          <div className="p-5 text-sm">
+            <h2 className="font-semibold">This host was disconnected</h2>
+            <DisconnectedNote host={data} />
+          </div>
+        </Card>
+      )}
+
+      {data.kind === "cluster" && <ClusterOverview hostId={data.id} />}
+
+      {data.transport === "agent" && !data.disconnected && !agentOnline(data) && (
         <Card className="mb-6 border-l-4 border-amber-500">
           <div className="p-5 text-sm">
             <h2 className="font-semibold">The agent is offline</h2>
@@ -215,7 +253,18 @@ export function HostDetail() {
         </div>
       )}
 
-      <Results host={data} onRun={(check) => setScanning({ initial: [check] })} />
+      {data.kind === "cluster" ? (
+        <details className="group mb-6">
+          <summary className="cursor-pointer text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
+            Show all findings as a list, with the scan's notes
+          </summary>
+          <div className="mt-4">
+            <Results host={data} onRun={(check) => setScanning({ initial: [check] })} />
+          </div>
+        </details>
+      ) : (
+        <Results host={data} onRun={(check) => setScanning({ initial: [check] })} />
+      )}
 
       <TrendChart host={data.id} title="This host's vulnerabilities over time" />
 

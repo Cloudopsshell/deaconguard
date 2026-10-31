@@ -26,6 +26,22 @@ Kubernetes' own objects (`kube-system`, `kube-public`, `kube-node-lease`, and th
 
 To check a cluster from the server, on a schedule and with notifications, install the **cluster agent** in it: `cluster.enabled=true` in the [Helm chart](../installation/kubernetes.md#4-the-cluster-itself). It enrolls with the same token as the chart's node agents, `enrollment.existingSecret` (create it with **Enroll a machine** > **Kubernetes**), and appears on **Hosts** as a Kubernetes cluster, with its own page.
 
+### The cluster's page
+
+From 1.21.0, a cluster is one entry on **Hosts** and **Agents**, marked **Kubernetes**, and the hosts of its [node agents](../installation/kubernetes.md#3-the-agents) are listed under it, marked **Node**, instead of as hosts of their own. A node's page links back to its cluster. The server ties a node agent's host to its cluster by the node's name, from the cluster agent's scan; when two machines have the same name, the one enrolled with the cluster's token wins.
+
+The cluster's page shows what it runs, from its latest scan:
+
+- **Summary:** its nodes (Ready, and with a node agent), namespaces, pods and containers, and the critical and high vulnerabilities, misconfigurations and malware found in them.
+- **Workloads:** a tree of **Namespace** > workload (**Deployment**, **StatefulSet**, **DaemonSet**, **CronJob**, …) > **Pod** > **Container**. Each level adds up the problems of those under it: a container's vulnerabilities and malware, a workload's [findings about its settings](#rules-for-clusters), a namespace's own (no NetworkPolicy, no Pod Security Standard). Each pod links to the node it runs on; each container shows its image, and whether its node agent checked that very container or the server checked its image. **Only with problems** is on at first, and Kubernetes' own namespaces are hidden until you show them; the filter finds a namespace, workload, pod, node or image by name.
+- **Nodes:** each node's status, roles, address, OS, kernel and container runtime, its node agent, and its own vulnerabilities and malware. A node without a node agent says so: its packages aren't checked, and its containers only through their images.
+- **Images:** every image the pods run, with the namespaces and pods that run it and its vulnerabilities.
+- **Cluster settings:** findings about the cluster as a whole, such as roles that give cluster-admin, the API server's settings, and the Kubernetes version.
+
+A container's vulnerabilities come from its node agent's latest **Running containers** scan, matched by the container's ID, which Kubernetes and the node's runtime report alike; malware in the files a container wrote comes from the node agent's latest **Malware** or **Antivirus** scan the same way. A container its node agent hasn't checked shows its image's vulnerabilities, from [Running images](#running-images). Node agents before 1.21.0 name the container malware was found in but not its ID, so their findings are matched by name, when only one container on the node has it.
+
+The cluster agent lists the cluster's nodes, namespaces and pods from 1.21.0: upgrade it to see the tree; until then the page shows the findings only. It lists up to 5000 pods, so a large cluster's scan stays small; the page says how many more there are.
+
 The cluster agent checks what the API shows: the objects' settings, not what runs inside the containers. Vulnerable packages and libraries in your pods are found by the [node agent](../installation/kubernetes.md#3-the-agents)'s **Running containers** check, which reads each container's files on its node; see [Who checks what in your pods](../installation/kubernetes.md#who-checks-what-in-your-pods). The server also checks the images the pods run; see [Running images](#running-images).
 
 A cluster runs one check, **Kubernetes**: **Scan now** offers only that, and a schedule with the Kubernetes check ticked runs it on every cluster it covers (and its other checks on machines). The cluster agent reads the cluster with the pod's read-only service account and sends what it found to the server, which adds the version's support and Kubernetes' own vulnerabilities, so the agent needs to reach only the API and the server. New critical and high findings, such as a privileged workload deployed since the last scan, are [notified](./notifications.md) as **New cluster findings**; a failed scan as for any host.

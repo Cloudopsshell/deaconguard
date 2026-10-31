@@ -563,7 +563,13 @@ func runAgent(arguments []string, output, diagnostics io.Writer) error {
 		// enrolls again when the server no longer knows it: after the server
 		// was reinstalled, or the host removed. Revoke the token to stop that.
 		if token := enrollToken(); errors.Is(err, agent.ErrRemoved) && token != "" {
-			logf("The server no longer knows this agent; enrolling again with the token from the environment.")
+			if err.Error() != agent.ErrRemoved.Error() {
+				// The server said why, such as the host being disconnected.
+				logf("%v", err)
+				logf("Enrolling again with the token from the environment.")
+			} else {
+				logf("The server no longer knows this agent; enrolling again with the token from the environment.")
+			}
 			if config, err = agent.Enroll(ctx, token, path, true, enrollName("")); err != nil {
 				return err
 			}
