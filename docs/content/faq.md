@@ -75,11 +75,11 @@ Yes. Scripts and CI pipelines use the [API](./reference/api.md) with an API toke
 
 ### Can I run DeaconGuard in Docker or Kubernetes?
 
-Yes. The server runs from the image `ghcr.io/cloudopsshell/deaconguard` with [Docker or Compose](./installation/docker.md), or in [Kubernetes](./installation/kubernetes.md) with the Helm chart or Kustomize, and an agent DaemonSet scans every node with one [reusable token](./usage/agents.md#reusable-tokens).
+Yes. The server runs from the image `ghcr.io/cloudopsshell/deaconguard` with [Docker or Compose](./installation/docker.md), or in [Kubernetes](./installation/kubernetes.md) with the Helm chart or Kustomize. There, a node agent DaemonSet scans every node and its pods' containers with one [reusable token](./usage/agents.md#reusable-tokens), and a cluster agent checks the cluster itself through its API. [Who checks what in your pods](./installation/kubernetes.md#who-checks-what-in-your-pods) sums it up.
 
 ### Can I scan containers?
 
-Not their contents yet. Reports cover the host's DPKG or RPM packages and its running kernel, not software inside container images; an agent running in a container scans its host, not itself.
+Yes. The [Running containers](./usage/containers.md) check reads the packages and libraries inside each running container on a machine, with Docker, Podman, containerd or CRI-O, Kubernetes nodes included; nothing in a container is run. [Images in registries](./usage/images.md) are checked before anything runs them. An agent running in a container scans its host, not itself.
 
 ### How do I check a new server before handing it over?
 
