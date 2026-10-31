@@ -8,6 +8,16 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.20.1] - 2026-10-31
+
+### Changed
+
+- **Cluster images come from the node agents first:** a build a node agent's Running containers scan read in the last day is taken from that scan, matched by digest, instead of being downloaded from its registry again; only the others are read from registries. With the node agent on every node, a cluster scan downloads nothing. A restarted server finds the node agents' recent scans in its database. The scan's notes say how many images came from each.
+
+### Added
+
+- `server.clusterImageRegistry: false` in the Helm chart, or `DEACONGUARD_CLUSTER_IMAGE_REGISTRY=off`, stops the server reading cluster images from registries at all.
+
 ## [1.20.0] - 2026-10-31
 
 ### Added
@@ -340,7 +350,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.1...HEAD
+[1.20.1]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.19.0...v1.20.0
 [1.19.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.17.1...v1.18.0

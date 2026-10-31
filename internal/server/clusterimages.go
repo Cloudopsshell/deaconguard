@@ -3,16 +3,23 @@ package server
 import (
 	"context"
 	"errors"
+	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"deaconguard/internal/checks"
 	"deaconguard/internal/images"
 	"deaconguard/internal/scan"
+	"deaconguard/internal/store"
 )
 
-// The images clusters run are checked on the server (scan.EvaluateClusterImages),
-// and each result kept in memory: a build for a day, so new advisories are
+// The images clusters run are checked on the server (scan.EvaluateClusterImages).
+// A build a node agent already read from a running container, in a Running
+// containers scan of the last day, is taken from that scan: nothing is
+// downloaded. Only the others are read from their registries, unless
+// DEACONGUARD_CLUSTER_IMAGE_REGISTRY=off. Each result is kept in memory: a build for a day, so new advisories are
 // seen daily, and a failure for an hour, so a registry that refuses isn't
 // asked again on every scan of a cluster that changes often. A restart
 // forgets them; the next scans read the images again.
@@ -37,10 +44,71 @@ type clusterImages struct {
 	mu      sync.Mutex
 	entries map[string]clusterImageEntry
 	reading sync.Mutex
+	// registry is off when DEACONGUARD_CLUSTER_IMAGE_REGISTRY is off.
+	registry bool
+	// warm loads the node agents' recent scans once, after a start.
+	warm sync.Once
 }
 
 func newClusterImages(s *Server) *clusterImages {
-	return &clusterImages{server: s, now: time.Now, entries: map[string]clusterImageEntry{}}
+	setting := strings.ToLower(strings.TrimSpace(os.Getenv("DEACONGUARD_CLUSTER_IMAGE_REGISTRY")))
+	return &clusterImages{server: s, now: time.Now, entries: map[string]clusterImageEntry{},
+		registry: !slices.Contains([]string{"off", "false", "0", "no"}, setting)}
+}
+
+// nodeKey identifies a build a node agent read, whatever the platform: a
+// node runs its own.
+func nodeKey(digest string) string { return "node\x00" + digest }
+
+// recordNode keeps the builds an agent read in a Running containers scan.
+func (c *clusterImages) recordNode(host store.Host, report map[string]any) {
+	if host.IsCluster() {
+		return
+	}
+	for _, image := range scan.NodeImages(report) {
+		image.Summary.Node = host.Address
+		c.keep(nodeKey(image.Digest), clusterImageEntry{summary: image.Summary, at: c.now()})
+	}
+}
+
+// warmUp reads the node agents' Running containers scans of the last day,
+// so a restarted server doesn't download what they already read.
+func (c *clusterImages) warmUp() {
+	hosts, err := store.ListHosts()
+	if err != nil {
+		return
+	}
+	since := c.now().Add(-clusterImageKept).UTC().Format(time.RFC3339)
+	for _, host := range hosts {
+		if host.IsCluster() {
+			continue
+		}
+		scans, err := store.ListScans(host.ID, 20)
+		if err != nil {
+			continue
+		}
+		for _, record := range scans {
+			if record.StartedAt < since {
+				break
+			}
+			if record.Status != store.ScanSucceeded || !slices.Contains(record.Checks, checks.Containers) {
+				continue
+			}
+			report, err := store.GetFullReport(record.ID)
+			if err != nil {
+				break
+			}
+			at, err := time.Parse(time.RFC3339, record.StartedAt)
+			if err != nil {
+				at = c.now()
+			}
+			for _, image := range scan.NodeImages(report) {
+				image.Summary.Node = host.Address
+				c.keep(nodeKey(image.Digest), clusterImageEntry{summary: image.Summary, at: at})
+			}
+			break
+		}
+	}
 }
 
 // clusterImageKey identifies a build: by its digest when the cluster agent
@@ -53,8 +121,14 @@ func clusterImageKey(image checks.RunningImage, platform string) string {
 }
 
 func (c *clusterImages) Cached(image checks.RunningImage, platform string) (scan.ImageSummary, error, bool) {
+	c.warm.Do(c.warmUp)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if image.Digest != "" {
+		if entry, found := c.entries[nodeKey(image.Digest)]; found && c.now().Sub(entry.at) < clusterImageKept {
+			return entry.summary, nil, true
+		}
+	}
 	entry, found := c.entries[clusterImageKey(image, platform)]
 	if !found {
 		return scan.ImageSummary{}, nil, false
@@ -73,6 +147,9 @@ func (c *clusterImages) Cached(image checks.RunningImage, platform string) (scan
 }
 
 func (c *clusterImages) Check(ctx context.Context, image checks.RunningImage, platform string) (scan.ImageSummary, error) {
+	if !c.registry {
+		return scan.ImageSummary{}, scan.ErrRegistryOff
+	}
 	c.reading.Lock()
 	defer c.reading.Unlock()
 	summary, err := c.read(ctx, image, platform)
