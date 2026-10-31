@@ -79,7 +79,7 @@ Yes. The server runs from the image `ghcr.io/cloudopsshell/deaconguard` with [Do
 
 ### Can I scan containers?
 
-Yes. The [Running containers](./usage/containers.md) check reads the packages and libraries inside each running container on a machine, with Docker, Podman, containerd or CRI-O, Kubernetes nodes included; nothing in a container is run. [Images in registries](./usage/images.md) are checked before anything runs them. An agent running in a container scans its host, not itself.
+Yes. The [Running containers](./usage/containers.md) check reads the packages and libraries inside each running container on a machine, with Docker, Podman, containerd or CRI-O, Kubernetes nodes included; nothing in a container is run. The malware checks scan what each running container wrote since it started (1.19.0 and later). [Images in registries](./usage/images.md) are checked before anything runs them. An agent running in a container scans its host, not itself.
 
 ### How do I check a new server before handing it over?
 

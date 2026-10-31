@@ -515,3 +515,31 @@ func anyStrings(value any) []string {
 	}
 	return out
 }
+
+func TestMalwareInContainersNamesThem(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	h := newHook(t)
+	addChannel(t, s, cookie, map[string]any{"name": "slack", "kind": "webhook", "config": map[string]any{"url": h.server.URL},
+		"events": []string{"malware"}})
+	host, _ := store.AddLocalHost("node-1", "root")
+	found := func(findings ...map[string]any) map[string]any {
+		return map[string]any{"status": "completed", "notes": []string{}, "findings": findings}
+	}
+	shell := map[string]any{"rule": "antivirus.detection", "severity": "CRITICAL", "title": "shop/web/php: ClamAV detected Php.Webshell",
+		"detail": "", "evidence": "/var/www/up.php", "container": "shop/web/php"}
+	miner := map[string]any{"rule": "malware.crypto-miner", "severity": "CRITICAL", "title": "ci/runner/job: Cryptocurrency miner process",
+		"detail": "", "evidence": "900 root xmrig", "container": "ci/runner/job"}
+	own := map[string]any{"rule": "malware.ld-preload", "severity": "HIGH", "title": "Library preloaded into every process", "detail": "", "evidence": ""}
+	record := completeChecks(t, host, map[string]any{checks.Antivirus: found(shell), checks.Malware: found(miner, own)})
+	s.scanFinished(host, record.ID, nil)
+	s.deliverDue(context.Background(), time.Now())
+	if events := h.events(); len(events) != 1 || events[0] != notify.EventMalware {
+		t.Fatalf("events: %v", events)
+	}
+	lines := strings.Join(anyStrings(h.last()["lines"]), "\n")
+	if h.last()["title"] != "node-1: malware or signs of compromise found (3 findings)" ||
+		!strings.Contains(lines, "In 2 containers: ci/runner/job, shop/web/php.") {
+		t.Fatalf("message: %v", h.last())
+	}
+}

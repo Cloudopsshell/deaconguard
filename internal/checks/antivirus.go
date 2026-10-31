@@ -20,12 +20,22 @@ const (
 	clamVersionCommand = "clamscan --version 2>/dev/null"
 	memInfoCommand     = "grep -E '^(MemAvailable|SwapFree):' /proc/meminfo"
 	// Scans the directories where dropped tools and web shells usually live,
-	// at the lowest CPU priority. Missing directories are skipped.
-	clamScanCommand = `dirs=""; for d in /tmp /var/tmp /dev/shm /home /root /opt /usr/local /var/www /srv; do [ -d "$d" ] && dirs="$dirs $d"; done; ` +
-		`nice -n 19 clamscan --recursive --infected --no-summary --stdout --max-filesize=50M --max-scansize=200M --cross-fs=no $dirs 2>/dev/null`
+	// and the running containers' own files, which arrive on standard input,
+	// one folder per line: all in one clamscan, which loads its signatures
+	// once, at the lowest CPU and disk priority. The host's folders may be
+	// links, such as /home on some systems, and are resolved first; links
+	// inside any folder are never followed, so a container's link can't
+	// lead to the host's files. Missing directories are skipped.
+	clamScanCommand = `list=$(mktemp) || exit 3; trap 'rm -f "$list"' EXIT; cat > "$list" || exit 3; ` +
+		`for d in /tmp /var/tmp /dev/shm /home /root /opt /usr/local /var/www /srv; do [ -d "$d" ] && readlink -f "$d" >> "$list"; done; ` +
+		`[ -s "$list" ] || exit 0; ` + lowPriority + `clamscan --recursive --infected --no-summary --stdout --max-filesize=50M --max-scansize=200M --cross-fs=no ` +
+		`--follow-dir-symlinks=0 --follow-file-symlinks=0 --file-list="$list" 2>/dev/null`
+	// lowPriority runs a scanner at the lowest CPU priority, and at the
+	// lowest disk priority where ionice exists.
+	lowPriority = `io=; command -v ionice >/dev/null 2>&1 && ionice -c2 -n7 true 2>/dev/null && io="ionice -c2 -n7"; nice -n 19 $io `
 )
 
-func runAntivirus(executor *Executor, now time.Time) Result {
+func runAntivirus(executor *Executor, now time.Time, inputs Inputs) Result {
 	output, _, err := executor.Run(clamDetectCommand, 4096, time.Minute)
 	if err != nil {
 		return failed(fmt.Errorf("look for ClamAV: %w", err))
@@ -50,7 +60,8 @@ func runAntivirus(executor *Executor, now time.Time) Result {
 			return result.finish(false)
 		}
 	}
-	output, code, privileged, err := executor.RunPrivileged(clamScanCommand, 4<<20, antivirusTimeout)
+	folders, _ := containerFolders(inputs.Containers)
+	output, code, privileged, err := executor.RunPrivilegedInput(clamScanCommand, []byte(folders), 4<<20, antivirusTimeout)
 	// clamscan exits 1 when it finds malware and 2 when some files could not be read.
 	if err != nil && code != 1 && code != 2 {
 		return failed(fmt.Errorf("clamscan: %w", err))
@@ -60,12 +71,15 @@ func runAntivirus(executor *Executor, now time.Time) Result {
 		if !found || !strings.HasSuffix(signature, " FOUND") {
 			continue
 		}
-		result.add(Finding{
+		finding := Finding{
 			Rule: "antivirus.detection", Severity: "CRITICAL", Title: "ClamAV detected " + strings.TrimSuffix(signature, " FOUND"),
 			Detail:   "ClamAV matched this file against a malware signature. Isolate the host and investigate how the file arrived before deleting it.",
 			Evidence: file,
-		})
+		}
+		placeInContainer(&finding, file, "", inputs.Containers)
+		result.add(finding)
 	}
+	containersNote(&result, inputs.Containers, inputs.ContainersSkipped)
 	partial := code == 2 || !privileged
 	if code == 2 {
 		result.note("Some files could not be scanned.")

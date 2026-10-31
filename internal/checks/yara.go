@@ -13,17 +13,25 @@ const yaraTimeout = 45 * time.Minute
 const (
 	yaraDetectCommand  = "command -v yr 2>/dev/null; true"
 	yaraVersionCommand = "yr --version 2>/dev/null"
-	// The rules arrive on standard input and go to a private temporary
-	// directory, because yr reads rules only from a file. Its path is printed
-	// first so its own matches against the rules can be dropped: /tmp is one
-	// of the scanned directories. YARA-X scans the directories ClamAV does, at
-	// the lowest CPU priority, skipping files over 50 MB and giving up on a
-	// file after 30 seconds. Missing directories are skipped.
-	yaraScanCommand = `rules=$(mktemp -d) || exit 3; trap 'rm -rf "$rules"' EXIT; ` +
-		`cat > "$rules/rules.yar" || exit 3; printf 'rules-directory %s\n' "$rules"; ` +
-		`for d in /tmp /var/tmp /dev/shm /home /root /opt /usr/local /var/www /srv; do [ -d "$d" ] || continue; ` +
-		`nice -n 19 yr scan --recursive --output-format ndjson --print-meta --disable-console-logs --disable-warnings ` +
-		`--skip-larger 52428800 --timeout 30 --threads 2 "$rules/rules.yar" "$d" 2>/dev/null; done; true`
+	// Standard input holds the running containers' folders, one per line,
+	// a line yaraRulesMarker, then the rules, which go to a private
+	// temporary directory, because yr reads rules only from a file. They are
+	// compiled once and every folder is scanned with the compiled rules,
+	// rather than compiling them again for each. The directory's path is
+	// printed first so its own matches against the rules can be dropped:
+	// /tmp is one of the scanned directories. YARA-X scans the directories
+	// ClamAV does, then the containers' (empty ones are skipped without
+	// starting it), at the lowest CPU and disk priority, skipping files over
+	// 50 MB and giving up on a file after 30 seconds. It doesn't follow links
+	// inside a folder. Missing directories are skipped.
+	yaraScanCommand = `work=$(mktemp -d) || exit 3; trap 'rm -rf "$work"' EXIT; : > "$work/containers"; ` +
+		`while IFS= read -r d; do [ "$d" = "` + yaraRulesMarker + `" ] && break; printf '%s\n' "$d" >> "$work/containers"; done; ` +
+		`cat > "$work/rules.yar" || exit 3; printf 'rules-directory %s\n' "$work"; ` +
+		`rules="$work/rules.yar"; compiled=; yr compile --output "$work/rules.yarc" "$rules" >/dev/null 2>&1 && rules="$work/rules.yarc" && compiled=-C; ` +
+		`{ for d in /tmp /var/tmp /dev/shm /home /root /opt /usr/local /var/www /srv; do [ -d "$d" ] && printf '%s\n' "$d"; done; cat "$work/containers"; } > "$work/folders"; ` +
+		`while IFS= read -r d; do [ -n "$(find "$d" -xdev -type f -print -quit 2>/dev/null)" ] || continue; ` + lowPriority + `yr scan $compiled --recursive --output-format ndjson --print-meta --disable-console-logs --disable-warnings ` +
+		`--skip-larger 52428800 --timeout 30 --threads 2 "$rules" "$d" 2>/dev/null < /dev/null; done < "$work/folders"; true`
+	yaraRulesMarker = "--deaconguard-yara-rules--"
 )
 
 // YARAInput is the rule set an advanced scan runs: its text, and a version
@@ -44,7 +52,8 @@ type yaraMatch struct {
 	} `json:"rules"`
 }
 
-func runYARA(executor *Executor, input YARAInput) Result {
+func runYARA(executor *Executor, inputs Inputs) Result {
+	input := inputs.YARA
 	if len(input.Rules) == 0 {
 		reason := input.Unavailable
 		if reason == "" {
@@ -71,7 +80,9 @@ func runYARA(executor *Executor, input YARAInput) Result {
 	if version, _, err := executor.Run(yaraVersionCommand, 4096, time.Minute); err == nil {
 		result.note("Engine: %s. Rules: %s.", strings.TrimSpace(string(version)), input.Version)
 	}
-	output, code, privileged, err := executor.RunPrivilegedInput(yaraScanCommand, input.Rules, 8<<20, yaraTimeout)
+	folders, _ := containerFolders(inputs.Containers)
+	stdin := append([]byte(folders+yaraRulesMarker+"\n"), input.Rules...)
+	output, code, privileged, err := executor.RunPrivilegedInput(yaraScanCommand, stdin, 8<<20, yaraTimeout)
 	if err != nil && code != 0 {
 		return failed(fmt.Errorf("YARA-X scan: %w", err))
 	}
@@ -89,9 +100,12 @@ func runYARA(executor *Executor, input YARAInput) Result {
 			continue
 		}
 		for _, rule := range match.Rules {
-			result.add(yaraFinding(match.Path, rule.Identifier, rule.Meta))
+			finding := yaraFinding(match.Path, rule.Identifier, rule.Meta)
+			placeInContainer(&finding, match.Path, "", inputs.Containers)
+			result.add(finding)
 		}
 	}
+	containersNote(&result, inputs.Containers, inputs.ContainersSkipped)
 	if !privileged {
 		result.note("Without sudo, files that belong to other users and /root were not scanned.")
 	}
