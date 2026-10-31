@@ -26,6 +26,8 @@ Kubernetes' own objects (`kube-system`, `kube-public`, `kube-node-lease`, and th
 
 To check a cluster from the server, on a schedule and with notifications, install the **cluster agent** in it: `cluster.enabled=true` in the [Helm chart](../installation/kubernetes.md#4-the-cluster-itself). It enrolls with a token like a machine's agent and appears on **Hosts** as a Kubernetes cluster, with its own page.
 
+The cluster agent checks what the API shows: the objects' settings, not what runs inside the containers. Vulnerable packages and libraries in your pods are found by the [node agent](../installation/kubernetes.md#3-the-agents)'s **Running containers** check, which reads each container's files on its node; see [Who checks what in your pods](../installation/kubernetes.md#who-checks-what-in-your-pods). The dashboard's cluster scan doesn't read running images from their registries the way `kube scan --images` does.
+
 A cluster runs one check, **Kubernetes**: **Scan now** offers only that, and a schedule with the Kubernetes check ticked runs it on every cluster it covers (and its other checks on machines). The cluster agent reads the cluster with the pod's read-only service account and sends what it found to the server, which adds the version's support and Kubernetes' own vulnerabilities, so the agent needs to reach only the API and the server. New critical and high findings, such as a privileged workload deployed since the last scan, are [notified](./notifications.md) as **New cluster findings**; a failed scan as for any host.
 
 ### Scan when the cluster changes
