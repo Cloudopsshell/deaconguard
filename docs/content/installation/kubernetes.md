@@ -3,14 +3,17 @@ title: Kubernetes
 description: Run the DeaconGuard server in Kubernetes, and an agent on every node, with Helm or Kustomize.
 ---
 
-In Kubernetes, DeaconGuard runs as two parts, usually in two namespaces:
+In Kubernetes, DeaconGuard has three parts. You need the server, and one or both of the others:
 
-- **The server**, a StatefulSet with one pod and a volume for its database, behind a Service with the dashboard on port 8443 and the agent API on 8444. It runs under the **restricted** [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/): non-root, read-only root filesystem, no capabilities.
-- **The agent**, a DaemonSet with one pod on every node, control plane included. Each pod scans **its node**: it reads the node's root filesystem, read-only, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent [installed on the node](./install-script.md). It needs the **privileged** Pod Security Standard for that: the node's processes, network and filesystem. With the [Running containers](../usage/containers.md) check, a node's scan also covers the containers of its pods.
+| Part | What it checks | Runs as | Token | On **Hosts** |
+| --- | --- | --- | --- | --- |
+| **The server** | Nothing itself: the dashboard and the agent API | A StatefulSet with one pod and a volume for its database, under the **restricted** [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/) | | |
+| **The node agent** (`agent.enabled`) | Each **node, as a machine**: its packages, libraries, configuration, hardening, malware, and the [containers of its pods](../usage/containers.md) | A DaemonSet, one pod per node, **privileged** (it reads the node's filesystem) | [Reusable](../usage/agents.md#reusable-tokens), one for every node | One host per node |
+| **The cluster agent** (`cluster.enabled`) | **Kubernetes itself**, through its API: workloads, RBAC, namespaces, network policies, the version and its CVEs. See [Kubernetes clusters](../usage/kubernetes.md) | One unprivileged pod with a read-only role that can't read secrets, under the **restricted** standard | Any token; it is used once | One host, of type Kubernetes cluster |
 
-Agents enroll with a [reusable token](../usage/agents.md#reusable-tokens): one token, in a secret, for every node, including nodes added later.
+The node agent reads each node's root filesystem, read-only, and runs the same fixed, read-only checks there with the node's own tools, so its results match an agent [installed on the node](./install-script.md). The cluster agent never looks at a node or inside a container: it reads what the API shows.
 
-You can run just the agent DaemonSet, with the server elsewhere, or just the server, with agents on machines outside the cluster.
+You can run any of them alone: just the node agent or the cluster agent, with the server elsewhere, or just the server, with agents on machines outside the cluster. [Who checks what in your pods](#who-checks-what-in-your-pods) sums up which part finds what.
 
 ## With Helm
 
@@ -76,17 +79,70 @@ Each node appears on the **Agents** page within a minute, named after the node, 
 
 ### 4. The cluster itself
 
-The agents check the nodes. To check the cluster too (its workloads, RBAC, namespaces, Kubernetes version and API server; see [Kubernetes clusters](../usage/kubernetes.md)), turn on the cluster agent. It runs as one unprivileged pod with a read-only ClusterRole (get, list and watch) that can't read secrets, and enrolls with a token like the agents (DeaconGuard 1.5.0 and later):
+The node agents check the nodes. To check the cluster too, turn on the cluster agent (DeaconGuard 1.5.0 and later). It is unprivileged, so it can run in the server's namespace and release, or in the node agents'.
+
+Create a token on the **Agents** page, **Enroll a machine**, with the server address `https://deaconguard.deaconguard.svc:8444` as in [step 2](#2-a-reusable-token). One-time or reusable both work; the cluster agent uses it once. Put it in a secret, replacing `deaconguard1.…` with the whole token the dialog shows:
 
 ```bash
-kubectl -n deaconguard-agent create secret generic deaconguard-cluster-enrollment --from-literal=token='deaconguard1.…'
-helm upgrade deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard \
-  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard-agent --reset-then-reuse-values \
+kubectl -n deaconguard create secret generic deaconguard-cluster-enrollment --from-literal=token='deaconguard1.…'
+```
+
+Then turn it on in the server's release (with the node agents' release instead, use its name and namespace, and create the secret there):
+
+```bash
+helm upgrade deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
+  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard --reset-then-reuse-values \
   --set cluster.enabled=true --set cluster.name=production \
   --set cluster.enrollment.existingSecret=deaconguard-cluster-enrollment
 ```
 
-The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs the Kubernetes check only: from **Scan now**, or on a [schedule](../usage/dashboard.md#schedules) with the Kubernetes check ticked. It keeps its identity on a small volume (16 MiB), so the cluster needs a default storage class, or `cluster.persistence.storageClass`.
+The cluster appears on **Hosts** as `production`, a Kubernetes cluster, and runs the Kubernetes check only: from **Scan now**, or on a [schedule](../usage/dashboard.md#schedules) with the Kubernetes check ticked. It keeps its identity on a small volume (16 MiB), so the cluster needs a default storage class, or `cluster.persistence.storageClass`. The upgrade leaves the server's pod as it is.
+
+### With a values file
+
+The same settings in a values file, for `helm install` or `helm upgrade` with `-f values.yaml`. The server and the cluster agent share a release:
+
+```yaml
+# values.yaml, release deaconguard in the deaconguard namespace
+server:
+  admin:
+    existingSecret: deaconguard-admin
+cluster:
+  enabled: true
+  name: production
+  enrollment:
+    existingSecret: deaconguard-cluster-enrollment
+```
+
+The node agents need the privileged Pod Security Standard, so give them a release of their own in a namespace labelled for it, as in [step 3](#3-the-agents), rather than loosening the server's namespace:
+
+```yaml
+# agent-values.yaml, release deaconguard-agent in the deaconguard-agent namespace
+server:
+  enabled: false
+agent:
+  enabled: true
+  enrollment:
+    existingSecret: deaconguard-enrollment
+```
+
+```bash
+helm upgrade --install deaconguard oci://ghcr.io/cloudopsshell/charts/deaconguard \
+  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard -f values.yaml
+helm upgrade --install deaconguard-agent oci://ghcr.io/cloudopsshell/charts/deaconguard \
+  --version "$(curl -fsSL https://get.deaconguard.io/stable.txt)" -n deaconguard-agent -f agent-values.yaml
+```
+
+With a values file, Helm uses the chart's defaults plus the file on each upgrade, so keep every setting you use in it.
+
+### Who checks what in your pods
+
+| In your pods | Checked by | How |
+| --- | --- | --- |
+| **Vulnerable packages and libraries** in running containers | The node agent, with the **Running containers** check | It lists each node's containers and reads their files, read-only. See [Running containers](../usage/containers.md) |
+| **Risky configuration**: privileged containers, running as root, host folders, secrets in environment variables; and RBAC, namespaces, network policies | The cluster agent | It reads the objects through the API. See [Kubernetes clusters](../usage/kubernetes.md) |
+| **Malware** | The node agent, in the node's own folders | Container files aren't scanned for malware yet |
+| **What processes do as they run** | Nothing | DeaconGuard checks at scan time; it doesn't watch processes as they run |
 
 ### Values
 
