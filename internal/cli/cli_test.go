@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -208,5 +210,33 @@ func TestHostListSaysWhichAgentsToUpgrade(t *testing.T) {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("missing %q in:\n%s", want, output.String())
 		}
+	}
+}
+
+func TestWebCheck(t *testing.T) {
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/.git/HEAD" {
+			w.Write([]byte("ref: refs/heads/main\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("<html>shop</html>"))
+	}))
+	defer site.Close()
+	var output, diagnostics bytes.Buffer
+	if code := Run([]string{"web", "check", site.URL, "--fail-on", "critical"}, nil, &output, &diagnostics); code == 0 ||
+		!strings.Contains(output.String(), "DG-WEB-001") || !strings.Contains(output.String(), site.URL+": 200") {
+		t.Fatalf("web check: code %d\n%s\n%s", code, output.String(), diagnostics.String())
+	}
+	output.Reset()
+	if code := Run([]string{"web", "check", site.URL, "--no-paths", "--format", "json"}, nil, &output, &diagnostics); code != 0 ||
+		strings.Contains(output.String(), "DG-WEB-001") || !strings.Contains(output.String(), `"requests": 2`) {
+		t.Fatalf("--no-paths: code %d\n%s", code, output.String())
+	}
+	if code := Run([]string{"web", "check", "ftp://x"}, nil, &output, &diagnostics); code == 0 {
+		t.Fatal("an ftp address was accepted")
+	}
+	if code := Run([]string{"net", "scan", "127.0.0.1", "--no-paths"}, nil, &output, &diagnostics); code == 0 {
+		t.Fatal("--no-paths without --web was accepted")
 	}
 }

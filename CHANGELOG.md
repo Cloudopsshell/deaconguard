@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.25.0] - 2026-11-01
+
+### Added
+
+- **Web site checks.** `deaconguard web check URL...`, `deaconguard net scan --web`, and a new **Check every web site found** option on the dashboard's network targets check web sites as a visitor who isn't logged in sees them: published `/.git/HEAD`, `/.env` and `/.svn/entries` files, public server status, PHP information, Spring Boot environment and Prometheus metrics pages, CORS that trusts any origin with cookies, plain HTTP that doesn't redirect to HTTPS, HSTS, cookies without `Secure`, `HttpOnly` or `SameSite`, missing `Content-Security-Policy`, framing protection and `nosniff`, directory listing, and headers that name a software version (16 rules, `DG-WEB-001` to `DG-WEB-016`). A published file counts only when its content looks like that file, so sites that answer every address aren't reported. Only GET requests are sent, one at a time and about 15 for each site; `--no-paths` (and the dashboard's matching option) leaves out the paths. Nothing is crawled, logged into or submitted. The target's page lists each site checked, and new high and critical findings send **New network findings** as before. See [Web sites](https://docs.deaconguard.io/usage/network#web-sites).
+
 ## [1.24.0] - 2026-11-01
 
 ### Added
@@ -407,7 +413,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.24.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.25.0...HEAD
+[1.25.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.21.0...v1.22.0

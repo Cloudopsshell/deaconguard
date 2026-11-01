@@ -312,6 +312,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 30 {
+		if err := execInTx(db, schemaV30); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -836,6 +841,13 @@ UPDATE agents SET token_id = (SELECT id FROM enrollment_tokens t WHERE t.reusabl
 		AND t.created_at <= agents.enrolled_at AND t.expires_at > agents.enrolled_at
 		AND (t.revoked_at IS NULL OR t.revoked_at >= agents.enrolled_at)) = 1;
 PRAGMA user_version = 29;`
+
+// schemaV30 lets network targets check the web sites they find (1.25.0).
+// Existing targets keep scanning as before until web checks are turned on.
+const schemaV30 = `
+ALTER TABLE network_targets ADD COLUMN web INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE network_targets ADD COLUMN web_paths INTEGER NOT NULL DEFAULT 1;
+PRAGMA user_version = 30;`
 
 const schemaV28 = `
 ALTER TABLE hosts ADD COLUMN display_name TEXT NOT NULL DEFAULT '';

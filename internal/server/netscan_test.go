@@ -22,8 +22,10 @@ func TestNetworkTargetsAreScanned(t *testing.T) {
 	docker := iac.Finding{Rule: "DG-NET-002", Severity: "CRITICAL", Title: "10.0.0.3: Docker API answers on port 2375", File: "10.0.0.3:2375"}
 	findings := []iac.Finding{redis}
 	var scanned []string
+	var web []bool
 	s.netScans.scan = func(ctx context.Context, target store.NetworkTarget) (netscan.Result, error) {
 		scanned = append(scanned, strings.Join(target.Targets, ","))
+		web = append(web, target.Web, target.WebPaths)
 		return netscan.Result{Addresses: 254, Hosts: []netscan.Host{{Address: "10.0.0.2", Services: []netscan.Service{{Port: 6379, Name: "Redis"}}}},
 			Findings: findings}, nil
 	}
@@ -44,7 +46,7 @@ func TestNetworkTargetsAreScanned(t *testing.T) {
 	created := do(t, s, call{method: http.MethodPost, path: "/api/network-targets", cookie: cookie, body: map[string]any{
 		"name": "Office", "targets": []string{"10.0.0.0/24", " gw.office.example ", "10.0.0.0/24"}, "interval_hours": 24}})
 	target := decode[store.NetworkTarget](t, created)
-	if created.Code != http.StatusCreated || strings.Join(target.Targets, ",") != "10.0.0.0/24,gw.office.example" || !target.TLS ||
+	if created.Code != http.StatusCreated || strings.Join(target.Targets, ",") != "10.0.0.0/24,gw.office.example" || !target.TLS || !target.Web || !target.WebPaths ||
 		target.Latest == nil || target.Latest.Status != store.ScanQueued {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
 	}
@@ -59,6 +61,9 @@ func TestNetworkTargetsAreScanned(t *testing.T) {
 	}
 	json.Unmarshal(detail.Body.Bytes(), &view)
 	latest := view.Target.Latest
+	if len(web) != 2 || !web[0] || !web[1] {
+		t.Errorf("a new target's scan didn't check its web sites: %v", web)
+	}
 	if len(scanned) != 1 || latest == nil || latest.Status != store.ScanSucceeded || latest.Hosts != 1 || latest.OpenPorts != 1 || latest.Severity.High != 1 {
 		t.Fatalf("after the scan: %v %+v", scanned, latest)
 	}
@@ -88,8 +93,13 @@ func TestNetworkTargetsAreScanned(t *testing.T) {
 
 	if edited := do(t, s, call{method: http.MethodPatch, path: "/api/network-targets/" + target.ID, cookie: cookie,
 		body: map[string]any{"name": "Office", "targets": []string{"10.0.0.0/25"}, "tls": false, "interval_hours": 0}}); edited.Code != http.StatusOK ||
-		decode[store.NetworkTarget](t, edited).TLS {
+		decode[store.NetworkTarget](t, edited).TLS || !decode[store.NetworkTarget](t, edited).Web {
 		t.Fatalf("edit: %d %s", edited.Code, edited.Body.String())
+	}
+	// Web checks keep their setting when an update leaves them out.
+	if edited := decode[store.NetworkTarget](t, do(t, s, call{method: http.MethodPatch, path: "/api/network-targets/" + target.ID, cookie: cookie,
+		body: map[string]any{"name": "Office", "targets": []string{"10.0.0.0/25"}, "web": true, "web_paths": false}})); !edited.Web || edited.WebPaths {
+		t.Fatalf("web paths off: %+v", edited)
 	}
 	if removed := do(t, s, call{method: http.MethodDelete, path: "/api/network-targets/" + target.ID, cookie: cookie}); removed.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d", removed.Code)
