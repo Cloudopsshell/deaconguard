@@ -46,11 +46,11 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | Method and path | Role | Does |
 | --- | --- | --- |
 | `GET /api/summary` | Viewer | The dashboard's numbers: hosts, what to fix, known exploited, overdue |
-| `GET /api/hosts` | Viewer | Every host with its latest results and tags |
+| `GET /api/hosts` | Viewer | Every host with its latest results and tags. An agent older than the server has `agent.upgrade`: `to` (the server's version), `checks` it can't run yet, and `command`, the install-script command that upgrades it (1.23.0 and later) |
 | `GET /api/hosts/{id}` | Viewer | One host, with its scan history. A host whose token was revoked with its machines has `disconnected` (`at`, `by`, `reason`); a node of a cluster has `cluster_id` (1.21.0 and later) |
 | `GET /api/hosts/{id}/cluster` | Viewer | A Kubernetes cluster's [page](../usage/kubernetes.md#the-clusters-page): its nodes, namespaces, workloads, pods and containers, with the problems in each (1.21.0 and later) |
 | `PATCH /api/hosts/{id}` | Operator | Change a host's settings: `{"name": "payments-api-prod"}` for its [display name](../usage/agents.md#names) (`""` shows its hostname again), `{"auto_scan_containers": true}` for an agent's [automatic container scans](../usage/containers.md#scan-new-containers-automatically), or `{"allow_sudo": true}` for this machine. Hosts have `address` (what they are called), `hostname` and `name` |
-| `POST /api/hosts/{id}/scans` | Operator | Start a scan: `{"checks": ["packages", "libraries", "containers", "integrity", "malware", "config", "hardening", "antivirus"]}` |
+| `POST /api/hosts/{id}/scans` | Operator | Start a scan: `{"checks": ["packages", "libraries", "containers", "integrity", "malware", "config", "changes", "hardening", "antivirus", "yara"]}`, or `["kubernetes"]` for a cluster; see [Checks](../checks.md) for each ID |
 | `GET /api/diagnostics/cpu?seconds=30` | Admin | A CPU profile of the server over the next 5 to 60 seconds (30 by default), as a `.pprof` file for `go tool pprof` |
 | `POST /api/hosts/{id}/audits` | Operator | Start a [server audit](../usage/audits.md): `{}` |
 | `GET /api/scans/{id}` | Viewer | A scan's status and full results; poll until `scan.status` is `succeeded` or `failed` |
@@ -75,8 +75,8 @@ Errors come back as `{"error": "…"}` with the HTTP status: 401 for a token tha
 | `POST /api/repository-watches/{id}/check` | Operator | Check a watched repository for new pushes now |
 | `GET /api/repository-watches/report-channels` | Operator | The notification channels a watch's reports can go to, by name |
 | `GET /api/network-targets` | Viewer | The [network targets](../usage/network.md#in-the-dashboard) the server scans, each with its latest scan |
-| `POST /api/network-targets` | Admin | Add a network target and start its first scan: `{"name": "Office", "targets": ["10.0.0.0/24", "shop.example.com"], "ports": "", "tls": true, "interval_hours": 24}`; `ports` empty means the default ports, and `interval_hours` is 0 (only on demand), 1, 6, 12, 24 or 168 |
-| `PATCH /api/network-targets/{id}` | Admin | Change a network target: send every field, as when adding it |
+| `POST /api/network-targets` | Admin | Add a network target and start its first scan: `{"name": "Office", "targets": ["10.0.0.0/24", "shop.example.com"], "ports": "", "tls": true, "web": true, "web_paths": true, "interval_hours": 24}`; `ports` empty means the default ports, `web` checks each [web site](../usage/network.md#web-sites) found and `web_paths` also asks for the paths a site should never publish (both default to `true`, 1.25.0 and later), and `interval_hours` is 0 (only on demand), 1, 6, 12, 24 or 168 |
+| `PATCH /api/network-targets/{id}` | Admin | Change a network target: send every field, as when adding it; `web` and `web_paths` keep their values when left out |
 | `DELETE /api/network-targets/{id}` | Admin | Remove a network target and its scans |
 | `GET /api/network-targets/{id}` | Viewer | One network target with its last 20 scans, without their results |
 | `POST /api/network-targets/{id}/scans` | Operator | Scan a network target now; 409 while a scan of it is queued or running |
