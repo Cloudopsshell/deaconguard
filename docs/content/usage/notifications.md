@@ -1,6 +1,6 @@
 ---
 title: Notifications
-description: Email, Slack, Microsoft Teams and webhook notifications for newly exploited vulnerabilities on hosts and in their containers, malware, configuration changes, failed scans and offline agents, a summary of every scan, and daily or weekly digests.
+description: Email, Slack, Microsoft Teams and webhook notifications for newly exploited vulnerabilities on hosts and in their containers, malware, configuration findings, host changes such as new ports, accounts or SSH keys, failed scans and offline agents, a summary of every scan, and daily or weekly digests.
 ---
 
 DeaconGuard tells you when something needs attention, so you don't have to watch the dashboard. Admins set it up under **Settings → Notifications**.
@@ -34,6 +34,7 @@ For Jira and ServiceNow, choose the events that need someone to act, such as kno
 | Changed system files | System files differ from what their packages installed. | Critical |
 | New cluster findings | A [Kubernetes cluster](./kubernetes.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a privileged workload. | Critical, or Warning for high only |
 | New configuration findings | A host's [security configuration](../checks.md) has medium, high or critical findings its previous configuration check didn't, such as SSH starting to accept passwords. Low ones, such as automatic updates being off, aren't sent. | Critical, or Warning |
+| Host changes | A host that runs the [host changes](./host-changes.md) check has a medium, high or critical change since its previous scan: a new port open to the network, account, administrator, sudoers rule, SSH key, enabled service or scheduled job. Removals aren't sent. | Critical for a new account with UID 0, else Warning |
 | New network findings | A [network target](./network.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a database that now answers on the network or a certificate about to expire. | Critical, or Warning for high only |
 | Image scan reports | A [watched repository](./images.md#reports-of-new-pushes)'s new push was scanned: its counts, what changed since the previous build, and the most urgent vulnerabilities. Each watch chooses which pushes it reports, and to which of these channels. | Critical for critical or known exploited, Warning for high, else Info |
 | Failed scans | A scan of a host, an image or a network target fails, so its results are out of date. | Warning |
@@ -83,7 +84,7 @@ DeaconGuard POSTs `application/json`:
 }
 ```
 
-`event` is `exploited`, `critical`, `malware`, `integrity`, `cluster`, `exposure`, `config`, `image_report`, `scan_failed`, `scan_results`, `audit`, `agent_offline`, `digest` or `test`; `level` is `critical`, `warning` or `info`. Each request carries `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp` (Unix seconds).
+`event` is `exploited`, `critical`, `malware`, `integrity`, `cluster`, `exposure`, `config`, `changes`, `image_report`, `scan_failed`, `scan_results`, `audit`, `agent_offline`, `digest` or `test`; `level` is `critical`, `warning` or `info`. Each request carries `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp` (Unix seconds).
 
 ### Checking the signature
 

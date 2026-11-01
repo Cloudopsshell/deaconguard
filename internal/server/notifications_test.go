@@ -543,3 +543,60 @@ func TestMalwareInContainersNamesThem(t *testing.T) {
 		t.Fatalf("message: %v", h.last())
 	}
 }
+
+func TestHostChangesAreComparedAndNotified(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	h := newHook(t)
+	addChannel(t, s, cookie, map[string]any{"name": "slack", "kind": "webhook", "config": map[string]any{"url": h.server.URL},
+		"events": []string{"changes"}})
+	host, err := store.AddLocalHost("web-01", "root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func(items ...checks.SnapshotItem) store.Scan {
+		t.Helper()
+		scanRecord, err := store.CreateScan(host, []string{checks.Changes})
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot := &checks.Snapshot{Root: true, Sections: map[string][]checks.SnapshotItem{checks.SectionListening: items}}
+		report := map[string]any{"host_id": host.ID, "checks_run": []string{checks.Changes}, "check_results": map[string]checks.Result{
+			checks.Changes: {Status: checks.StatusCompleted, Summary: "Recorded", Findings: []checks.Finding{}, Notes: []string{}, Snapshot: snapshot}}}
+		if err := compareChanges(host, scanRecord.ID, report); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CompleteScan(scanRecord.ID, report); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Millisecond)
+		s.scanFinished(host, scanRecord.ID, nil)
+		s.deliverDue(context.Background(), time.Now())
+		scanRecord, _ = store.GetScan(scanRecord.ID)
+		return scanRecord
+	}
+	ssh := checks.SnapshotItem{Key: "tcp *:22", Text: "TCP port 22, open to the network (sshd)", Exposed: true}
+	// The first record is the baseline: nothing to report.
+	record(ssh)
+	if events := h.events(); len(events) != 0 {
+		t.Fatalf("baseline: %v", events)
+	}
+	shell := checks.SnapshotItem{Key: "tcp *:4444", Text: "TCP port 4444, open to the network (nc)", Exposed: true}
+	second := record(ssh, shell)
+	if events := h.events(); len(events) != 1 || events[0] != notify.EventChanges {
+		t.Fatalf("change: %v", events)
+	}
+	if title := h.last()["title"]; title != "web-01: 1 change since the previous scan" ||
+		!strings.Contains(strings.Join(anyStrings(h.last()["lines"]), "\n"), "HIGH: New listening port: TCP port 4444, open to the network (nc)") {
+		t.Fatalf("message: %v", h.last())
+	}
+	if result, ok := checkResult(second.ID, checks.Changes); !ok || len(result.Findings) != 1 {
+		t.Fatalf("saved: %+v", result)
+	}
+	// Unchanged since: nothing new. A removal is low, so not notified.
+	record(ssh, shell)
+	record(ssh)
+	if events := h.events(); len(events) != 1 {
+		t.Fatalf("after: %v", events)
+	}
+}

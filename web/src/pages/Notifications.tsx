@@ -39,6 +39,10 @@ const eventMeta: Record<NotificationEvent, { label: string; detail: string }> = 
   cluster: { label: "New cluster findings", detail: "A Kubernetes cluster has new critical or high findings, such as a privileged workload" },
   exposure: { label: "New network findings", detail: "A network scan found new critical or high findings, such as an exposed database or an expiring certificate" },
   config: { label: "New configuration findings", detail: "A host's security configuration has new medium or worse findings, such as SSH starting to accept passwords" },
+  changes: {
+    label: "Host changes",
+    detail: "A host has new ports open, accounts, administrators, sudoers rules, SSH keys, services or scheduled jobs since its previous scan",
+  },
   image_report: {
     label: "Image scan reports",
     detail: "A watched repository's new push was scanned: its counts, what changed since the previous build, and the most urgent vulnerabilities. Each watch chooses which pushes, and to which channels",
@@ -58,6 +62,7 @@ const instantEvents: NotificationEvent[] = [
   "cluster",
   "exposure",
   "config",
+  "changes",
   "image_report",
   "scan_failed",
   "scan_results",
