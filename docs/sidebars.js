@@ -22,6 +22,7 @@ module.exports = {
       label: 'Upgrade notes',
       link: { type: 'doc', id: 'upgrade-notes/index' },
       items: [
+        { type: 'category', label: '1.22', collapsed: true, items: ['upgrade-notes/v1-22/v1-22-0'] },
         { type: 'category', label: '1.21', collapsed: true, items: ['upgrade-notes/v1-21/v1-21-0'] },
         { type: 'category', label: '1.20', collapsed: true, items: ['upgrade-notes/v1-20/v1-20-3', 'upgrade-notes/v1-20/v1-20-2', 'upgrade-notes/v1-20/v1-20-1', 'upgrade-notes/v1-20/v1-20-0'] },
         { type: 'category', label: '1.19', collapsed: true, items: ['upgrade-notes/v1-19/v1-19-0'] },
@@ -31,14 +32,13 @@ module.exports = {
         { type: 'category', label: '1.15', collapsed: true, items: ['upgrade-notes/v1-15/v1-15-0'] },
         { type: 'category', label: '1.14', collapsed: true, items: ['upgrade-notes/v1-14/v1-14-0'] },
         { type: 'category', label: '1.13', collapsed: true, items: ['upgrade-notes/v1-13/v1-13-0'] },
-        { type: 'category', label: '1.12', collapsed: true, items: ['upgrade-notes/v1-12/v1-12-0'] },
       ],
     },
     {
       type: 'category',
       label: 'Using DeaconGuard',
       collapsed: false,
-      items: ['usage/server', 'usage/agents', 'usage/vulnerabilities', 'usage/libraries-and-sbom', 'usage/containers', 'usage/images', 'usage/ci-cd', 'usage/config-checks', 'usage/kubernetes', 'usage/network', 'usage/audits', 'usage/compliance', 'usage/policies', 'usage/reports', 'usage/notifications', 'usage/accounts', 'usage/single-sign-on', 'usage/local-mode', 'usage/dashboard', 'usage/backup-and-restore'],
+      items: ['usage/server', 'usage/agents', 'usage/vulnerabilities', 'usage/libraries-and-sbom', 'usage/containers', 'usage/images', 'usage/ci-cd', 'usage/config-checks', 'usage/host-changes', 'usage/kubernetes', 'usage/network', 'usage/audits', 'usage/compliance', 'usage/policies', 'usage/reports', 'usage/notifications', 'usage/accounts', 'usage/single-sign-on', 'usage/local-mode', 'usage/dashboard', 'usage/backup-and-restore'],
     },
     'checks',
     'supported-distributions',

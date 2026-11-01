@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
 
+	"deaconguard/internal/checks"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
 	"deaconguard/internal/yararules"
@@ -167,6 +169,9 @@ func (r *runner) run(host store.Host, scanID string, checks []string, log *event
 // publishes "done".
 func (r *runner) finish(host store.Host, scanID string, log *eventLog, report map[string]any, err error, started time.Time) {
 	if err == nil {
+		err = compareChanges(host, scanID, report)
+	}
+	if err == nil {
 		err = store.CompleteScan(scanID, report)
 	}
 	elapsed := time.Since(started).Round(time.Second)
@@ -197,6 +202,17 @@ func (r *runner) finish(host store.Host, scanID string, log *eventLog, report ma
 	if r.onFinish != nil {
 		r.onFinish(host, scanID, err)
 	}
+}
+
+// compareChanges reports what the host change check found changed since
+// the host's previous record.
+func compareChanges(host store.Host, scanID string, report map[string]any) error {
+	record, err := store.GetScan(scanID)
+	if err != nil || !slices.Contains(record.Checks, checks.Changes) {
+		return nil
+	}
+	previous, _ := previousCheckResult(host, record, checks.Changes)
+	return scan.EvaluateChanges(report, previous.Snapshot)
 }
 
 // ask pauses the scan until the user answers prompt in the browser.
