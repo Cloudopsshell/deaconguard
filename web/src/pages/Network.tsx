@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Network as NetworkIcon, Play, Plus } from "lucide-react";
 import { api, type NetworkTarget, type NetworkTargetInput } from "../api";
-import { Button, Card, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, SeverityCountsInline, StatusBadge, Table, Td, Th } from "../components/ui";
+import { Button, Card, Dialog, EmptyState, ErrorMessage, Field, Loading, PageHeader, SeverityCountsInline, StatusBadge, Table, Td, Th, cx } from "../components/ui";
 import { timeAgo } from "../lib/format";
 import { useRefreshAll } from "../lib/hooks";
 import { useCan } from "../lib/role";
@@ -46,7 +46,7 @@ export function Network() {
     <>
       <PageHeader
         title="Network"
-        description="Scan your networks and public addresses from the server: open ports, what answers on them, exposed databases, Docker, kubelets or cleartext logins, and TLS certificates and settings. DeaconGuard only connects; it never logs in or attacks."
+        description="Scan your networks and public addresses from the server: open ports, what answers on them, exposed databases, Docker, kubelets or cleartext logins, TLS certificates and settings, and web sites that publish files they shouldn't or lack protections. DeaconGuard only connects and reads pages; it never logs in, submits forms or attacks."
         action={
           isAdmin && (
             <Button onClick={() => setEditing("new")}>
@@ -144,8 +144,8 @@ export function NetworkTargetDialog({ target, onClose }: { target: NetworkTarget
   const refresh = useRefreshAll();
   const [input, setInput] = useState<NetworkTargetInput>(() =>
     target
-      ? { name: target.name, targets: target.targets, ports: target.ports, tls: target.tls, interval_hours: target.interval_hours }
-      : { name: "", targets: [], ports: "", tls: true, interval_hours: 24 },
+      ? { name: target.name, targets: target.targets, ports: target.ports, tls: target.tls, web: target.web, web_paths: target.web_paths, interval_hours: target.interval_hours }
+      : { name: "", targets: [], ports: "", tls: true, web: true, web_paths: true, interval_hours: 24 },
   );
   const [targetsText, setTargetsText] = useState((target?.targets ?? []).join("\n"));
   const save = useMutation({
@@ -191,6 +191,27 @@ export function NetworkTargetDialog({ target, onClose }: { target: NetworkTarget
           <input type="checkbox" checked={input.tls} onChange={(event) => setInput({ ...input, tls: event.target.checked })} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600" />
           Check the TLS of every TLS service found (certificates, protocols, ciphers)
         </label>
+        <div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={input.web} onChange={(event) => setInput({ ...input, web: event.target.checked })} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600" />
+            Check every web site found (headers, cookies, HTTPS redirects, CORS)
+          </label>
+          <label className={cx("mt-2 ml-6 flex items-start gap-2 text-sm", !input.web && "opacity-50")}>
+            <input
+              type="checkbox"
+              checked={input.web && input.web_paths}
+              disabled={!input.web}
+              onChange={(event) => setInput({ ...input, web_paths: event.target.checked })}
+              className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+            />
+            <span>
+              Look for files and pages that should never be public, such as /.git and /.env
+              <span className="block text-xs text-slate-500 dark:text-slate-400">
+                About 15 GET requests a site, from a fixed list; nothing is crawled or submitted. A strict web application firewall may log them.
+              </span>
+            </span>
+          </label>
+        </div>
         <label className="block">
           <span className="text-sm font-medium">Scan</span>
           <select

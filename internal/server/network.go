@@ -42,7 +42,8 @@ func scanNetwork(ctx context.Context, target store.NetworkTarget) (netscan.Resul
 		return netscan.Result{}, err
 	}
 	// Gentler than the command line's default: the server scans unattended.
-	return netscan.Scan(ctx, targets, netscan.Options{Ports: ports, TLS: target.TLS, Concurrency: 32, Timeout: 2 * time.Second}), nil
+	return netscan.Scan(ctx, targets, netscan.Options{Ports: ports, TLS: target.TLS, Web: target.Web, WebPaths: target.WebPaths,
+		Concurrency: 32, Timeout: 2 * time.Second}), nil
 }
 
 // networkScanner runs queued network scans one at a time, and queues those
@@ -239,11 +240,15 @@ func (s *Server) newNetworkFindings(target store.NetworkTarget, scanID string, f
 var hostnamePattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
 
 type networkTargetRequest struct {
-	Name          string   `json:"name"`
-	Targets       []string `json:"targets"`
-	Ports         string   `json:"ports"`
-	TLS           *bool    `json:"tls"`
-	IntervalHours int      `json:"interval_hours"`
+	Name    string   `json:"name"`
+	Targets []string `json:"targets"`
+	Ports   string   `json:"ports"`
+	TLS     *bool    `json:"tls"`
+	// Web and WebPaths default to on for a new target, and keep their
+	// value when left out of an update.
+	Web           *bool `json:"web"`
+	WebPaths      *bool `json:"web_paths"`
+	IntervalHours int   `json:"interval_hours"`
 }
 
 // apply checks request and copies it into target. Names aren't resolved
@@ -292,6 +297,16 @@ func (request networkTargetRequest) apply(target *store.NetworkTarget) error {
 	}
 	target.Name, target.Targets, target.Ports, target.IntervalHours = name, targets, ports, request.IntervalHours
 	target.TLS = request.TLS == nil || *request.TLS
+	if request.Web != nil {
+		target.Web = *request.Web
+	} else if target.ID == "" {
+		target.Web = true
+	}
+	if request.WebPaths != nil {
+		target.WebPaths = *request.WebPaths
+	} else if target.ID == "" {
+		target.WebPaths = true
+	}
 	return nil
 }
 

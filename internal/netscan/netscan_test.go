@@ -201,7 +201,7 @@ func TestParsing(t *testing.T) {
 	if _, err := ParseTargets(context.Background(), []string{"10.0.0.0/8"}, 1<<20); err == nil {
 		t.Error("a /8 accepted")
 	}
-	if len(Rules()) != len(netRules)+len(tlsRules) {
+	if len(Rules()) != len(netRules)+len(tlsRules)+len(webRules) {
 		t.Error("Rules")
 	}
 }

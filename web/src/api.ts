@@ -1050,6 +1050,10 @@ export interface NetworkTarget {
   targets: string[];
   ports: string;
   tls: boolean;
+  /** Checks each web site found (1.25.0 and later). */
+  web: boolean;
+  /** Also asks web sites for paths they should never publish, such as /.git/HEAD. */
+  web_paths: boolean;
   /** 0 scans on request only. */
   interval_hours: number;
   created_by: string;
@@ -1057,7 +1061,7 @@ export interface NetworkTarget {
   latest?: NetworkScan;
 }
 
-export type NetworkTargetInput = Pick<NetworkTarget, "name" | "targets" | "ports" | "tls" | "interval_hours">;
+export type NetworkTargetInput = Pick<NetworkTarget, "name" | "targets" | "ports" | "tls" | "web" | "web_paths" | "interval_hours">;
 
 export interface NetworkService {
   port: number;
@@ -1071,6 +1075,8 @@ export interface NetworkResult {
   ports: number;
   hosts: { address: string; name?: string; services: NetworkService[] }[];
   tls?: { target: string; version: string; cipher: string; subject: string; issuer: string; dns_names?: string[]; not_after: string; trusted: boolean; protocols: string[] }[];
+  /** The web sites checked (1.25.0 and later). */
+  web?: { url: string; status: number; final_url?: string; server?: string; requests: number }[];
   findings: ScanFinding[];
   notes?: string[];
 }
