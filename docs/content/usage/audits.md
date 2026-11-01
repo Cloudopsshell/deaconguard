@@ -77,7 +77,7 @@ An accepted control shows as **Accepted** in that audit and later ones, and leav
 
 The baseline is DeaconGuard's own set of hardening controls for servers, written from common Linux security practice. Each control reports **pass**, **fail**, **not applicable** (for example SSH controls on a machine without an SSH server), or **not checked** (the evidence couldn't be read, usually without root).
 
-The controls read the machine's settings with fixed, read-only commands, and audits also show how they map to [compliance frameworks](./compliance.md), next to your own [policies](./policies.md). Some need root: password files, the firewall, file permissions across the disk and the audit rules. Agents run as root, so audits through an agent see everything. Only the account names and whether a password is set are read from `/etc/shadow`; password hashes never leave the file.
+The controls read the machine's settings with fixed, read-only commands, and audits also show how they map to [compliance frameworks](./compliance.md) and, on Ubuntu 22.04 and 24.04 and RHEL 8 and 9, to the rules of the [DISA STIG](./compliance.md#disa-stig), next to your own [policies](./policies.md). Some need root: password files, the firewall, file permissions across the disk and the audit rules. Agents run as root, so audits through an agent see everything. Only the account names and whether a password is set are read from `/etc/shadow`; password hashes never leave the file.
 
 ### Accounts and passwords
 

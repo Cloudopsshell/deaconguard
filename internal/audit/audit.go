@@ -25,6 +25,9 @@ const Accepted = "accepted"
 type Control struct {
 	checks.ControlResult
 	Exception *store.Exception `json:"exception,omitempty"`
+	// STIG are the rules of the DISA STIG for the machine's operating
+	// system that the control checks (1.24.0 and later).
+	STIG []checks.STIGRule `json:"stig,omitempty"`
 }
 
 type Counts struct {
@@ -202,7 +205,7 @@ func Grade(scan store.Scan, report map[string]any, exceptions []store.Exception,
 	var passedWeight, failedWeight float64
 	criticalFailed := 0
 	for _, result := range hardening.Controls {
-		control := Control{ControlResult: result}
+		control := Control{ControlResult: result, STIG: checks.STIGRules(scan.OS, result.ID)}
 		category := categories[result.Category]
 		if category == nil {
 			category = &Category{Name: result.Category}

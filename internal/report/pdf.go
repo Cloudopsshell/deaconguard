@@ -361,7 +361,11 @@ func (w *pdfWriter) controls() {
 		}
 		w.subheading(fmt.Sprintf("%s (%d)", group.title, len(listed)))
 		for _, control := range listed {
-			w.row(short, []string{control.ID, control.Title, control.Evidence}, []rgb{muted, {}, muted}, false)
+			evidence := control.Evidence
+			if ids := STIGIDs(control.STIG); ids != "" {
+				evidence += " · " + ids
+			}
+			w.row(short, []string{control.ID, control.Title, evidence}, []rgb{muted, {}, muted}, false)
 		}
 	}
 }
@@ -377,7 +381,11 @@ func (w *pdfWriter) controlBlock(control audit.Control) {
 	pdf.CellFormat(25, 5, strings.ToUpper(control.Severity), "", 0, "R", false, 0, "")
 	w.color(statFG[control.Status])
 	pdf.CellFormat(25, 5, w.tr(StatusLabel(control.Status)), "", 1, "R", false, 0, "")
-	for _, part := range [][2]string{{"Found: ", control.Evidence}, {"Why it matters: ", control.Rationale}, {"How to fix: ", control.Remediation}} {
+	parts := [][2]string{{"Found: ", control.Evidence}, {"Why it matters: ", control.Rationale}, {"How to fix: ", control.Remediation}}
+	if stig := STIGText(control.STIG); stig != "" {
+		parts = append(parts, [2]string{"DISA STIG: ", stig})
+	}
+	for _, part := range parts {
 		w.font("B", 8.5)
 		w.color(ink)
 		pdf.Write(4, w.tr(part[0]))
@@ -529,7 +537,7 @@ func timezone(zone string, synced bool) string {
 	return zone
 }
 
-var reqFG = map[string]rgb{"met": green, "met_accepted": {55, 48, 163}, "not_met": red, "not_checked": amber, "not_evaluated": muted}
+var reqFG = map[string]rgb{"met": green, "met_accepted": {55, 48, 163}, "not_met": red, "not_checked": amber, "not_evaluated": muted, "partial": amber}
 
 func (w *pdfWriter) policies() {
 	for _, result := range w.r.Policies {
@@ -554,13 +562,7 @@ func (w *pdfWriter) policies() {
 func (w *pdfWriter) compliance() {
 	for _, result := range w.r.Compliance {
 		w.heading(result.Framework.Name)
-		other := ""
-		if result.Other > 0 {
-			other = fmt.Sprintf(", %d not checked", result.Other)
-		}
-		w.text(fmt.Sprintf("The requirements this audit gives evidence for: %d met, %d not met%s. This is DeaconGuard's mapping, for guidance. "+
-			"The framework also has requirements about policies, people and processes that no scan can check, so this is not a certification.",
-			result.Met, result.NotMet, other), 9, "", muted)
+		w.text(ComplianceIntro(result), 9, "", muted)
 		w.pdf.Ln(2)
 		widths := []float64{70, 30, 74}
 		w.row(widths, []string{"Requirement", "Status", "Evidence"}, nil, true)
