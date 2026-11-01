@@ -46,7 +46,8 @@ export function UpgradeNotice({ agents }: { agents: HostSummary[] }) {
       </p>
       <p className="mt-1">
         They keep working, but get fixes and new checks only once upgraded
-        {missing.length > 0 ? `; until then they can't run ${checkList(missing)}` : ""}.
+        {missing.length > 0 ? `; until then they can't run ${checkList(missing)}` : ""}
+        {outdated.some((host) => host.agent!.upgrade!.live) ? `${missing.length > 0 ? ", or" : "; until then they can't run"} live detection` : ""}.
       </p>
       {machines.length > 0 && (
         <div className="mt-3 space-y-2">
@@ -84,7 +85,9 @@ export function HostUpgradeNotice({ host }: { host: HostSummary }) {
       <h2 className="font-semibold">Its agent is older than this server</h2>
       <p className="text-slate-600 dark:text-slate-300">
         The agent runs {host.agent!.version} and the server {upgrade.to}.
-        {checks.length > 0 ? ` Upgrade it to run ${checkList(checks)} here.` : " Upgrading it brings the fixes made since."}
+        {checks.length > 0 || upgrade.live
+          ? ` Upgrade it to run ${[...(checks.length > 0 ? [checkList(checks)] : []), ...(upgrade.live ? ["live detection"] : [])].join(" and ")} here.`
+          : " Upgrading it brings the fixes made since."}
       </p>
       {upgrade.command ? (
         <>

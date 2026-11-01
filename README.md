@@ -419,6 +419,20 @@ Lists put known exploited first, then likely exploited, then by severity: the da
 
 By default checks run as the user running DeaconGuard, which cannot see other users' processes, protected files, or firewall rules; results then say they have partial coverage. Allow sudo (`--allow-sudo` when adding the machine or scanning it once, `deaconguard host sudo HOST_ID on`, or the switch on the host page) to run the same read-only commands through `sudo`. If sudo needs a password, the UI or terminal asks for it once per scan and keeps it in memory only; declining continues the scan without sudo. A skipped or failed check is never shown as clean.
 
+## Live detection
+
+Between scans, the agent watches its machine, the machine's containers, and Kubernetes nodes with the node agent, as attacks happen. Its own small watchers, loaded into the Linux kernel, see every program that starts and every write to a few sensitive files; its rules raise an alert within seconds:
+
+| Rule | Alert |
+| --- | --- |
+| `DG-RT-001` | a program starts from `/tmp`, `/var/tmp`, `/dev/shm` or memory |
+| `DG-RT-002` | a shell starts under a web server, PHP-FPM or a database |
+| `DG-RT-003` | a crypto miner starts |
+| `DG-RT-004` | a downloaded script is piped into a shell, with no person at a terminal |
+| `DG-RT-010` to `DG-RT-013` | accounts, sudo rules, SSH keys and the SSH server's settings, scheduled jobs, services and `/etc/ld.so.preload` are written, but not by the package manager |
+
+It needs Linux 5.8 or later and the agent 1.27.0 or later, and is on by default. Each host's **Runtime** tab shows whether it runs, its alerts, and **Send a test alert**; the Hosts list and the dashboard show which hosts are watched. Only alerts leave the machine. At rest the agent uses about 20 ms of CPU a minute for it. See [Live detection](https://docs.deaconguard.io/usage/live-detection) for what it watches, what it doesn't yet, and where it can't run (serverless and sandboxed containers, Macs).
+
 ## Server audits
 
 A server audit checks one machine from top to bottom and grades it A to F: for handing a newly built server over to a client or team, or checking where an existing one stands. It runs every check above, including the 72-control hardening baseline, plus an antivirus scan (optionally the advanced one) and an inventory of the machine (OS, hardware, disks, addresses, listening services, administrators). Like every scan, it only reads.
@@ -448,6 +462,8 @@ Admins add channels under **Settings → Notifications**: **email** (through you
 | Scan results | every host scan finishes, with a line per check, even when it finds nothing (off unless ticked) |
 | Audits | an audit finishes, with its grade and what holds it back |
 | Agents offline | an agent stops checking in (not while it runs a scan) |
+| Runtime alerts | live detection saw something suspicious as it happened, such as a shell started by a web server |
+| Live detection stopped | live detection stopped on a host where it was running |
 | Digest | daily, or weekly on chosen days, at a time in a time zone: every host's numbers, its running containers' known exploited and critical vulnerabilities, and the known exploited vulnerabilities to fix first; email attaches every open vulnerability as CSV |
 
 Only what is new is sent: a vulnerability already reported for a host or a container image isn't reported again, so a new channel doesn't hear about earlier findings; the digest sums them up. Set the dashboard's address on the same page so messages link to the host or scan. **Test** sends a message at once and shows the result; failed messages are retried after 1, 5 and 30 minutes, and the page lists everything sent in the last 30 days. Webhook requests carry `X-DeaconGuard-Event` and `X-DeaconGuard-Timestamp`, and, with a secret, `X-DeaconGuard-Signature: sha256=` and the HMAC-SHA256 of the timestamp, a dot, and the body. Passwords, webhook addresses and secrets are kept in the server's database and never shown again; channel changes are in the audit log. See [Notifications](https://docs.deaconguard.io/usage/notifications).

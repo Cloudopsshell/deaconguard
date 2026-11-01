@@ -28,7 +28,7 @@ spec:
         - operator: Exists
       containers:
         - name: agent
-          image: ghcr.io/cloudopsshell/deaconguard:1.26.0
+          image: ghcr.io/cloudopsshell/deaconguard:1.27.0
           args: [agent, run]
           env:
             - name: DEACONGUARD_HOST_ROOT
@@ -61,8 +61,9 @@ spec:
             capabilities:
               drop: [ALL]
               # Run checks in the node's root, read every file, and list
-              # firewall and audit rules.
-              add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE]
+              # firewall and audit rules; BPF and PERFMON load live
+              # detection's watchers into the kernel.
+              add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE, BPF, PERFMON]
           volumeMounts:
             - name: host
               mountPath: /host

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"deaconguard/internal/checks"
+	"deaconguard/internal/live"
 	"deaconguard/internal/notify"
 	"deaconguard/internal/schedule"
 	"deaconguard/internal/store"
@@ -596,8 +597,14 @@ func (s *Server) auditFinished(host store.Host, record store.Scan) {
 		Data: map[string]any{"grade": summary.Grade, "score": summary.Score}})
 }
 
-// agentQuiet notifies that an agent stopped checking in.
+// agentQuiet notifies that an agent stopped checking in, and that live
+// detection stopped with it where it was running.
 func (s *Server) agentQuiet(hostID, address string, lastSeen time.Time) {
+	if status, err := store.HostLive(hostID); err == nil && status != nil && status.State == live.StateStopped && status.Reason == store.LiveStoppedReporting {
+		if host, err := store.GetHost(hostID); err == nil {
+			s.liveStopped(host, "the agent stopped checking in")
+		}
+	}
 	s.emit(notify.Message{Event: notify.EventAgentOffline, Level: notify.LevelWarning,
 		Title: address + ": the agent stopped checking in",
 		Lines: []string{"Last seen " + lastSeen.UTC().Format("2006-01-02 15:04 UTC") + ". Scans wait for it to come back. On the machine: sudo systemctl status deaconguard-agent"},

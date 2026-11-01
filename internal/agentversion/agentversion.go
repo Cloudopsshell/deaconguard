@@ -13,6 +13,19 @@ import (
 // older agents don't have.
 var CheckSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}, "containers": {1, 2}, "kubernetes": {1, 5}, "changes": {1, 22}, "paths": {1, 26}}
 
+// LiveSince is the agent version that added live detection (1.27.0).
+var LiveSince = [2]int{1, 27}
+
+// SupportsLive reports whether an agent of version runs live detection.
+// Builds without a release version, such as "dev", are assumed to.
+func SupportsLive(version string) bool {
+	var major, minor int
+	if _, err := fmt.Sscanf(version, "%d.%d.", &major, &minor); err != nil {
+		return version != ""
+	}
+	return major > LiveSince[0] || (major == LiveSince[0] && minor >= LiveSince[1])
+}
+
 // SupportsCheck reports whether an agent of version runs check. Builds
 // without a release version, such as "dev", are assumed to.
 func SupportsCheck(version, check string) bool {
@@ -34,6 +47,9 @@ type Upgrade struct {
 	To string `json:"to"`
 	// Checks are the checks the agent can't run until it's upgraded.
 	Checks []string `json:"checks,omitempty"`
+	// Live is set when the agent can't run live detection until it's
+	// upgraded (1.27.0 and later).
+	Live bool `json:"live,omitempty"`
 	// Command upgrades an agent installed with the install script, on a
 	// Linux machine or a Mac; empty for agents in Kubernetes, which are
 	// upgraded with their Helm release or Kustomize overlay.
@@ -61,6 +77,7 @@ func UpgradeFor(version, server string, kubernetes bool) *Upgrade {
 		}
 	}
 	sort.Strings(upgrade.Checks)
+	upgrade.Live = !SupportsLive(version) && SupportsLive(server)
 	if !kubernetes {
 		upgrade.Command = InstallCommand(server)
 	}

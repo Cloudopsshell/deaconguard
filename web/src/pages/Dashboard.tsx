@@ -5,6 +5,7 @@ import { AlertTriangle, Bug, Flame, Plus, Server, ShieldAlert, ShieldCheck } fro
 import { useCan } from "../lib/role";
 import { api, type HostSummary, type SeverityCounts, type Summary } from "../api";
 import { checkMeta, checkOrder } from "../lib/checks";
+import { LiveCard } from "../components/LiveDetection";
 import {
   Card,
   CardHeader,
@@ -338,6 +339,8 @@ export function Dashboard() {
       </div>
 
       <TrendChart />
+
+      <LiveCard hosts={data.host_summaries} className="mt-6" />
 
       <SecurityChecks summary={data} />
 

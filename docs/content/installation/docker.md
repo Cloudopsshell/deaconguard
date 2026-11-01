@@ -54,7 +54,7 @@ The `agent` service, in the `agent` profile, scans the machine Compose runs on, 
 The agent reads the host's root filesystem, mounted **read-only** at `/host`, and runs its checks there with the host's own tools: `dpkg` or `rpm`, `sshd -T`, `sysctl`, `ss`, ClamAV. So its results are the same as an agent [installed on the host](./install-script.md), and the host needs those tools installed for the checks that use them. For that, the container:
 
 - runs as root, with the host's process list (`pid: host`) and network (`network_mode: host`);
-- has only the capabilities the checks need: `SYS_CHROOT` to run them in the host's root, `DAC_READ_SEARCH` and `DAC_OVERRIDE` to read every file, `NET_ADMIN` and `AUDIT_CONTROL` to list firewall and audit rules, `SYS_PTRACE` to see every process;
+- has only the capabilities the checks need: `SYS_CHROOT` to run them in the host's root, `DAC_READ_SEARCH` and `DAC_OVERRIDE` to read every file, `NET_ADMIN` and `AUDIT_CONTROL` to list firewall and audit rules, `SYS_PTRACE` to see every process, and `BPF` and `PERFMON` to load [live detection](../usage/live-detection.md)'s watchers into the kernel (1.27.0 and later);
 - mounts the host's `/tmp` writable at `/host/tmp`, where the [advanced malware scan](../checks.md#the-advanced-antivirus-scan) writes its rules for a moment.
 
 ### Use your own certificate

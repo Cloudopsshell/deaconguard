@@ -47,6 +47,11 @@ const eventMeta: Record<NotificationEvent, { label: string; detail: string }> = 
     label: "Attack paths",
     detail: "A host has a new high or critical way for an account to become root, or a secret other accounts can newly read, such as a private key",
   },
+  runtime: {
+    label: "Runtime alerts",
+    detail: "Live detection saw something suspicious as it happened, such as a shell started by a web server or a change to sudoers; also test alerts",
+  },
+  runtime_stopped: { label: "Live detection stopped", detail: "Live detection stopped on a host where it was running, so attacks there aren't seen as they happen" },
   image_report: {
     label: "Image scan reports",
     detail: "A watched repository's new push was scanned: its counts, what changed since the previous build, and the most urgent vulnerabilities. Each watch chooses which pushes, and to which channels",
@@ -68,6 +73,8 @@ const instantEvents: NotificationEvent[] = [
   "config",
   "changes",
   "paths",
+  "runtime",
+  "runtime_stopped",
   "image_report",
   "scan_failed",
   "scan_results",

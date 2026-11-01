@@ -23,7 +23,7 @@ import ThemedImage from '@theme/ThemedImage';
 | Component | Runs as | Listens on | Reaches |
 | --- | --- | --- | --- |
 | `deaconguard-server` | the `deaconguard` user, **no root**; systemd's `NoNewPrivileges` keeps it from ever gaining root, even through sudo | `0.0.0.0:8443` (HTTPS) for the dashboard, and `0.0.0.0:8444` for the [agents](./security/securing-the-dashboard.md#give-agents-their-own-port) | the distributions' advisory feeds, CISA KEV, EPSS and OSV; registries, network targets and notification channels only when you add them |
-| `deaconguard-agent` | **root**, so every check sees other users' processes, protected files and firewall rules | nothing | only its server, over HTTPS |
+| `deaconguard-agent` | **root**, so every check sees other users' processes, protected files and firewall rules, and [live detection](./usage/live-detection.md) can load its watchers into the kernel | nothing | only its server, over HTTPS |
 
 </div>
 

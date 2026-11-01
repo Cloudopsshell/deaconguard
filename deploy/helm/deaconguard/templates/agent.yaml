@@ -68,8 +68,9 @@ spec:
             capabilities:
               drop: [ALL]
               # Run checks in the node's root, read every file, and list
-              # firewall and audit rules.
-              add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE]
+              # firewall and audit rules; BPF and PERFMON load live
+              # detection's watchers into the kernel.
+              add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE, BPF, PERFMON]
           volumeMounts:
             - name: host
               mountPath: /host

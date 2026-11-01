@@ -45,26 +45,28 @@ var Kinds = []string{Email, Slack, Teams, Webhook, Syslog, Splunk, Jira, Service
 
 // Events a channel can subscribe to.
 const (
-	EventExploited    = "exploited"     // a host or its containers have vulnerabilities known to be exploited they didn't have before
-	EventCritical     = "critical"      // a host or its containers have new critical vulnerabilities with a fix
-	EventMalware      = "malware"       // malware or signs of compromise were found
-	EventIntegrity    = "integrity"     // system files differ from their packages
-	EventScanFailed   = "scan_failed"   // a scan failed
-	EventAudit        = "audit"         // an audit finished
-	EventAgentOffline = "agent_offline" // an agent stopped checking in
-	EventCluster      = "cluster"       // a Kubernetes cluster has new critical or high findings
-	EventExposure     = "exposure"      // a network scan has new critical or high findings
-	EventConfig       = "config"        // a host's security configuration has new findings
-	EventChanges      = "changes"       // a host has new ports, accounts, administrators, SSH keys, services or scheduled jobs
-	EventPaths        = "paths"         // a host has a new high or critical way to root, or a newly exposed secret
-	EventScanResults  = "scan_results"  // a host scan finished: a summary of what it found
-	EventDigest       = "digest"        // the daily or weekly summary
-	EventImageReport  = "image_report"  // a watched repository's new push was scanned
-	EventTest         = "test"          // Send test
+	EventExploited      = "exploited"       // a host or its containers have vulnerabilities known to be exploited they didn't have before
+	EventCritical       = "critical"        // a host or its containers have new critical vulnerabilities with a fix
+	EventMalware        = "malware"         // malware or signs of compromise were found
+	EventIntegrity      = "integrity"       // system files differ from their packages
+	EventScanFailed     = "scan_failed"     // a scan failed
+	EventAudit          = "audit"           // an audit finished
+	EventAgentOffline   = "agent_offline"   // an agent stopped checking in
+	EventCluster        = "cluster"         // a Kubernetes cluster has new critical or high findings
+	EventExposure       = "exposure"        // a network scan has new critical or high findings
+	EventConfig         = "config"          // a host's security configuration has new findings
+	EventChanges        = "changes"         // a host has new ports, accounts, administrators, SSH keys, services or scheduled jobs
+	EventPaths          = "paths"           // a host has a new high or critical way to root, or a newly exposed secret
+	EventRuntime        = "runtime"         // live detection on a host raised alerts, or a test alert
+	EventRuntimeStopped = "runtime_stopped" // live detection stopped on a host where it was running
+	EventScanResults    = "scan_results"    // a host scan finished: a summary of what it found
+	EventDigest         = "digest"          // the daily or weekly summary
+	EventImageReport    = "image_report"    // a watched repository's new push was scanned
+	EventTest           = "test"            // Send test
 )
 
 // Events lists the events channels subscribe to, in the dashboard's order.
-var Events = []string{EventExploited, EventCritical, EventMalware, EventIntegrity, EventCluster, EventExposure, EventConfig, EventChanges, EventPaths, EventImageReport, EventScanFailed, EventScanResults, EventAudit, EventAgentOffline, EventDigest}
+var Events = []string{EventExploited, EventCritical, EventMalware, EventIntegrity, EventCluster, EventExposure, EventConfig, EventChanges, EventPaths, EventRuntime, EventRuntimeStopped, EventImageReport, EventScanFailed, EventScanResults, EventAudit, EventAgentOffline, EventDigest}
 
 // Levels say how urgent a message is.
 const (

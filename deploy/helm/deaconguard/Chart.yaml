@@ -3,8 +3,8 @@ name: deaconguard
 description: "DeaconGuard finds what's vulnerable, misconfigured or compromised across Linux servers, Kubernetes clusters and container images. The server with its dashboard, an agent on every node, and a cluster agent."
 type: application
 # The release workflow sets both to the release's version.
-version: 1.26.0
-appVersion: "1.26.0"
+version: 1.27.0
+appVersion: "1.27.0"
 home: https://deaconguard.io
 icon: https://deaconguard.io/img/logo.svg
 sources:
