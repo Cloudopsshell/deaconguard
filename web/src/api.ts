@@ -8,7 +8,7 @@ export type ScanStatus =
   | "failed"
   | "needs_sudo";
 
-export type CheckId = "packages" | "libraries" | "containers" | "integrity" | "malware" | "config" | "hardening" | "antivirus" | "yara" | "kubernetes";
+export type CheckId = "packages" | "libraries" | "containers" | "integrity" | "malware" | "config" | "changes" | "hardening" | "antivirus" | "yara" | "kubernetes";
 export type CheckStatus = "completed" | "partial" | "skipped" | "failed";
 
 export interface SeverityCounts {
@@ -382,6 +382,7 @@ export type NotificationEvent =
   | "cluster"
   | "exposure"
   | "config"
+  | "changes"
   | "image_report"
   | "scan_failed"
   | "scan_results"

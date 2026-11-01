@@ -240,6 +240,9 @@ func (s *Server) scanFinished(host store.Host, scanID string, failure error) {
 	if slices.Contains(record.Checks, checks.Config) {
 		s.newFindings(host, record, scanLink, checks.Config, notify.EventConfig, "MEDIUM", "new configuration finding", "new configuration findings")
 	}
+	if slices.Contains(record.Checks, checks.Changes) {
+		s.newFindings(host, record, scanLink, checks.Changes, notify.EventChanges, "MEDIUM", "change since the previous scan", "changes since the previous scan")
+	}
 	counts, err := store.ScanCheckCounts(scanID)
 	if err != nil {
 		serverLog(host.ID, store.LogError, "Could not read the results of the scan of %s for notifications: %v", host.Address, err)

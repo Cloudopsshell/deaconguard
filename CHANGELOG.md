@@ -8,6 +8,13 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-11-01
+
+### Added
+
+- **Host changes**, a new check (`changes`): it records the ports open to the network, login accounts, administrators, enabled services and, with root, sudoers rules, SSH keys (as fingerprints) and scheduled jobs, and reports what changed since the machine's previous scan that ran it. A new account with UID 0 is critical; a new port open to the network, administrator, sudoers rule or SSH key for root is high; a new account, other SSH key, service or scheduled job is medium; anything removed is low. The first scan is the baseline. Passwords and tokens in scheduled jobs and sudoers rules are masked before they leave the machine, and each line is compared by its hash. The check takes about a tenth of a second and reads no folders. See [Host changes](https://docs.deaconguard.io/usage/host-changes). Needs agent 1.22.0 or later.
+- **Host changes notifications:** a channel that ticks **Host changes** hears about each medium, high or critical change.
+
 ## [1.21.0] - 2026-10-31
 
 ### Added
@@ -384,7 +391,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.21.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.22.0...HEAD
+[1.22.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.3...v1.21.0
 [1.20.3]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.2...v1.20.3
 [1.20.2]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.1...v1.20.2
