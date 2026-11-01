@@ -205,7 +205,7 @@ func runScan(arguments []string, input io.Reader, output, diagnostics io.Writer)
 			continue
 		}
 		if index+1 >= len(arguments) {
-			return fmt.Errorf("--checks requires a comma-separated list such as packages,libraries,containers,integrity,malware,config,hardening,antivirus (add yara for the advanced antivirus scan)")
+			return fmt.Errorf("--checks requires a comma-separated list such as packages,libraries,containers,integrity,malware,config,changes,hardening,antivirus (add yara for the advanced antivirus scan)")
 		}
 		index++
 		selected = strings.Split(arguments[index], ",")
@@ -477,7 +477,7 @@ Scanning:
   deaconguard host list
   deaconguard host sudo HOST_ID on|off
   deaconguard host remove HOST_ID        for an agent host, also revokes its agent
-  deaconguard scan HOST_ID [--checks packages,libraries,containers,integrity,malware,config,hardening,antivirus,yara] [--json]
+  deaconguard scan HOST_ID [--checks packages,libraries,containers,integrity,malware,config,changes,hardening,antivirus,yara] [--json]
                                        yara is the advanced antivirus scan; it runs ClamAV too
   deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]   scan this machine without registering it
   deaconguard report REPORT_ID [--json]

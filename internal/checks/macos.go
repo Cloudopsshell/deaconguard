@@ -416,6 +416,7 @@ func macOSSkipped(id string) Result {
 		Integrity:  "macOS protects its own system files with System Integrity Protection and a signed system volume; the hardening audit checks that it is on",
 		Containers: "containers on a Mac run inside a Linux virtual machine (Docker Desktop, Podman, Colima); scan that machine or its images instead",
 		Config:     "on a Mac, the hardening audit checks these settings",
+		Changes:    "host changes are recorded on Linux machines only for now",
 	}
 	reason, known := reasons[id]
 	if !known {
