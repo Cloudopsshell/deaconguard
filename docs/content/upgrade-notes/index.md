@@ -7,10 +7,11 @@ One page per release, newest first: what's new, what to do before you upgrade, a
 
 **Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.17.0 to 1.18.0, the pages for 1.17.1 and 1.18.0. You can upgrade straight to the newest release; you don't need to install each one in turn.
 
-Releases with nothing to do say so. The last 10 minor lines (now 1.13 to 1.22) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
+Releases with nothing to do say so. The last 10 minor lines (now 1.14 to 1.23) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
 
 | Release | Released | What to do |
 | --- | --- | --- |
+| [1.23.0](./v1-23/v1-23-0.md) | 2026-11-01 | Nothing; the Agents page then shows which agents to upgrade |
 | [1.22.0](./v1-22/v1-22-0.md) | 2026-11-01 | Nothing; upgrade the agents and schedule the new Host changes check to use it |
 | [1.21.0](./v1-21/v1-21-0.md) | 2026-10-31 | Back up: database schema 29; upgrade the cluster agent for the cluster's page |
 | [1.20.3](./v1-20/v1-20-3.md) | 2026-10-31 | Nothing |
@@ -24,4 +25,3 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.13 to 1.22) a
 | [1.16.0](./v1-16/v1-16-0.md) | 2026-10-29 | Nothing; slow requests and high CPU are now logged |
 | [1.15.0](./v1-15/v1-15-0.md) | 2026-10-29 | Allow `gitlab.com` if outbound traffic is limited and you watch GitLab |
 | [1.14.0](./v1-14/v1-14-0.md) | 2026-10-29 | Allow `hub.docker.com` and `api.github.com` if outbound traffic is limited |
-| [1.13.0](./v1-13/v1-13-0.md) | 2026-10-29 | Nothing; watches order tags by build time |

@@ -50,6 +50,7 @@ import { TrendChart } from "../components/TrendChart";
 import { AgentStatus, DisconnectedNote } from "./Agents";
 import { dateTime, isActive, severityStyle, timeAgo } from "../lib/format";
 import { ReleaseBadge } from "../components/ReleaseSupport";
+import { HostUpgradeNotice } from "../components/AgentUpgrade";
 
 export function HostDetail() {
   const canOperate = useCan("operator");
@@ -204,6 +205,14 @@ export function HostDetail() {
           <div className="p-5 text-sm">
             <h2 className="font-semibold">This host was disconnected</h2>
             <DisconnectedNote host={data} />
+          </div>
+        </Card>
+      )}
+
+      {data.agent?.upgrade && !data.disconnected && (
+        <Card className="mb-6 border-l-4 border-amber-500">
+          <div className="p-5">
+            <HostUpgradeNotice host={data} />
           </div>
         </Card>
       )}

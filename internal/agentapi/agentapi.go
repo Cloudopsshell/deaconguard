@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"deaconguard/internal/agentversion"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/target"
 )
@@ -192,6 +193,11 @@ type Logs struct {
 	Lines []LogLine `json:"lines"`
 }
 
+// HeaderServerVersion, on the server's replies to an agent, is the server's
+// version, so an older agent can say in its log that it should be upgraded
+// (1.23.0 and later).
+const HeaderServerVersion = "X-DeaconGuard-Server-Version"
+
 // HeaderAgentPort, on the server's replies to an agent, names the port the
 // server keeps for agents when the agent uses another one. The agent checks
 // that the port reaches the same server, at PathHello, then moves to it.
@@ -230,23 +236,9 @@ func SupportsYARA(version string) bool {
 	return major > 0 || minor >= 5
 }
 
-// checkSince is the agent version (major, minor) that added each check that
-// older agents don't have.
-var checkSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}, "containers": {1, 2}, "kubernetes": {1, 5}, "changes": {1, 22}}
-
 // SupportsCheck reports whether an agent of version runs check. Builds
 // without a release version, such as "dev", are assumed to.
-func SupportsCheck(version, check string) bool {
-	since, limited := checkSince[check]
-	if !limited {
-		return true
-	}
-	var major, minor int
-	if _, err := fmt.Sscanf(version, "%d.%d.", &major, &minor); err != nil {
-		return version != ""
-	}
-	return major > since[0] || (major == since[0] && minor >= since[1])
-}
+func SupportsCheck(version, check string) bool { return agentversion.SupportsCheck(version, check) }
 
 // ErrAgentTooOld explains why a check was refused for an agent.
 func ErrAgentTooOld(address, version, check string) error {
@@ -262,7 +254,7 @@ func ErrAgentTooOld(address, version, check string) error {
 	if name == "" {
 		name = "the " + check + " check"
 	}
-	since := checkSince[check]
+	since := agentversion.CheckSince[check]
 	return fmt.Errorf("%s needs the DeaconGuard agent %d.%d.0 or later on %s, which runs %s; "+
 		"upgrade it there with: curl -fsSL https://get.deaconguard.io | sudo sh -", name, since[0], since[1], address, version)
 }

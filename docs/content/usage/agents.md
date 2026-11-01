@@ -111,6 +111,8 @@ tail /var/log/deaconguard-agent.log                              # what it did
 
 From 0.6.0, the agent also sends its log to the server: the host's page and the [Logs](./dashboard.md#logs) page show it, including the lines from while the server was unreachable.
 
+An agent older than the server shows **Upgrade to** the server's version on the **Agents** page, with the command that upgrades it; see [Which agents to upgrade](../installation/upgrade.md#which-agents-to-upgrade).
+
 The agent checks in with the server every 25 seconds. The dashboard shows an agent as offline when it hasn't checked in for 90 seconds; scans you start for it wait up to an hour for it to reconnect. While it runs a scan, the agent doesn't ask for more work, so the server's log and the **Agents offline** notification wait for it: from 1.18.0, they don't call an agent offline in the middle of a long scan such as an audit.
 
 ## Removing an agent

@@ -61,6 +61,18 @@ export interface AgentInfo {
   remote: string;
   /** The server port the agent last connected to. */
   port?: string;
+  /** Set when the agent is older than the server (1.23.0 and later). */
+  upgrade?: AgentUpgrade;
+}
+
+/** What upgrading an agent older than the server brings. */
+export interface AgentUpgrade {
+  /** The server's version, to upgrade the agent to. */
+  to: string;
+  /** Checks the agent can't run until it's upgraded. */
+  checks?: CheckId[];
+  /** Upgrades an agent installed with the install script; absent for agents in Kubernetes. */
+  command?: string;
 }
 
 export interface Capabilities {
