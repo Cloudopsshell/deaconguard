@@ -17,6 +17,10 @@ func TestWriteMappingDocs(t *testing.T) {
 	}
 	var builder strings.Builder
 	for _, framework := range frameworks {
+		// The STIG mapping is per control; checks writes its table.
+		if framework.ID == STIG {
+			continue
+		}
 		evidence := map[string][]string{}
 		for control, references := range mapping {
 			for _, requirement := range references[framework.ID] {

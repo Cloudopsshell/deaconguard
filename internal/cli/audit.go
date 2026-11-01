@@ -11,6 +11,7 @@ import (
 	"deaconguard/internal/audit"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/local"
+	"deaconguard/internal/report"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
 	"deaconguard/internal/yararules"
@@ -143,6 +144,9 @@ func showAudit(id string, record store.Scan, summary audit.Summary, output io.Wr
 		}
 		failedAny = true
 		fmt.Fprintf(output, "  %-7s %-8s %s\n          %s\n          Fix: %s\n", control.ID, strings.ToUpper(control.Severity), control.Title, control.Evidence, control.Remediation)
+		if stig := report.STIGIDs(control.STIG); stig != "" {
+			fmt.Fprintf(output, "          %s\n", stig)
+		}
 	}
 	if !failedAny {
 		fmt.Fprintln(output, "  none")

@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, ChevronRight, Info, Loader2 } from "lucide-react";
-import { api, type AuditControl, type AuditDetail, type AuditSummary, type ComplianceResult, type Inventory, type PolicyResult, type RequirementStatus } from "../api";
+import { api, type AuditControl, type AuditDetail, type AuditSummary, type ComplianceResult, type Inventory, type PolicyResult, type RequirementStatus, type STIGRule } from "../api";
 import { Button, Card, CardHeader, Dialog, ErrorMessage, Field, Loading, SeverityBadge, StatusBadge, cx } from "../components/ui";
 import { ReportsPanel } from "../components/ReportsPanel";
 import { ControlStatusBadge, GradeBadge, formatBytes, formatUptime } from "../lib/audit";
@@ -269,6 +269,24 @@ function Controls({ detail, summary }: { detail: AuditDetail; summary: AuditSumm
   );
 }
 
+/** The STIG rules a control checks, and what each asks for beyond it. */
+function STIGRules({ rules }: { rules: STIGRule[] }) {
+  const notes = [...new Set(rules.map((rule) => rule.note).filter(Boolean))];
+  return (
+    <div>
+      <p>
+        <span className="font-medium">{rules[0].stig}: </span>
+        <span className="font-mono text-xs text-slate-600 dark:text-slate-300">{rules.map((rule) => rule.rule).join(", ")}</span>
+      </p>
+      {notes.map((note) => (
+        <p key={note} className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+          {note}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function ControlRow({ control, onAccept }: { control: AuditControl; onAccept: () => void }) {
   const canAccept = useCan("admin");
   const queryClient = useQueryClient();
@@ -285,6 +303,15 @@ function ControlRow({ control, onAccept }: { control: AuditControl; onAccept: ()
             <span className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{control.id}</span>
               <span className="text-sm font-medium">{control.title}</span>
+              {control.stig?.map((rule) => (
+                <span
+                  key={rule.rule}
+                  className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  title={`${rule.stig} ${rule.rule}`}
+                >
+                  {rule.rule}
+                </span>
+              ))}
             </span>
             <span className="mt-0.5 block text-xs break-words text-slate-500 dark:text-slate-400">{control.evidence}</span>
           </span>
@@ -302,6 +329,7 @@ function ControlRow({ control, onAccept }: { control: AuditControl; onAccept: ()
             <span className="font-medium">How to fix: </span>
             <span className="text-slate-600 dark:text-slate-300">{control.remediation}</span>
           </p>
+          {control.stig && control.stig.length > 0 && <STIGRules rules={control.stig} />}
           {control.exception && (
             <div className="rounded-lg bg-indigo-50 px-3 py-2 text-indigo-900 ring-1 ring-indigo-600/20 ring-inset dark:bg-indigo-500/10 dark:text-indigo-200">
               <p>
@@ -515,6 +543,7 @@ const requirementStyle: Record<RequirementStatus, { label: string; className: st
   not_met: { label: "Not met", className: "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/15 dark:text-red-300" },
   not_checked: { label: "Not checked", className: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-300" },
   not_evaluated: { label: "Not applicable", className: "bg-slate-100 text-slate-600 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300" },
+  partial: { label: "Partly checked", className: "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/15 dark:text-amber-300" },
 };
 
 /** The audit read framework by framework. */
@@ -549,8 +578,14 @@ function ComplianceCard({ results }: { results: ComplianceResult[] }) {
       <p className="px-5 pt-3 text-sm text-slate-600 dark:text-slate-300">
         {result.framework.name}: <span className="font-medium text-emerald-700 dark:text-emerald-400">{result.met} met</span> ·{" "}
         <span className={cx("font-medium", result.not_met > 0 && "text-red-600 dark:text-red-400")}>{result.not_met} not met</span>
-        {result.other > 0 && ` · ${result.other} not checked`}
+        {result.other > 0 && ` · ${result.other} ${result.framework.id === "disa-stig" ? "partly or not checked" : "not checked"}`}
       </p>
+      {result.framework.id === "disa-stig" && (
+        <p className="px-5 pt-1 text-xs text-slate-500 dark:text-slate-400">
+          {result.note ??
+            "Only the STIG rules a baseline control checks are listed. Partly checked: the control passed, but the rule asks for more, so check the rest by hand. A STIG assessment covers many rules DeaconGuard doesn't read."}
+        </p>
+      )}
       <ul className="mt-2 divide-y divide-slate-200 dark:divide-slate-800">
         {result.requirements.map((requirement) => (
           <li key={requirement.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-5 py-2.5 text-sm">

@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.24.0] - 2026-11-01
+
+### Added
+
+- **DISA STIG rules on the Linux baseline.** On Ubuntu 22.04 and 24.04 and on RHEL 8 and 9 (also used for Rocky Linux and AlmaLinux), each baseline control names the rules of the machine's DISA STIG that it checks, such as `V-257985`: 53 of the 72 controls check at least one rule. Where the STIG asks for more than the control, such as passwords of 15 characters where the control asks for 12, the control says so, and a passed control doesn't count the rule as passed. The rule IDs are on the audit's page, in its JSON, and in reports (PDF, HTML, and a **DISA STIG** column in CSV and Excel). The **Compliance** card and reports have a **DISA STIG** framework listing each rule a control checks, with its title, as met, not met or **Partly checked**. It's DeaconGuard's mapping for guidance, not a STIG assessment. Earlier audits show the rules too, and agents need no upgrade. Mapped to the Ubuntu 22.04 STIG V2R10, Ubuntu 24.04 STIG V1R7, RHEL 8 STIG V2R9 and RHEL 9 STIG V2R10. See [DISA STIG](https://docs.deaconguard.io/usage/compliance#disa-stig).
+
 ## [1.23.0] - 2026-11-01
 
 ### Added
@@ -401,7 +407,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.23.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.24.0...HEAD
+[1.24.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.3...v1.21.0
