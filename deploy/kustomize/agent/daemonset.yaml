@@ -28,7 +28,7 @@ spec:
         - operator: Exists
       containers:
         - name: agent
-          image: ghcr.io/cloudopsshell/deaconguard:1.22.0
+          image: ghcr.io/cloudopsshell/deaconguard:1.23.0
           args: [agent, run]
           env:
             - name: DEACONGUARD_HOST_ROOT

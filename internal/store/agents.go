@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"deaconguard/internal/agentversion"
+	"deaconguard/internal/buildinfo"
 )
 
 // EnrollmentTokenLifetime is how long a new one-time enrollment token stays
@@ -348,6 +351,40 @@ type Agent struct {
 	// Port is the server port the agent last connected to, so admins can
 	// see when every agent uses the agent port.
 	Port string `json:"port"`
+	// Upgrade is set in host summaries when the agent is older than the
+	// server (1.23.0 and later).
+	Upgrade *agentversion.Upgrade `json:"upgrade,omitempty"`
+}
+
+// ServerVersion is the version agents are compared with; tests change it.
+var ServerVersion = buildinfo.Version
+
+// agentUpgrade says what upgrading host's agent brings. A cluster runs only
+// the Kubernetes check, a Mac the package and hardening checks, and a Linux
+// machine every other.
+func agentUpgrade(host Host, agent Agent) *agentversion.Upgrade {
+	upgrade := agentversion.UpgradeFor(agent.Version, ServerVersion, host.IsCluster() || host.ClusterID != "")
+	if upgrade == nil {
+		return nil
+	}
+	kept := upgrade.Checks[:0]
+	for _, check := range upgrade.Checks {
+		switch {
+		case host.IsCluster():
+			if check != "kubernetes" {
+				continue
+			}
+		case host.Kind == KindMac:
+			if check != "hardening" {
+				continue
+			}
+		case check == "kubernetes":
+			continue
+		}
+		kept = append(kept, check)
+	}
+	upgrade.Checks = kept
+	return upgrade
 }
 
 // AgentEnrollment is what an agent reports about itself when it enrolls.

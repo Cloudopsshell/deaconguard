@@ -13,6 +13,7 @@ import (
 	"golang.org/x/term"
 
 	"deaconguard/internal/agent"
+	"deaconguard/internal/agentversion"
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/local"
@@ -140,7 +141,7 @@ func runHost(arguments []string, output io.Writer) error {
 		}
 		fmt.Fprintf(output, "Sudo for deeper checks on %s: %s\n", host.Address, arguments[2])
 	case "list":
-		hosts, err := store.ListHosts()
+		hosts, err := store.HostSummaries()
 		if err != nil {
 			return err
 		}
@@ -148,16 +149,30 @@ func runHost(arguments []string, output io.Writer) error {
 			fmt.Fprintln(output, "No hosts registered. Run deaconguard host add to add this machine, or enroll agents: deaconguard token create")
 			return nil
 		}
+		outdated := 0
 		for _, host := range hosts {
 			sudo := ""
 			if host.AllowSudo {
 				sudo = "  (sudo allowed)"
 			}
 			if host.Transport == store.TransportAgent {
-				fmt.Fprintf(output, "%s  %s  (agent)\n", host.ID, host.Address)
+				agent := "agent"
+				if host.Agent != nil && host.Agent.Version != "" {
+					agent += " " + host.Agent.Version
+				}
+				if host.Agent != nil && host.Agent.Upgrade != nil {
+					agent += ", upgrade to " + host.Agent.Upgrade.To
+					outdated++
+				}
+				fmt.Fprintf(output, "%s  %s  (%s)\n", host.ID, host.Address, agent)
 				continue
 			}
 			fmt.Fprintf(output, "%s  this machine (%s, as %s)%s\n", host.ID, host.Address, host.Username, sudo)
+		}
+		if outdated > 0 {
+			fmt.Fprintf(output, "\n%s older than this server, DeaconGuard %s. On each machine installed with the install script, run:\n  %s\n"+
+				"In Kubernetes, upgrade the Helm release or the Kustomize image tag. See https://docs.deaconguard.io/installation/upgrade\n",
+				countAgents(outdated), store.ServerVersion, agentversion.InstallCommand(store.ServerVersion))
 		}
 	case "this-server":
 		// Not in the help: deaconguard setup server runs it to mark the agent
@@ -474,7 +489,7 @@ single machine, deaconguard serve and deaconguard scan --local work alone.
 
 Scanning:
   deaconguard host add [--allow-sudo]    register this machine (Linux)
-  deaconguard host list
+  deaconguard host list                  with agent versions; marks agents to upgrade
   deaconguard host sudo HOST_ID on|off
   deaconguard host remove HOST_ID        for an agent host, also revokes its agent
   deaconguard scan HOST_ID [--checks packages,libraries,containers,integrity,malware,config,changes,hardening,antivirus,yara] [--json]
@@ -578,4 +593,12 @@ func terminalSecret(prompt string, diagnostics io.Writer) func(retry error) ([]b
 		}
 		return secret, nil
 	}
+}
+
+// countAgents says how many agents are, for the host list.
+func countAgents(count int) string {
+	if count == 1 {
+		return "1 agent is"
+	}
+	return fmt.Sprintf("%d agents are", count)
 }

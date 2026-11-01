@@ -13,6 +13,17 @@ These steps are the same for every release. What a particular release changes, a
 
 **Upgrade the server first, then its agents.** An agent from an earlier release keeps working with a newer server while you upgrade, but a newer agent may send what an older server doesn't understand. You can go straight to the newest release; there's no need to install each one in between.
 
+## Which agents to upgrade
+
+From 1.23.0, the server compares each agent's version with its own:
+
+- **Agents** page: the agent's version shows **Upgrade to 1.23.0**, and a note above the list says how many agents are older than the server, which checks they can't run until they're upgraded, and the command that upgrades them.
+- **The host's page** of an older agent says the same for that host.
+- **`deaconguard host list`** shows each agent's version, marks the older ones, and prints the command.
+- **The agent's log:** an agent of 1.23.0 or later logs it once when the server is newer.
+
+The command it shows is for agents installed with the install script, on a Linux machine or a Mac. For agents in Kubernetes, it says to upgrade their Helm release or Kustomize image tag instead. It can't tell an agent installed with packages or Docker Compose from one installed with the install script, so upgrade those as below. A development build of the server, whose version ends in `-dev`, doesn't compare.
+
 ## Install script and packages
 
 | Installed with | Upgrade |
