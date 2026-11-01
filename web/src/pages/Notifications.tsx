@@ -43,6 +43,10 @@ const eventMeta: Record<NotificationEvent, { label: string; detail: string }> = 
     label: "Host changes",
     detail: "A host has new ports open, accounts, administrators, sudoers rules, SSH keys, services or scheduled jobs since its previous scan",
   },
+  paths: {
+    label: "Attack paths",
+    detail: "A host has a new high or critical way for an account to become root, or a secret other accounts can newly read, such as a private key",
+  },
   image_report: {
     label: "Image scan reports",
     detail: "A watched repository's new push was scanned: its counts, what changed since the previous build, and the most urgent vulnerabilities. Each watch chooses which pushes, and to which channels",
@@ -63,6 +67,7 @@ const instantEvents: NotificationEvent[] = [
   "exposure",
   "config",
   "changes",
+  "paths",
   "image_report",
   "scan_failed",
   "scan_results",

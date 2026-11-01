@@ -8,7 +8,7 @@ export type ScanStatus =
   | "failed"
   | "needs_sudo";
 
-export type CheckId = "packages" | "libraries" | "containers" | "integrity" | "malware" | "config" | "changes" | "hardening" | "antivirus" | "yara" | "kubernetes";
+export type CheckId = "packages" | "libraries" | "containers" | "integrity" | "malware" | "config" | "changes" | "paths" | "hardening" | "antivirus" | "yara" | "kubernetes";
 export type CheckStatus = "completed" | "partial" | "skipped" | "failed";
 
 export interface SeverityCounts {
@@ -395,6 +395,7 @@ export type NotificationEvent =
   | "exposure"
   | "config"
   | "changes"
+  | "paths"
   | "image_report"
   | "scan_failed"
   | "scan_results"
@@ -761,6 +762,8 @@ export interface CheckFinding {
   title: string;
   detail: string;
   evidence: string;
+  /** How an attack path finding leads to root or to what a secret opens, step by step (1.26.0 and later). */
+  path?: string[];
   /** Set on vulnerabilities in libraries, containers and images (server 1.8.0 and later), for grouping. */
   container?: string;
   /** The container's runtime ID, for malware found in it (1.21.0 and later). */

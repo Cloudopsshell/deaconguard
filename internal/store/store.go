@@ -317,6 +317,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 31 {
+		if err := execInTx(db, schemaV31); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -848,6 +853,20 @@ const schemaV30 = `
 ALTER TABLE network_targets ADD COLUMN web INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE network_targets ADD COLUMN web_paths INTEGER NOT NULL DEFAULT 1;
 PRAGMA user_version = 30;`
+
+// schemaV31 keeps the SSH keys each host's accounts trust, as
+// fingerprints, so a key trusted on many hosts is found (1.26.0).
+const schemaV31 = `
+CREATE TABLE host_ssh_keys (
+	host_id TEXT NOT NULL REFERENCES hosts (id) ON DELETE CASCADE,
+	account TEXT NOT NULL,
+	fingerprint TEXT NOT NULL,
+	root INTEGER NOT NULL DEFAULT 0,
+	text TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (host_id, account, fingerprint)
+);
+CREATE INDEX host_ssh_keys_by_fingerprint ON host_ssh_keys (fingerprint);
+PRAGMA user_version = 31;`
 
 const schemaV28 = `
 ALTER TABLE hosts ADD COLUMN display_name TEXT NOT NULL DEFAULT '';

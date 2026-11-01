@@ -249,7 +249,7 @@ func ErrAgentTooOld(address, version, check string) error {
 		version = "an unknown version"
 	}
 	names := map[string]string{"hardening": "the hardening audit", "libraries": "the application library check", "containers": "the running container check",
-		"kubernetes": "the Kubernetes check", "changes": "the host change check"}
+		"kubernetes": "the Kubernetes check", "changes": "the host change check", "paths": "the attack path check"}
 	name := names[check]
 	if name == "" {
 		name = "the " + check + " check"
