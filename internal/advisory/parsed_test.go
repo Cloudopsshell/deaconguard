@@ -2,6 +2,7 @@ package advisory
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,19 +13,22 @@ func resetParsed(t *testing.T, budget int64) {
 	t.Helper()
 	previousBudget, previousKept := parsedBudget, parsedKept
 	parsedBudget = func() int64 { return budget }
-	parsedFeeds.Lock()
-	parsedFeeds.largest = 0
-	parsedFeeds.Unlock()
+	// Feeds other tests parsed, such as the Debian tracker, start out gone.
+	clearParsed()
 	t.Cleanup(func() {
 		parsedBudget, parsedKept = previousBudget, previousKept
-		parsedFeeds.Lock()
-		parsedFeeds.largest = 0
-		for key, entry := range parsedFeeds.entries {
-			entry.timer.Stop()
-			delete(parsedFeeds.entries, key)
-		}
-		parsedFeeds.Unlock()
+		clearParsed()
 	})
+}
+
+func clearParsed() {
+	parsedFeeds.Lock()
+	defer parsedFeeds.Unlock()
+	parsedFeeds.largest = 0
+	for key, entry := range parsedFeeds.entries {
+		entry.timer.Stop()
+		delete(parsedFeeds.entries, key)
+	}
 }
 
 func cached(kind string) int {
@@ -32,7 +36,7 @@ func cached(kind string) int {
 	defer parsedFeeds.Unlock()
 	count := 0
 	for key := range parsedFeeds.entries {
-		if len(key) > len(kind) && key[:len(kind)] == kind {
+		if strings.HasPrefix(key, kind+" ") {
 			count++
 		}
 	}
