@@ -8,6 +8,19 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.27.0] - 2026-11-01
+
+### Added
+
+- **Live detection.** Between scans, the agent now watches its machine, the machine's containers, and Kubernetes nodes with the node agent, as attacks happen. DeaconGuard's own small watchers, loaded into the Linux kernel by the agent's own loader, see every program that starts and every write to a few sensitive files, and the agent's rules raise an alert within seconds: a program started from `/tmp`, `/var/tmp`, `/dev/shm` or memory (`DG-RT-001`); a shell started under a web server, PHP-FPM or a database (`DG-RT-002`, critical); a crypto miner (`DG-RT-003`, critical); a downloaded script piped into a shell with no person at a terminal (`DG-RT-004`); and writes to the accounts, sudo rules, SSH keys and SSH server settings, scheduled jobs, services and `/etc/ld.so.preload` (`DG-RT-010` to `DG-RT-013`) that the package manager didn't make, medium when made with the usual admin tools. It's on by default for agents 1.27.0 and later on Linux 5.8 or later. Each host has a **Runtime** tab with the state, the events looked at in the last hour, missed events, the agent's CPU and memory, the alerts, **Send a test alert** (operators), and **Turn off** (admins); the Hosts list has a **Live detection** column, the dashboard a **Live detection** card, and `deaconguard host list` the state. Only alerts leave the machine, with passwords and tokens in command lines masked; the same alert is sent once every 10 minutes, at most 30 a minute. At rest the agent used 20 ms of CPU a minute and 22 MB on a test machine. See [Live detection](https://docs.deaconguard.io/usage/live-detection).
+- **Runtime alerts** and **Live detection stopped** notifications.
+- The upgrade note for agents older than the server says when they can't run live detection yet.
+
+### Changed
+
+- The Helm chart's and the Kustomize base's node agent, and the Compose file's agent, get the `BPF` and `PERFMON` capabilities, to load live detection's watchers.
+- Database schema 32: hosts keep whether live detection runs on them, and its status and alerts.
+
 ## [1.26.0] - 2026-11-01
 
 ### Added
@@ -420,7 +433,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.26.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.27.0...HEAD
+[1.27.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.23.0...v1.24.0

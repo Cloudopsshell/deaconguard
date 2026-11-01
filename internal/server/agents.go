@@ -18,6 +18,7 @@ import (
 	"deaconguard/internal/audit"
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
+	"deaconguard/internal/live"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/store"
 	"deaconguard/internal/target"
@@ -54,6 +55,8 @@ type agentHub struct {
 	// nodeImages hears about the builds agents read from running
 	// containers, so cluster scans needn't download them again.
 	nodeImages func(host store.Host, report map[string]any)
+	// onLive hears about each live detection report.
+	onLive func(host store.Host, previous string, status live.Status, alerts []live.Alert)
 }
 
 type agentScan struct {

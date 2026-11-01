@@ -322,6 +322,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 32 {
+		if err := execInTx(db, schemaV32); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -853,6 +858,45 @@ const schemaV30 = `
 ALTER TABLE network_targets ADD COLUMN web INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE network_targets ADD COLUMN web_paths INTEGER NOT NULL DEFAULT 1;
 PRAGMA user_version = 30;`
+
+// schemaV32 keeps live detection's status and alerts, and whether it runs
+// on each host (1.27.0). It's on for every host, existing ones included.
+const schemaV32 = `
+ALTER TABLE hosts ADD COLUMN live_enabled INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE hosts ADD COLUMN live_test INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE live_status (
+	host_id TEXT PRIMARY KEY REFERENCES hosts (id) ON DELETE CASCADE,
+	state TEXT NOT NULL,
+	reason TEXT NOT NULL DEFAULT '',
+	since TEXT NOT NULL,
+	kernel TEXT NOT NULL DEFAULT '',
+	events_last_hour INTEGER NOT NULL DEFAULT 0,
+	lost INTEGER NOT NULL DEFAULT 0,
+	suppressed INTEGER NOT NULL DEFAULT 0,
+	cpu_percent REAL NOT NULL DEFAULT 0,
+	memory_bytes INTEGER NOT NULL DEFAULT 0,
+	test_error TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE live_alerts (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	host_id TEXT NOT NULL REFERENCES hosts (id) ON DELETE CASCADE,
+	at TEXT NOT NULL,
+	rule TEXT NOT NULL,
+	severity TEXT NOT NULL,
+	title TEXT NOT NULL,
+	detail TEXT NOT NULL DEFAULT '',
+	pid INTEGER NOT NULL DEFAULT 0,
+	user TEXT NOT NULL DEFAULT '',
+	program TEXT NOT NULL DEFAULT '',
+	parent TEXT NOT NULL DEFAULT '',
+	command TEXT NOT NULL DEFAULT '',
+	path TEXT NOT NULL DEFAULT '',
+	test INTEGER NOT NULL DEFAULT 0,
+	repeats INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX live_alerts_by_host ON live_alerts (host_id, id);
+PRAGMA user_version = 32;`
 
 // schemaV31 keeps the SSH keys each host's accounts trust, as
 // fingerprints, so a key trusted on many hosts is found (1.26.0).

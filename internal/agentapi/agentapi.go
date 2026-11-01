@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"deaconguard/internal/agentversion"
+	"deaconguard/internal/live"
 	"deaconguard/internal/scan"
 	"deaconguard/internal/target"
 )
@@ -266,4 +267,28 @@ func ErrNeedsNewerAgent(address, version string) error {
 	}
 	return fmt.Errorf("the advanced antivirus scan needs the DeaconGuard agent 0.5.0 or later on %s, which runs %s; "+
 		"upgrade it there with: curl -fsSL https://get.deaconguard.io | sudo sh -", address, version)
+}
+
+// PathLive receives the agent's live detection status and alerts, as a
+// LiveReport, every LiveInterval or as soon as there are alerts; the reply
+// is a LiveReply (1.27.0 and later).
+const (
+	PathLive     = "live"
+	LiveInterval = 15 * time.Second
+	// MaxLiveAlerts bounds the alerts in one report.
+	MaxLiveAlerts = 100
+)
+
+// LiveReport is the agent's live detection status and the alerts since
+// its last report.
+type LiveReport struct {
+	Status live.Status  `json:"status"`
+	Alerts []live.Alert `json:"alerts,omitempty"`
+}
+
+// LiveReply says whether live detection should run on the machine, and
+// whether someone asked for a test alert.
+type LiveReply struct {
+	Enabled bool `json:"enabled"`
+	Test    bool `json:"test,omitempty"`
 }

@@ -23,6 +23,7 @@ import {
 import { useRefreshAll } from "../lib/hooks";
 import { isActive, severityStyle, timeAgo } from "../lib/format";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
+import { LiveAlertCounts, LiveBadge } from "../components/LiveDetection";
 import { PackageCountsInline } from "../lib/fixes";
 import { ScanDialog } from "../components/ScanDialog";
 import { ClusterBadge, NodeBadge, ThisServerBadge, agentOnline, disconnectedText, groupByCluster, shortConnectionLabel } from "../lib/hosts";
@@ -112,6 +113,7 @@ export function Hosts() {
                 <Th>Host</Th>
                 <Th>Operating system</Th>
                 <Th>Last scan</Th>
+                <Th>Live detection</Th>
                 <Th>Findings</Th>
                 <Th className="text-right">
                   <span className="sr-only">Actions</span>
@@ -214,6 +216,10 @@ function HostRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?: 
         ) : (
           <span className="text-sm text-slate-500 dark:text-slate-400">Never scanned</span>
         )}
+      </Td>
+      <Td>
+        <LiveBadge live={host.live} />
+        <LiveAlertCounts live={host.live} />
       </Td>
       <Td>
         {host.last_report ? (

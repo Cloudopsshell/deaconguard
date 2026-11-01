@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   ArrowLeft,
   CalendarClock,
   ClipboardCheck,
@@ -19,6 +20,7 @@ import { RunAuditDialog } from "../components/RunAuditDialog";
 import { GradeBadge } from "../lib/audit";
 import { useCan } from "../lib/role";
 import { api, type CheckId, type Host, type HostDetail as HostDetailData, type Scan } from "../api";
+import { RuntimeTab, liveStyle } from "../components/LiveDetection";
 import { CheckResultView } from "../components/CheckResultView";
 import { ScanConsole } from "../components/ScanConsole";
 import { ScanDialog } from "../components/ScanDialog";
@@ -477,25 +479,52 @@ function Results({ host, onRun }: { host: HostDetailData; onRun: (check: CheckId
   const tabs = checksFor(host);
   const active: CheckId = requested && tabs.includes(requested) ? requested : tabs[0];
   const checks = host.checks ?? {};
+  // Live detection has its own tab, right after the first, on machines with an agent.
+  const runtime = host.live !== undefined && host.kind !== "cluster";
+  const runtimeOpen = runtime && searchParams.get("tab") === "runtime";
+  const liveAlerts = host.live ? host.live.alerts_24h.critical + host.live.alerts_24h.high : 0;
+  const runtimeTab = runtime ? (
+    <button
+      key="runtime"
+      type="button"
+      role="tab"
+      aria-selected={runtimeOpen}
+      onClick={() => setSearchParams({ tab: "runtime" }, { replace: true })}
+      className={cx(
+        "-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors",
+        runtimeOpen
+          ? "border-indigo-600 text-indigo-700 dark:border-indigo-400 dark:text-indigo-300"
+          : "border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100",
+      )}
+    >
+      <Activity className="size-4" />
+      Runtime
+      {liveAlerts > 0 ? (
+        <span className="rounded-full bg-red-100 px-1.5 text-xs font-semibold text-red-700 tabular-nums dark:bg-red-500/15 dark:text-red-300">{liveAlerts}</span>
+      ) : (
+        <span className={cx("size-1.5 rounded-full", (liveStyle[host.live!.state] ?? liveStyle.stopped).dot)} aria-hidden />
+      )}
+    </button>
+  ) : null;
 
   return (
     <section>
       <div className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800" role="tablist">
-        {tabs.map((check) => {
+        {tabs.map((check, index) => {
           const Icon = checkMeta[check].icon;
           const summary = checks[check];
           const packages = check === "packages" && summary ? packageBadge(summary) : undefined;
           const severity = summary ? topSeverity(packages ? (packages.severity ?? { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 }) : summary.severity) : undefined;
-          return (
+          const button = (
             <button
               key={check}
               type="button"
               role="tab"
-              aria-selected={active === check}
+              aria-selected={!runtimeOpen && active === check}
               onClick={() => setSearchParams(check === "packages" ? {} : { tab: check }, { replace: true })}
               className={cx(
                 "-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors",
-                active === check
+                !runtimeOpen && active === check
                   ? "border-indigo-600 text-indigo-700 dark:border-indigo-400 dark:text-indigo-300"
                   : "border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100",
               )}
@@ -523,9 +552,10 @@ function Results({ host, onRun }: { host: HostDetailData; onRun: (check: CheckId
               )}
             </button>
           );
+          return index === 0 && runtimeTab ? [button, runtimeTab] : button;
         })}
       </div>
-      <CheckTab host={host} check={active} onRun={onRun} />
+      {runtimeOpen ? <RuntimeTab hostId={host.id} /> : <CheckTab host={host} check={active} onRun={onRun} />}
     </section>
   );
 }

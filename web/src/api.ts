@@ -73,6 +73,61 @@ export interface AgentUpgrade {
   checks?: CheckId[];
   /** Upgrades an agent installed with the install script; absent for agents in Kubernetes. */
   command?: string;
+  /** Set when the agent can't run live detection until it's upgraded (1.27.0 and later). */
+  live?: boolean;
+}
+
+/**
+ * Live detection's state on a host: active; off on the dashboard; unsupported by the machine;
+ * stopped; agent_too_old; waiting for the agent's first report; or starting.
+ */
+export type LiveState = "active" | "off" | "unsupported" | "stopped" | "agent_too_old" | "waiting" | "starting";
+
+/** A host's live detection (1.27.0 and later). */
+export interface LiveStatus {
+  state: LiveState;
+  reason?: string;
+  since: string;
+  kernel?: string;
+  events_last_hour: number;
+  lost: number;
+  suppressed: number;
+  cpu_percent: number;
+  memory_bytes: number;
+  test_error?: string;
+  enabled: boolean;
+  /** When the agent last reported. */
+  updated_at?: string;
+  /** The last day's alerts by severity, test alerts left out. */
+  alerts_24h: SeverityCounts;
+  /** For a cluster: its node agents, and how many have detection active. */
+  nodes?: number;
+  nodes_active?: number;
+}
+
+/** One live detection alert. */
+export interface LiveAlert {
+  id: number;
+  host_id: string;
+  at: string;
+  rule: string;
+  severity: Severity;
+  title: string;
+  detail: string;
+  pid: number;
+  user: string;
+  program: string;
+  parent?: string;
+  command?: string;
+  path?: string;
+  test?: boolean;
+  /** The same alerts held back since this one was last sent. */
+  repeats?: number;
+}
+
+export interface LiveDetail {
+  status: LiveStatus | null;
+  alerts: LiveAlert[];
 }
 
 export interface Capabilities {
@@ -396,6 +451,8 @@ export type NotificationEvent =
   | "config"
   | "changes"
   | "paths"
+  | "runtime"
+  | "runtime_stopped"
   | "image_report"
   | "scan_failed"
   | "scan_results"
@@ -713,6 +770,8 @@ export interface HostSummary extends Host {
   /** The machine the DeaconGuard server runs on, scanned by its own agent. */
   this_server?: boolean;
   tags: string[];
+  /** Live detection, for agent hosts and clusters with node agents (1.27.0 and later). */
+  live?: LiveStatus;
 }
 
 export interface HostDetail extends HostSummary {
@@ -1468,6 +1527,9 @@ export const api = {
   version: () => request<{ version: string; commit?: string; date?: string }>("GET", "/api/version"),
   setAllowSudo: (hostId: string, allow: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { allow_sudo: allow }),
   setAutoScanContainers: (hostId: string, on: boolean) => request<Host>("PATCH", `/api/hosts/${hostId}`, { auto_scan_containers: on }),
+  live: (hostId: string) => request<LiveDetail>("GET", `/api/hosts/${hostId}/live`),
+  setLive: (hostId: string, enabled: boolean) => request<LiveDetail>("PUT", `/api/hosts/${hostId}/live`, { enabled }),
+  testLive: (hostId: string) => request<void>("POST", `/api/hosts/${hostId}/live/test`),
   renameHost: (hostId: string, name: string) => request<Host>("PATCH", `/api/hosts/${hostId}`, { name }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
   prompts: () => request<Prompt[]>("GET", "/api/prompts"),
