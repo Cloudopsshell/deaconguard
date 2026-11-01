@@ -84,6 +84,10 @@ var definitions = []Definition{
 		Description: "Records the ports open to the network, login accounts, administrators and sudoers rules, SSH keys, enabled services and scheduled jobs, and reports what changed since the previous scan. Takes under a second.",
 	},
 	{
+		ID: Paths, Name: "Attack paths", Sudo: "recommended",
+		Description: "Looks for the ways an account could become root (sudo rules, the docker group, files root runs that others can change, setuid programs, root's PATH) and for private keys, cloud credentials and .env files other accounts can read. Reads permissions only, never a secret's contents. Takes a few seconds.",
+	},
+	{
 		ID: Antivirus, Name: "Antivirus scan", Sudo: "recommended",
 		Description: "Scans temporary, home, and application directories for malware. Basic runs ClamAV, which the install script sets up; Advanced adds YARA rules.",
 		Warning:     "ClamAV loads its signatures on the host, using about 1 GB of memory, and can take several minutes.",
@@ -158,6 +162,9 @@ type Finding struct {
 	Fixable     bool     `json:"fixable,omitempty"`
 	Exploited   bool     `json:"exploited,omitempty"`
 	Paths       []string `json:"paths,omitempty"`
+	// Path is how an attack path check finding leads to root or to what a
+	// secret opens, step by step, such as ["deploy", "docker group", "root"].
+	Path []string `json:"path,omitempty"`
 }
 
 type Result struct {
@@ -183,6 +190,10 @@ type Result struct {
 	// Snapshot is what the host change check recorded; the server compares
 	// it with the previous one.
 	Snapshot *Snapshot `json:"snapshot,omitempty"`
+	// Keys are the SSH keys the machine's accounts trust, as fingerprints,
+	// from the attack path check; the server finds keys trusted on many
+	// machines (1.26.0 and later).
+	Keys []SnapshotItem `json:"keys,omitempty"`
 }
 
 // Cluster is what the Kubernetes check read of a cluster.
@@ -365,6 +376,8 @@ func Run(id string, executor *Executor, target platform.Platform, now time.Time,
 		result = runHardening(executor, target)
 	case Changes:
 		result = runChanges(executor)
+	case Paths:
+		result = runPaths(executor)
 	case Antivirus:
 		result = runAntivirus(executor, now, inputs)
 	case YARA:

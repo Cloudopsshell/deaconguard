@@ -417,6 +417,7 @@ func macOSSkipped(id string) Result {
 		Containers: "containers on a Mac run inside a Linux virtual machine (Docker Desktop, Podman, Colima); scan that machine or its images instead",
 		Config:     "on a Mac, the hardening audit checks these settings",
 		Changes:    "host changes are recorded on Linux machines only for now",
+		Paths:      "attack paths are checked on Linux machines only for now",
 	}
 	reason, known := reasons[id]
 	if !known {

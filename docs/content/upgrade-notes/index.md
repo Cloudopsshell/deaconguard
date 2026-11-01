@@ -7,10 +7,11 @@ One page per release, newest first: what's new, what to do before you upgrade, a
 
 **Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.17.0 to 1.18.0, the pages for 1.17.1 and 1.18.0. You can upgrade straight to the newest release; you don't need to install each one in turn.
 
-Releases with nothing to do say so. The last 10 minor lines (now 1.16 to 1.25) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
+Releases with nothing to do say so. The last 10 minor lines (now 1.17 to 1.26) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
 
 | Release | Released | What to do |
 | --- | --- | --- |
+| [1.26.0](./v1-26/v1-26-0.md) | 2026-11-01 | Back up: database schema 31; upgrade the agents and schedule the new Attack paths check to use it |
 | [1.25.0](./v1-25/v1-25-0.md) | 2026-11-01 | Back up: database schema 30; tick web checks on existing network targets to use them |
 | [1.24.0](./v1-24/v1-24-0.md) | 2026-11-01 | Nothing |
 | [1.23.0](./v1-23/v1-23-0.md) | 2026-11-01 | Nothing; the Agents page then shows which agents to upgrade |
@@ -24,4 +25,3 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.16 to 1.25) a
 | [1.18.0](./v1-18/v1-18-0.md) | 2026-10-30 | Back up: database schema 28 |
 | [1.17.1](./v1-17/v1-17-1.md) | 2026-10-30 | Nothing; Kubernetes health checks leave the access log |
 | [1.17.0](./v1-17/v1-17-0.md) | 2026-10-29 | Small servers: check the memory for parsed feeds |
-| [1.16.0](./v1-16/v1-16-0.md) | 2026-10-29 | Nothing; slow requests and high CPU are now logged |

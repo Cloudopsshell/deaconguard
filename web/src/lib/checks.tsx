@@ -1,9 +1,9 @@
 import type { ComponentType } from "react";
-import { Boxes, Bug, Container, FileCheck2, History, Radar, ScanSearch, Ship, ShieldCheck, Skull, SlidersHorizontal } from "lucide-react";
+import { Boxes, Bug, Container, FileCheck2, History, Route, Radar, ScanSearch, Ship, ShieldCheck, Skull, SlidersHorizontal } from "lucide-react";
 import type { CheckId, CheckStatus, SeverityCounts } from "../api";
 import { severityOrder } from "./format";
 
-export const checkOrder: CheckId[] = ["packages", "libraries", "containers", "integrity", "malware", "config", "changes", "antivirus", "yara", "kubernetes"];
+export const checkOrder: CheckId[] = ["packages", "libraries", "containers", "integrity", "malware", "config", "changes", "paths", "antivirus", "yara", "kubernetes"];
 
 /** The checks a host runs: a Kubernetes cluster only the Kubernetes check, a machine every other. */
 /** The checks a host runs: a cluster only the Kubernetes check, a Mac the macOS checks, and a machine every other. */
@@ -21,6 +21,7 @@ export const checkMeta: Record<CheckId, { label: string; short: string; icon: Co
   malware: { label: "Malware indicators", short: "Malware", icon: Skull },
   config: { label: "Configuration", short: "Config", icon: SlidersHorizontal },
   changes: { label: "Host changes", short: "Changes", icon: History },
+  paths: { label: "Attack paths", short: "Paths", icon: Route },
   hardening: { label: "Hardening", short: "Hardening", icon: ShieldCheck },
   antivirus: { label: "Antivirus", short: "ClamAV", icon: ScanSearch },
   yara: { label: "Advanced antivirus", short: "YARA", icon: Radar },
