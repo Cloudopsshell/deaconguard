@@ -7,9 +7,9 @@ description: Find what's vulnerable, misconfigured or compromised across your Li
 
 **Find what's vulnerable, misconfigured or compromised**, across your Linux servers, Kubernetes clusters and container images, from one dashboard you host.
 
-On Linux machines, DeaconGuard finds vulnerable packages, tampered system files, signs of compromise and risky configuration. It checks [images in registries and pipelines](./usage/images.md) without running them, [Dockerfiles and Kubernetes manifests](./usage/config-checks.md) before they are deployed, [running Kubernetes clusters](./usage/kubernetes.md) through their API, read-only, and [TLS and open ports](./usage/network.md) on networks you own, from the outside.
+On Linux machines, DeaconGuard finds vulnerable packages, tampered system files, signs of compromise and risky configuration. It checks [images in registries and pipelines](./usage/images.md) without running them, [Dockerfiles and Kubernetes manifests](./usage/config-checks.md) before they are deployed, [running Kubernetes clusters](./usage/kubernetes.md) through their API, read-only, and [TLS, open ports and web sites](./usage/network.md) on networks you own, from the outside.
 
-It checks installed packages and the running kernel against each distribution's **own security data**: Canonical's OVAL feeds for Ubuntu, the Debian Security Tracker, the OVAL feeds of Red Hat, AlmaLinux, Oracle and SUSE, the errata of Rocky Linux and Fedora, and Amazon Linux's ALAS bulletins. It also tells you when a release no longer gets security fixes. Optional checks add [system file integrity, malware and compromise indicators, security configuration, and an antivirus scan with ClamAV, or ClamAV and YARA rules](./checks.md).
+It checks installed packages and the running kernel against each distribution's **own security data**: Canonical's OVAL feeds for Ubuntu, the Debian Security Tracker, the OVAL feeds of Red Hat, AlmaLinux, Oracle and SUSE, the errata of Rocky Linux and Fedora, and Amazon Linux's ALAS bulletins. It also tells you when a release no longer gets security fixes. Optional checks add [system file integrity, malware and compromise indicators, security configuration, a hardening audit, host changes since the previous scan, and an antivirus scan with ClamAV, or ClamAV and YARA rules](./checks.md). [Server audits](./usage/audits.md) map to NIST 800-53, PCI DSS, HIPAA, ISO 27001 and, on Ubuntu and RHEL, the [DISA STIG](./usage/compliance.md#disa-stig).
 
 import ThemedImage from '@theme/ThemedImage';
 import Link from '@docusaurus/Link';
@@ -41,7 +41,7 @@ One binary does two jobs, and they are kept apart on purpose:
 
 | Component | Runs as | Listens on | Reaches |
 | --- | --- | --- | --- |
-| `deaconguard-server` | the `deaconguard` user, no root | `0.0.0.0:8443` for people, `0.0.0.0:8444` for agents (HTTPS) | the distributions' advisory feeds |
+| `deaconguard-server` | the `deaconguard` user, no root | `0.0.0.0:8443` for people, `0.0.0.0:8444` for agents (HTTPS) | the distributions' advisory feeds and OSV; registries and network targets only when you add them |
 | `deaconguard-agent` | root | nothing | only its server |
 
 </div>

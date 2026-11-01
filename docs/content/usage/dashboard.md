@@ -14,7 +14,7 @@ The server serves the dashboard over HTTPS with sign-in, optionally [with two-st
 - **Vulnerabilities:** each vulnerability, with its CVSS score and exploitation, most urgent first, and the hosts it affects. See [Vulnerabilities and what to fix first](./vulnerabilities.md).
 - **Images:** container images in registries, checked without running them, with each one's results and scan history, and registry logins for private images (admins). See [Images in registries](./images.md).
 - **Network:** networks and names the server scans on a schedule for open ports, exposed services, TLS problems and web site problems, with each target's latest result and history. See [TLS, network and web checks](./network.md#in-the-dashboard).
-- **Agents** (server only): enrolled agents, their status and the server port each uses, and enrollment tokens. With an [agent port](../security/securing-the-dashboard.md#give-agents-their-own-port), it shows which agents have moved to it.
+- **Agents** (server only): enrolled agents, their status, version and the server port each uses, and enrollment tokens. An agent older than the server shows **Upgrade to** the server's version, with the command that upgrades it; see [Which agents to upgrade](../installation/upgrade.md#which-agents-to-upgrade). With an [agent port](../security/securing-the-dashboard.md#give-agents-their-own-port), it shows which agents have moved to it.
 - **Schedules:** automatic scans on chosen days. See [Schedules](#schedules).
 - **Logs:** what the server and each agent did. See [Logs](#logs).
 - **Audit log** (server only, admins): sign-ins, account changes, tokens, enrollments, scans and removals.
