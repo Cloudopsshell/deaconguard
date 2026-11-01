@@ -263,3 +263,37 @@ func TestVersionFiveDatabaseLosesOnlySSHLeftovers(t *testing.T) {
 		}
 	}
 }
+
+func TestHostKeys(t *testing.T) {
+	withTempDataDir(t)
+	var ids []string
+	for _, address := range []string{"web-1", "web-2", "db-1"} {
+		ids = append(ids, addTestHost(t, address, TransportLocal).ID)
+	}
+	if err := SetHostKeys(ids[0], []HostKey{{Account: "deploy", Fingerprint: "SHA256:a"}, {Account: "root", Fingerprint: "SHA256:b", Root: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetHostKeys(ids[1], []HostKey{{Account: "deploy", Fingerprint: "SHA256:a"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetHostKeys(ids[2], []HostKey{{Account: "root", Fingerprint: "SHA256:a", Root: true}}); err != nil {
+		t.Fatal(err)
+	}
+	found, err := KeyHosts(ids[0], []string{"SHA256:a", "SHA256:b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found["SHA256:a"]) != 2 || found["SHA256:a"][0].Host != "db-1" || !found["SHA256:a"][0].Root || found["SHA256:a"][1].Host != "web-2" || len(found["SHA256:b"]) != 0 {
+		t.Fatalf("found: %+v", found)
+	}
+	// A new record replaces the last; removing a host removes its keys.
+	if err := SetHostKeys(ids[1], nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RemoveHost(ids[2]); err != nil {
+		t.Fatal(err)
+	}
+	if found, _ := KeyHosts(ids[0], []string{"SHA256:a"}); len(found["SHA256:a"]) != 0 {
+		t.Fatalf("after: %+v", found)
+	}
+}

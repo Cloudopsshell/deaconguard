@@ -13,7 +13,7 @@ Run `deaconguard help` for this list on your machine, and `deaconguard version` 
 | `deaconguard host list` | List hosts, with each agent's version; marks agents older than the server and prints the command that upgrades them. |
 | `deaconguard host sudo HOST_ID on\|off` | Allow or stop the deeper checks using sudo. |
 | `deaconguard host remove HOST_ID` | Remove a host; for an agent host, also revoke its agent. |
-| `deaconguard scan HOST_ID [--checks LIST] [--json]` | Scan a host. `LIST` is a comma-separated choice of `packages,libraries,containers,integrity,malware,config,changes,hardening,antivirus,yara`. |
+| `deaconguard scan HOST_ID [--checks LIST] [--json]` | Scan a host. `LIST` is a comma-separated choice of `packages,libraries,containers,integrity,malware,config,changes,paths,hardening,antivirus,yara`. |
 | `deaconguard scan --local [--allow-sudo] [--checks LIST] [--json]` | Scan this machine without registering it. |
 | `deaconguard report REPORT_ID [--json]` | Show a saved report. |
 | `deaconguard config scan PATH... [--fail-on SEVERITY] [--skip RULE,...] [--format FORMAT] [--output FILE]` | Check [Dockerfiles and Kubernetes manifests](../usage/config-checks.md); folders are walked, and `-` reads standard input, such as `helm template` output. Exits with status 4 at or above `--fail-on`. `--format` is `table`, `json`, `sarif` or `junit`. |

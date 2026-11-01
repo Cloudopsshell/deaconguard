@@ -56,6 +56,7 @@ const (
 	EventExposure     = "exposure"      // a network scan has new critical or high findings
 	EventConfig       = "config"        // a host's security configuration has new findings
 	EventChanges      = "changes"       // a host has new ports, accounts, administrators, SSH keys, services or scheduled jobs
+	EventPaths        = "paths"         // a host has a new high or critical way to root, or a newly exposed secret
 	EventScanResults  = "scan_results"  // a host scan finished: a summary of what it found
 	EventDigest       = "digest"        // the daily or weekly summary
 	EventImageReport  = "image_report"  // a watched repository's new push was scanned
@@ -63,7 +64,7 @@ const (
 )
 
 // Events lists the events channels subscribe to, in the dashboard's order.
-var Events = []string{EventExploited, EventCritical, EventMalware, EventIntegrity, EventCluster, EventExposure, EventConfig, EventChanges, EventImageReport, EventScanFailed, EventScanResults, EventAudit, EventAgentOffline, EventDigest}
+var Events = []string{EventExploited, EventCritical, EventMalware, EventIntegrity, EventCluster, EventExposure, EventConfig, EventChanges, EventPaths, EventImageReport, EventScanFailed, EventScanResults, EventAudit, EventAgentOffline, EventDigest}
 
 // Levels say how urgent a message is.
 const (

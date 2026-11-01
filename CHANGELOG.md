@@ -8,6 +8,13 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-11-01
+
+### Added
+
+- **Attack paths**, a new check (`paths`): it finds the ways an account on a Linux machine could become root, and the secrets other accounts can read. Ways to root: sudo rules that need no password for everything, or that run a program which opens a shell or writes any file, such as `vim`, `find` or `python3`; members of the `docker`, `lxd` and `disk` groups; container runtime sockets other accounts can use; files root runs (from its crontabs, `/etc/cron.d`, the `cron.daily` folders, services running as root, unit files and sudo rules) that another account, or the folder they're in, lets someone change; folders in root's PATH others can write to; setuid programs in system folders that open a shell; and file capabilities that give root (`DG-AP-001` to `DG-AP-008`). Secrets: private SSH and host keys, cloud and service credentials (AWS, Google Cloud, Azure, Kubernetes, Docker, `.netrc`, `.git-credentials`, `.pgpass`, `.my.cnf`) and `.env` files that accounts other than the owner can read (`DG-AP-010` to `DG-AP-012`); their contents are never read, only their names and permissions. The server adds `DG-AP-020` for an SSH key trusted on 3 or more machines, from the fingerprints the agents send. The scan's tab shows each finding as a chain, such as `deploy > docker group > root`. It reads, at the lowest CPU priority, and took about a tenth of a second on a test machine. See [Attack paths](https://docs.deaconguard.io/usage/attack-paths). Needs agent 1.26.0 or later.
+- **Attack paths notifications:** a channel that ticks **Attack paths** hears about each new high or critical finding of the check.
+
 ## [1.25.0] - 2026-11-01
 
 ### Added
@@ -413,7 +420,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.25.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.26.0...HEAD
+[1.26.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.22.0...v1.23.0
