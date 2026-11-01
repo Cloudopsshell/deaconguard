@@ -59,6 +59,8 @@ func Run(arguments []string, input io.Reader, output, diagnostics io.Writer) int
 		err = runNet(arguments[1:], output, diagnostics)
 	case "tls":
 		err = runTLS(arguments[1:], output, diagnostics)
+	case "web":
+		err = runWeb(arguments[1:], output, diagnostics)
 	case "serve":
 		err = runServe(arguments[1:], output)
 	case "record-stop":
@@ -517,11 +519,17 @@ Scanning:
   deaconguard tls check HOST[:PORT]... [--fail-on SEVERITY] [--format table|json|sarif|junit] [--output FILE]
                                        check TLS services: certificate expiry, trust and name, old
                                        protocols, weak ciphers and keys (handshakes only)
-  deaconguard net scan TARGET... [--ports default|LIST] [--tls] [--concurrency N] [--max-addresses N]
+  deaconguard net scan TARGET... [--ports default|LIST] [--tls] [--web [--no-paths]] [--concurrency N] [--max-addresses N]
                          [--fail-on SEVERITY] [--format table|json|sarif|junit] [--output FILE]
                                        find open ports on addresses, ranges (10.0.0.0/24) or names,
                                        what answers there, and exposed databases, Docker, kubelets or
-                                       cleartext logins; scan only networks you own or may test
+                                       cleartext logins; --web also checks each web site found;
+                                       scan only networks you own or may test
+  deaconguard web check URL... [--no-paths] [--timeout 5s]
+                         [--fail-on SEVERITY] [--format table|json|sarif|junit] [--output FILE]
+                                       check web sites without logging in: published .git and .env
+                                       files, public status and debug pages, CORS, HTTPS redirects,
+                                       cookies and security headers (about 15 GET requests a site)
   deaconguard audit HOST_ID [--advanced] [--json]
                                        handover audit: every check, the hardening baseline,
                                        and a grade; --advanced adds the YARA antivirus scan

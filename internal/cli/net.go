@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,9 +17,10 @@ import (
 )
 
 const (
-	netUsage = "usage: deaconguard net scan TARGET... [--ports default|LIST] [--tls] [--concurrency N] [--timeout 2s] [--max-addresses 4096]\n" +
+	netUsage = "usage: deaconguard net scan TARGET... [--ports default|LIST] [--tls] [--web [--no-paths]] [--concurrency N] [--timeout 2s] [--max-addresses 4096]\n" +
 		"                             [--fail-on SEVERITY] [--skip RULE,...] [--format table|json|sarif|junit] [--output FILE]"
 	tlsUsage = "usage: deaconguard tls check HOST[:PORT]... [--fail-on SEVERITY] [--skip RULE,...] [--format table|json|sarif|junit] [--output FILE]"
+	webUsage = "usage: deaconguard web check URL... [--no-paths] [--timeout 5s] [--fail-on SEVERITY] [--skip RULE,...] [--format table|json|sarif|junit] [--output FILE]"
 )
 
 // reportFlags are the output flags config, kube, net and tls commands share.
@@ -142,7 +144,7 @@ func runNet(arguments []string, output, diagnostics io.Writer) error {
 	}
 	flags := reportFlags{format: "table", skip: map[string]bool{}}
 	options := netscan.Options{Concurrency: 64, Timeout: 2 * time.Second}
-	maxAddresses, portSpec := 4096, ""
+	maxAddresses, portSpec, noPaths := 4096, "", false
 	var arguments2 []string
 	rest := arguments[1:]
 	for index := 0; index < len(rest); index++ {
@@ -157,6 +159,10 @@ func runNet(arguments []string, output, diagnostics io.Writer) error {
 		switch {
 		case argument == "--tls":
 			options.TLS = true
+		case argument == "--web":
+			options.Web, options.WebPaths = true, true
+		case argument == "--no-paths":
+			noPaths = true
 		case strings.HasPrefix(argument, "--ports"):
 			portSpec, err = value()
 		case strings.HasPrefix(argument, "--concurrency"):
@@ -188,6 +194,12 @@ func runNet(arguments []string, output, diagnostics io.Writer) error {
 	}
 	if len(arguments2) == 0 {
 		return errors.New(netUsage)
+	}
+	if noPaths {
+		if !options.Web {
+			return errors.New("--no-paths goes with --web")
+		}
+		options.WebPaths = false
 	}
 	var err error
 	if options.Ports, err = netscan.ParsePorts(portSpec); err != nil {
@@ -221,6 +233,7 @@ func runNet(arguments []string, output, diagnostics io.Writer) error {
 				fmt.Fprintf(output, "  %5d/tcp  %s\n", service.Port, detail)
 			}
 		}
+		printSites(output, result.Web)
 	}
 	result.Findings = skipRules(result.Findings, flags.skip)
 	open := 0
@@ -232,4 +245,98 @@ func runNet(arguments []string, output, diagnostics io.Writer) error {
 		summary: fmt.Sprintf("Scanned %d %s: %d with open ports, %d open %s", result.Addresses, pluralWord(result.Addresses, "address", "addresses"),
 			len(result.Hosts), open, pluralWord(open, "port", "ports")),
 	}, flags.format, flags.output, flags.failOn, output, diagnostics)
+}
+
+// printSites lists the web sites checked, for the table format.
+func printSites(output io.Writer, sites []netscan.WebInfo) {
+	for _, site := range sites {
+		line := fmt.Sprintf("%s: %d", site.URL, site.Status)
+		if site.FinalURL != "" {
+			line += " → " + site.FinalURL
+		}
+		if site.Server != "" {
+			line += ", " + site.Server
+		}
+		fmt.Fprintf(output, "%s (%d %s)\n", line, site.Requests, pluralWord(site.Requests, "request", "requests"))
+	}
+}
+
+// runWeb handles `deaconguard web check`: GET requests only, without
+// logging in, to a fixed list of paths.
+func runWeb(arguments []string, output, diagnostics io.Writer) error {
+	if len(arguments) == 0 || arguments[0] != "check" {
+		return errors.New(webUsage)
+	}
+	flags := reportFlags{format: "table", skip: map[string]bool{}}
+	options := netscan.WebOptions{Paths: true, Timeout: 5 * time.Second}
+	var sites []*url.URL
+	rest := arguments[1:]
+	for index := 0; index < len(rest); index++ {
+		argument := rest[index]
+		value := argumentValue(rest, &index)
+		if ok, err := flags.parse(argument, value); err != nil {
+			return err
+		} else if ok {
+			continue
+		}
+		switch {
+		case argument == "--no-paths":
+			options.Paths = false
+		case strings.HasPrefix(argument, "--timeout"):
+			v, err := value()
+			if err == nil {
+				options.Timeout, err = time.ParseDuration(v)
+			}
+			if err != nil || options.Timeout <= 0 {
+				return errors.New("--timeout is a duration such as 5s")
+			}
+		case strings.HasPrefix(argument, "-"):
+			return errors.New(webUsage)
+		default:
+			site, err := netscan.SiteURL(argument)
+			if err != nil {
+				return err
+			}
+			sites = append(sites, site)
+		}
+	}
+	if len(sites) == 0 {
+		return errors.New(webUsage)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	var findings []iac.Finding
+	var infos []netscan.WebInfo
+	var notes []string
+	for _, site := range sites {
+		fmt.Fprintf(diagnostics, "Checking %s. Check only sites you own or may test.\n", site)
+		siteOptions := options
+		// Plain HTTP should send visitors to HTTPS when the host has it.
+		siteOptions.HTTPS = site.Scheme == "http" && speaksHTTPS(ctx, site.Hostname(), options.Timeout)
+		info, found, err := netscan.CheckWeb(ctx, site, siteOptions)
+		if err != nil {
+			notes = append(notes, err.Error())
+			continue
+		}
+		infos = append(infos, info)
+		findings = append(findings, found...)
+	}
+	if flags.format == "table" {
+		printSites(output, infos)
+	}
+	findings = skipRules(findings, flags.skip)
+	names := make([]string, len(sites))
+	for index, site := range sites {
+		names[index] = site.String()
+	}
+	return writeFindings(findingsReport{
+		findings: findings, notes: notes, document: map[string]any{"web": infos, "findings": findings, "notes": notes},
+		suite: strings.Join(names, " "), summary: fmt.Sprintf("Checked %d of %d %s", len(infos), len(sites), pluralWord(len(sites), "site", "sites")),
+	}, flags.format, flags.output, flags.failOn, output, diagnostics)
+}
+
+// speaksHTTPS says whether host answers a TLS handshake on port 443.
+func speaksHTTPS(ctx context.Context, host string, timeout time.Duration) bool {
+	_, err := netscan.Handshake(ctx, net.JoinHostPort(host, "443"), host, timeout)
+	return err == nil
 }
