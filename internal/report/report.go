@@ -425,6 +425,8 @@ func RequirementLabel(status string) string {
 		return "Not met"
 	case compliance.NotChecked:
 		return "Not checked"
+	case compliance.Partial:
+		return "Partly checked"
 	}
 	return "Not applicable"
 }

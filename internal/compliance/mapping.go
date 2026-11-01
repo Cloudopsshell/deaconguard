@@ -6,6 +6,9 @@ const (
 	PCI   = "pci-dss-4"
 	HIPAA = "hipaa"
 	ISO   = "iso-27001"
+	// STIG is the DISA STIG for the audited machine's operating system
+	// (1.24.0 and later); its rules come from the controls' own mapping.
+	STIG = "disa-stig"
 )
 
 var frameworks = []Framework{
@@ -46,6 +49,7 @@ var frameworks = []Framework{
 		"8.15": "Logging", "8.16": "Monitoring activities", "8.17": "Clock synchronization", "8.19": "Installation of software on operational systems",
 		"8.20": "Networks security", "8.24": "Use of cryptography",
 	}},
+	{ID: STIG, Name: "DISA STIG for the machine's operating system", Short: "DISA STIG"},
 }
 
 // checkTitles name the checks that count as evidence alongside controls.

@@ -13,7 +13,7 @@ import (
 // rows lists every item of a report, one per row: controls, vulnerabilities
 // and other findings, for CSV and the Excel workbook's Items sheet.
 func rows(report Report) [][]string {
-	table := [][]string{{"Type", "ID", "Title", "Severity", "Status", "Details", "How to fix", "CVSS", "EPSS", "Known exploited"}}
+	table := [][]string{{"Type", "ID", "Title", "Severity", "Status", "Details", "How to fix", "CVSS", "EPSS", "Known exploited", "DISA STIG"}}
 	if report.Audit != nil {
 		for _, control := range report.Audit.Controls {
 			details := control.Evidence
@@ -21,7 +21,7 @@ func rows(report Report) [][]string {
 				details += " | accepted by " + control.Exception.CreatedBy + ": " + control.Exception.Reason
 			}
 			table = append(table, []string{"Control", control.ID, control.Title, strings.ToUpper(control.Severity),
-				StatusLabel(control.Status), details, control.Remediation})
+				StatusLabel(control.Status), details, control.Remediation, "", "", "", STIGIDs(control.STIG)})
 		}
 	}
 	for _, result := range report.Policies {

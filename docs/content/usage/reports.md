@@ -12,7 +12,7 @@ On an audit's page, or a scan's report page, choose **Create report** (as an ope
 - **Prepared for**: the client or team receiving it. Optional.
 - **Notes**: shown on the summary page, for example what was handed over. Optional.
 - **Compare with** (audits only): the audit before this one, a chosen earlier audit, or nothing. The report then lists the controls fixed since then, any that started failing, and the earlier grade and score.
-- **Include a compliance mapping for** (audits only): any of NIST SP 800-53, PCI DSS, HIPAA and ISO/IEC 27001. Each gets a section with its requirements, their status and their evidence. See [Compliance](./compliance.md).
+- **Include a compliance mapping for** (audits only): any of NIST SP 800-53, PCI DSS, HIPAA, ISO/IEC 27001 and the DISA STIG for the machine's operating system (1.24.0 and later). Each gets a section with its requirements, their status and their evidence. See [Compliance](./compliance.md).
 
 Reports of audits also include your enabled [policies](./policies.md). Reports of scans from 0.19.0 say whether the machine's release still got security fixes, under **Release support** (see [Release lifecycle](../supported-distributions.md#release-lifecycle)).
 
