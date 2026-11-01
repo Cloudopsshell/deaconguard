@@ -1,6 +1,6 @@
-import { Info, ShieldCheck } from "lucide-react";
+import { ChevronRight, Info, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "react-router";
-import type { CheckId, CheckResult } from "../api";
+import type { CheckFinding, CheckId, CheckResult } from "../api";
 import { checkStatusStyle } from "../lib/checks";
 import { normalizeSeverity, severityOrder } from "../lib/format";
 import { Card, CardHeader, EmptyState, ErrorMessage, SeverityBadge, Table, Td, Th, cx } from "./ui";
@@ -48,6 +48,8 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
       </Card>
 
       {check === "containers" && (result.containers ?? []).length > 0 && <ContainersTable containers={result.containers ?? []} />}
+
+      {check === "paths" && <AttackPaths findings={findings} />}
 
       {result.status !== "skipped" && result.status !== "failed" && !containerOpen && (
         <Card>
@@ -111,5 +113,38 @@ export function CheckResultView({ check, name, result }: { check: CheckId; name:
         </Card>
       )}
     </div>
+  );
+}
+
+/** The attack path check's findings as chains, from who to root or to what a secret opens. */
+function AttackPaths({ findings }: { findings: CheckFinding[] }) {
+  const paths = findings.filter((finding) => (finding.path ?? []).length > 1);
+  if (paths.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader title="Paths" description="How an account, or whoever gets into one, could reach root or what a secret opens" />
+      <ul className="divide-y divide-slate-200 dark:divide-slate-800">
+        {paths.map((finding, index) => (
+          <li key={`${finding.rule}-${index}`} className="flex flex-wrap items-center gap-x-1.5 gap-y-1 px-5 py-2.5 text-sm">
+            <SeverityBadge severity={normalizeSeverity(finding.severity)} />
+            {(finding.path ?? []).map((step, position, steps) => (
+              <span key={position} className="inline-flex items-center gap-1.5">
+                <span
+                  className={cx(
+                    "rounded-md px-1.5 py-0.5 break-all",
+                    position === steps.length - 1
+                      ? "bg-red-50 font-medium text-red-800 ring-1 ring-red-600/20 ring-inset dark:bg-red-500/10 dark:text-red-200 dark:ring-red-400/30"
+                      : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+                  )}
+                >
+                  {step}
+                </span>
+                {position < steps.length - 1 && <ChevronRight className="size-3.5 shrink-0 text-slate-400" aria-label="then" />}
+              </span>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

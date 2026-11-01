@@ -15,7 +15,7 @@ const everyDay = [0, 1, 2, 3, 4, 5, 6];
 const weekdays = [1, 2, 3, 4, 5];
 
 /** The checks a schedule can run; the advanced antivirus scan is a level of the antivirus check. */
-const scheduleChecks: CheckId[] = ["packages", "integrity", "malware", "config", "changes", "antivirus", "kubernetes"];
+const scheduleChecks: CheckId[] = ["packages", "integrity", "malware", "config", "changes", "paths", "antivirus", "kubernetes"];
 
 /**
  * The editable fields of a schedule. The server refuses unknown fields, so

@@ -11,7 +11,7 @@ import (
 
 // CheckSince is the agent version (major, minor) that added each check that
 // older agents don't have.
-var CheckSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}, "containers": {1, 2}, "kubernetes": {1, 5}, "changes": {1, 22}}
+var CheckSince = map[string][2]int{"yara": {0, 5}, "hardening": {0, 12}, "libraries": {1, 1}, "containers": {1, 2}, "kubernetes": {1, 5}, "changes": {1, 22}, "paths": {1, 26}}
 
 // SupportsCheck reports whether an agent of version runs check. Builds
 // without a release version, such as "dev", are assumed to.

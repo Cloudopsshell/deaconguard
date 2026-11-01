@@ -243,6 +243,9 @@ func (s *Server) scanFinished(host store.Host, scanID string, failure error) {
 	if slices.Contains(record.Checks, checks.Changes) {
 		s.newFindings(host, record, scanLink, checks.Changes, notify.EventChanges, "MEDIUM", "change since the previous scan", "changes since the previous scan")
 	}
+	if slices.Contains(record.Checks, checks.Paths) {
+		s.newFindings(host, record, scanLink, checks.Paths, notify.EventPaths, "HIGH", "new attack path or exposed secret", "new attack paths or exposed secrets")
+	}
 	counts, err := store.ScanCheckCounts(scanID)
 	if err != nil {
 		serverLog(host.ID, store.LogError, "Could not read the results of the scan of %s for notifications: %v", host.Address, err)

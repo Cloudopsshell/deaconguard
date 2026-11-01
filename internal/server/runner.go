@@ -172,6 +172,9 @@ func (r *runner) finish(host store.Host, scanID string, log *eventLog, report ma
 		err = compareChanges(host, scanID, report)
 	}
 	if err == nil {
+		sharedKeys(host, scanID, report)
+	}
+	if err == nil {
 		err = store.CompleteScan(scanID, report)
 	}
 	elapsed := time.Since(started).Round(time.Second)
@@ -213,6 +216,58 @@ func compareChanges(host store.Host, scanID string, report map[string]any) error
 	}
 	previous, _ := previousCheckResult(host, record, checks.Changes)
 	return scan.EvaluateChanges(report, previous.Snapshot)
+}
+
+// sharedKeys records the SSH keys the attack path check found the host's
+// accounts trust, and reports those many other hosts trust too. A failure
+// leaves the scan as it is: the check's own findings still stand.
+func sharedKeys(host store.Host, scanID string, report map[string]any) {
+	record, err := store.GetScan(scanID)
+	if err != nil || !slices.Contains(record.Checks, checks.Paths) {
+		return
+	}
+	encoded, _ := json.Marshal(report["check_results"])
+	var results map[string]checks.Result
+	if json.Unmarshal(encoded, &results) != nil {
+		return
+	}
+	result, ok := results[checks.Paths]
+	// Without sudo the keys weren't read; the last record stands.
+	if !ok || !result.Privileged || result.Status == checks.StatusFailed || result.Status == checks.StatusSkipped {
+		return
+	}
+	keys := make([]store.HostKey, 0, len(result.Keys))
+	var fingerprints []string
+	seen := map[string]bool{}
+	for _, item := range result.Keys {
+		account, fingerprint := scan.KeyFingerprint(item)
+		if fingerprint == "" {
+			continue
+		}
+		keys = append(keys, store.HostKey{Account: account, Fingerprint: fingerprint, Root: item.Root, Text: item.Text})
+		if !seen[fingerprint] {
+			seen[fingerprint] = true
+			fingerprints = append(fingerprints, fingerprint)
+		}
+	}
+	if err := store.SetHostKeys(host.ID, keys); err != nil {
+		serverLog(host.ID, store.LogError, "Could not record the SSH keys of %s: %v", host.Address, err)
+		return
+	}
+	found, err := store.KeyHosts(host.ID, fingerprints)
+	if err != nil {
+		serverLog(host.ID, store.LogError, "Could not compare the SSH keys of %s with other hosts: %v", host.Address, err)
+		return
+	}
+	others := map[string][]scan.KeyHost{}
+	for fingerprint, hosts := range found {
+		for _, other := range hosts {
+			others[fingerprint] = append(others[fingerprint], scan.KeyHost{Host: other.Host, Account: other.Account, Root: other.Root})
+		}
+	}
+	if err := scan.EvaluateSharedKeys(report, others); err != nil {
+		serverLog(host.ID, store.LogError, "Could not compare the SSH keys of %s with other hosts: %v", host.Address, err)
+	}
 }
 
 // ask pauses the scan until the user answers prompt in the browser.
