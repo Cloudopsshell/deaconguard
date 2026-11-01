@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- The server could count a parsed advisory feed as smaller than it is when an older feed was dropped to make room for it, and then keep it although it was over the memory budget for parsed feeds.
+
 ## [1.22.0] - 2026-11-01
 
 ### Added

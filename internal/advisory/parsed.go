@@ -117,6 +117,8 @@ func parsedOnce[T any](kind string, data []byte, parse func() (T, error)) (T, er
 // measuredParse parses, and says how much memory the result holds: the
 // growth over the parse of the heap memory in use, between two collections,
 // which counts the pages its many small objects take, not only the objects.
+// Two collections come first: memory a dropped feed held can still be in use
+// after one, and freeing it during the parse would hide part of the result.
 // Room is made first, so the feeds kept and the one being parsed fit in the
 // budget together, rather than only once the parse is done.
 func measuredParse[T any](key string, budget int64, parse func() (T, error)) (T, int64, error) {
@@ -124,6 +126,7 @@ func measuredParse[T any](key string, budget int64, parse func() (T, error)) (T,
 	defer parsedFeeds.parsing.Unlock()
 	makeRoom(key, budget)
 	var before, after runtime.MemStats
+	runtime.GC()
 	runtime.GC()
 	runtime.ReadMemStats(&before)
 	value, err := parse()
