@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"deaconguard/internal/agentapi"
+	"deaconguard/internal/agentversion"
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
 	"deaconguard/internal/local"
@@ -238,6 +239,8 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 	}
 	backoff := time.Duration(0)
 	connected := false
+	// nudged is the server version the agent last compared itself with.
+	nudged := ""
 	var lastMove, failingSince time.Time
 	for ctx.Err() == nil {
 		if backoff > 0 {
@@ -290,6 +293,13 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 			connected = true
 			log.info("Connected to %s; waiting for scans", config.ServerURL)
 		}
+		// Said once per server version, so the log doesn't fill with it.
+		if server := client.server(); server != nudged {
+			nudged = server
+			if message := upgradeNudge(server, config); message != "" {
+				log.warn("%s", message)
+			}
+		}
 		// The server keeps a port for agents and asked this one to use it.
 		if port := client.agentPort(); port != "" && time.Since(lastMove) >= moveRetry {
 			lastMove = time.Now()
@@ -313,6 +323,21 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 		log.send(ctx, client)
 	}
 	return nil
+}
+
+// upgradeNudge says how to upgrade this agent when it's older than server,
+// or nothing when it isn't.
+func upgradeNudge(server string, config Config) string {
+	kubernetes := config.Cluster != "" || os.Getenv("KUBERNETES_SERVICE_HOST") != ""
+	upgrade := agentversion.UpgradeFor(buildinfo.Version, server, kubernetes)
+	if upgrade == nil {
+		return ""
+	}
+	message := fmt.Sprintf("The server runs DeaconGuard %s and this agent %s: ", upgrade.To, buildinfo.Version)
+	if upgrade.Command != "" {
+		return message + "upgrade it with: " + upgrade.Command
+	}
+	return message + "upgrade its Helm release, or the image tag in its Kustomize overlay, to " + upgrade.To
 }
 
 func runJob(ctx context.Context, client *client, config Config, job agentapi.Job) error {
@@ -408,6 +433,14 @@ type client struct {
 	newContainers int
 	// deferred is set when the server deferred the scan they asked for.
 	deferred bool
+	// serverVersion is the version the server last said it runs.
+	serverVersion string
+}
+
+func (c *client) server() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.serverVersion
 }
 
 // takeDeferred reports whether the server deferred the last count of new
@@ -582,6 +615,9 @@ func (c *client) exchange(ctx context.Context, method, path string, body any, li
 		c.mu.Lock()
 		c.suggestedPort = port
 		c.deferred = c.deferred || reply.Header.Get(agentapi.HeaderChangesDeferred) == "1"
+		if version := reply.Header.Get(agentapi.HeaderServerVersion); version != "" {
+			c.serverVersion = version
+		}
 		c.mu.Unlock()
 	}
 	contents, err := io.ReadAll(io.LimitReader(reply.Body, limit+1))

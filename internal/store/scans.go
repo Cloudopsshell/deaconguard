@@ -631,6 +631,7 @@ func HostSummaries() ([]HostSummary, error) {
 		}
 		summary.ThisServer = serverHost != "" && host.ID == serverHost
 		if agent, ok := agents[host.ID]; ok {
+			agent.Upgrade = agentUpgrade(host, agent)
 			summary.Agent = &agent
 		}
 		last, err := scanScan(db.QueryRow("SELECT "+scanColumns+

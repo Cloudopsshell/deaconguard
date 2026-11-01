@@ -184,3 +184,29 @@ func TestNetAndTLSCommands(t *testing.T) {
 		t.Fatal("tls without check")
 	}
 }
+
+func TestHostListSaysWhichAgentsToUpgrade(t *testing.T) {
+	t.Setenv("DEACONGUARD_HOME", t.TempDir())
+	previous := store.ServerVersion
+	t.Cleanup(func() { store.ServerVersion = previous })
+	store.ServerVersion = "1.23.0"
+	_, secret, err := store.CreateEnrollmentToken("https://server:8444", "admin", store.TokenOptions{Reusable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, version := range []string{"1.21.0", "1.23.0"} {
+		if _, _, err := store.EnrollAgent(secret, store.AgentEnrollment{Hostname: "web-" + version, Username: "root", Version: version, OS: "Ubuntu 24.04 LTS"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output, diagnostics bytes.Buffer
+	if code := Run([]string{"host", "list"}, nil, &output, &diagnostics); code != 0 {
+		t.Fatalf("host list: code %d, %s", code, diagnostics.String())
+	}
+	for _, want := range []string{"web-1.21.0  (agent 1.21.0, upgrade to 1.23.0)", "web-1.23.0  (agent 1.23.0)\n",
+		"1 agent is older than this server, DeaconGuard 1.23.0", "DEACONGUARD_VERSION=1.23.0 sudo -E sh -"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("missing %q in:\n%s", want, output.String())
+		}
+	}
+}

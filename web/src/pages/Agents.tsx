@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Plus, RadioTower, Trash2, TriangleAlert } from "lucide-react";
+import { KeyRound, Plus, RadioTower, Trash2, TriangleAlert } from "lucide-react";
 import { useCan } from "../lib/role";
 import { api, type EnrollmentToken, type HostSummary, type NewEnrollmentToken, type TokenHost } from "../api";
 import {
@@ -21,6 +21,8 @@ import {
 } from "../components/ui";
 import { dateTime, timeAgo } from "../lib/format";
 import { ClusterBadge, NodeBadge, ThisServerBadge, agentOnline, disconnectedText, groupByCluster } from "../lib/hosts";
+import { CopyBlock } from "../components/CopyBlock";
+import { UpgradeBadge, UpgradeNotice } from "../components/AgentUpgrade";
 
 export function Agents() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -131,6 +133,7 @@ function AgentList({ onEnroll }: { onEnroll?: () => void }) {
     <Card>
       <CardHeader title="Enrolled machines" description="Scan them from the Hosts page like any other host." />
       {agentPort && <MoveProgress agents={agents} agentPort={agentPort} />}
+      <UpgradeNotice agents={agents} />
       {isPending ? (
         <Loading />
       ) : error ? (
@@ -229,7 +232,12 @@ function AgentRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?:
         <AgentStatus online={online} lastSeen={host.agent?.last_seen_at} disconnected={!!host.disconnected} />
       </Td>
       <Td className="text-slate-600 dark:text-slate-300">{host.kind === "cluster" ? "Kubernetes" : host.agent?.os || "—"}</Td>
-      <Td className="font-mono text-xs text-slate-600 dark:text-slate-300">{host.agent?.version || "—"}</Td>
+      <Td className="text-slate-600 dark:text-slate-300">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-mono text-xs">{host.agent?.version || "—"}</span>
+          {host.agent?.upgrade && <UpgradeBadge upgrade={host.agent.upgrade} />}
+        </div>
+      </Td>
       <Td className="text-sm text-slate-500 dark:text-slate-400">{host.agent ? dateTime(host.agent.enrolled_at) : "—"}</Td>
     </tr>
   );
@@ -770,35 +778,6 @@ function ReusableTokenCreated({ token, onDone }: { token: NewEnrollmentToken; on
       <div className="flex justify-end pt-2">
         <Button onClick={onDone}>Done</Button>
       </div>
-    </div>
-  );
-}
-
-function CopyBlock({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard access can be denied; the text stays selectable.
-    }
-  }
-  return (
-    <div className="relative">
-      <pre className="overflow-x-auto rounded-lg bg-slate-950 p-3 pr-12 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap text-slate-100">
-        {text}
-      </pre>
-      <button
-        type="button"
-        onClick={copy}
-        className="absolute top-2 right-2 rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-        aria-label={label}
-        title="Copy"
-      >
-        {copied ? <Check className="size-4 text-emerald-400" /> : <Copy className="size-4" />}
-      </button>
     </div>
   );
 }

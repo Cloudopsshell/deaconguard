@@ -190,6 +190,7 @@ func (h *agentHub) authenticated(next func(http.ResponseWriter, *http.Request, s
 				return
 			}
 		}
+		w.Header().Set(agentapi.HeaderServerVersion, buildinfo.Version)
 		// An agent on another port is told about the agent port, so it can
 		// move there. The server's own agent stays on the loopback address.
 		if h.agentPort != "" && port != "" && port != h.agentPort && !isLoopbackIP(remoteIP(r)) {
