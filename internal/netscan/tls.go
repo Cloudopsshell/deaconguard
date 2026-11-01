@@ -51,7 +51,7 @@ func allSuites() []uint16 {
 }
 
 func ruleSeverity(id string) string {
-	for _, rule := range append(append([]Rule{}, tlsRules...), netRules...) {
+	for _, rule := range append(append(append([]Rule{}, tlsRules...), netRules...), webRules...) {
 		if rule.ID == id {
 			return rule.Severity
 		}

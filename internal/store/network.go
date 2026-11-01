@@ -12,11 +12,15 @@ import (
 // for open ports, exposed services and TLS. IntervalHours 0 scans only on
 // request; otherwise it is scanned that often. Latest is its newest scan.
 type NetworkTarget struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	Targets       []string     `json:"targets"`
-	Ports         string       `json:"ports"`
-	TLS           bool         `json:"tls"`
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Targets []string `json:"targets"`
+	Ports   string   `json:"ports"`
+	TLS     bool     `json:"tls"`
+	// Web checks each web site a scan finds; WebPaths also asks for the
+	// paths a site should never publish (1.25.0 and later).
+	Web           bool         `json:"web"`
+	WebPaths      bool         `json:"web_paths"`
 	IntervalHours int          `json:"interval_hours"`
 	CreatedBy     string       `json:"created_by"`
 	CreatedAt     string       `json:"created_at"`
@@ -47,12 +51,12 @@ var (
 	ErrNetworkScanInProgress = errors.New("a scan of this target is already queued or running")
 )
 
-const networkTargetColumns = "id, name, targets, ports, tls, interval_hours, created_by, created_at"
+const networkTargetColumns = "id, name, targets, ports, tls, interval_hours, created_by, created_at, web, web_paths"
 
 func scanNetworkTarget(row rowScanner) (NetworkTarget, error) {
 	var target NetworkTarget
 	var targets string
-	if err := row.Scan(&target.ID, &target.Name, &targets, &target.Ports, &target.TLS, &target.IntervalHours, &target.CreatedBy, &target.CreatedAt); err != nil {
+	if err := row.Scan(&target.ID, &target.Name, &targets, &target.Ports, &target.TLS, &target.IntervalHours, &target.CreatedBy, &target.CreatedAt, &target.Web, &target.WebPaths); err != nil {
 		return NetworkTarget{}, err
 	}
 	target.Targets = splitList(targets)
@@ -116,12 +120,12 @@ func SaveNetworkTarget(target NetworkTarget) (NetworkTarget, error) {
 		if target.ID, err = newID(); err != nil {
 			return NetworkTarget{}, err
 		}
-		_, err = db.Exec("INSERT INTO network_targets ("+networkTargetColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			target.ID, target.Name, joined, target.Ports, target.TLS, target.IntervalHours, target.CreatedBy, nowText())
+		_, err = db.Exec("INSERT INTO network_targets ("+networkTargetColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			target.ID, target.Name, joined, target.Ports, target.TLS, target.IntervalHours, target.CreatedBy, nowText(), target.Web, target.WebPaths)
 	} else {
 		var result sql.Result
-		result, err = db.Exec("UPDATE network_targets SET name = ?, targets = ?, ports = ?, tls = ?, interval_hours = ? WHERE id = ?",
-			target.Name, joined, target.Ports, target.TLS, target.IntervalHours, target.ID)
+		result, err = db.Exec("UPDATE network_targets SET name = ?, targets = ?, ports = ?, tls = ?, interval_hours = ?, web = ?, web_paths = ? WHERE id = ?",
+			target.Name, joined, target.Ports, target.TLS, target.IntervalHours, target.Web, target.WebPaths, target.ID)
 		if err == nil {
 			if changed, _ := result.RowsAffected(); changed == 0 {
 				return NetworkTarget{}, ErrNetworkTargetNotFound

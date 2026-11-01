@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,7 @@ var netRules = []Rule{
 }
 
 // Rules lists the network and TLS rules.
-func Rules() []Rule { return append(append([]Rule{}, netRules...), tlsRules...) }
+func Rules() []Rule { return append(append(append([]Rule{}, netRules...), tlsRules...), webRules...) }
 
 // services names well-known ports, and says which rule an open one fails.
 var services = map[int]struct{ name, rule string }{
@@ -166,6 +167,9 @@ type Options struct {
 	TLS   bool
 	Roots *x509.CertPool
 	Now   time.Time
+	// Web checks each web site found, as CheckWeb does; WebPaths also asks
+	// for the paths a site should never publish.
+	Web, WebPaths bool
 }
 
 // Service is an open port and what answered on it.
@@ -189,6 +193,7 @@ type Result struct {
 	Ports     int           `json:"ports"`
 	Hosts     []Host        `json:"hosts"`
 	TLS       []TLSInfo     `json:"tls,omitempty"`
+	Web       []WebInfo     `json:"web,omitempty"`
 	Findings  []iac.Finding `json:"findings"`
 	Notes     []string      `json:"notes,omitempty"`
 }
@@ -279,10 +284,57 @@ feed:
 			}
 		}
 	}
+	if options.Web {
+		checkSites(ctx, &result, options)
+	}
 	sort.SliceStable(result.Findings, func(i, j int) bool {
 		return severityRank[result.Findings[i].Severity] > severityRank[result.Findings[j].Severity]
 	})
 	return result
+}
+
+// checkSites runs CheckWeb on every web site the scan found, a few sites at
+// a time, each from the address the scan found it on.
+func checkSites(ctx context.Context, result *Result, options Options) {
+	type site struct {
+		url  *url.URL
+		host Host
+	}
+	var sites []site
+	for _, host := range result.Hosts {
+		for _, found := range webSites(host) {
+			sites = append(sites, site{found, host})
+		}
+	}
+	infos := make([]WebInfo, len(sites))
+	findings := make([][]iac.Finding, len(sites))
+	notes := make([]string, len(sites))
+	limit := make(chan struct{}, webConcurrency)
+	var wg sync.WaitGroup
+	for index, each := range sites {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			limit <- struct{}{}
+			defer func() { <-limit }()
+			info, found, err := CheckWeb(ctx, each.url, WebOptions{Paths: options.WebPaths, HTTPS: servesHTTPS(each.host),
+				Timeout: max(options.Timeout, 5*time.Second), Address: each.host.Address})
+			if err != nil {
+				notes[index] = err.Error()
+				return
+			}
+			infos[index], findings[index] = info, found
+		}()
+	}
+	wg.Wait()
+	for index := range sites {
+		if notes[index] != "" {
+			result.Notes = append(result.Notes, notes[index])
+			continue
+		}
+		result.Web = append(result.Web, infos[index])
+		result.Findings = append(result.Findings, findings[index]...)
+	}
 }
 
 var severityRank = map[string]int{"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
@@ -348,6 +400,12 @@ func probe(ctx context.Context, target Target, port int, timeout time.Duration) 
 		}
 	}
 	return service, true
+}
+
+// Handshake tries a TLS handshake with address, accepting any certificate,
+// to see whether it speaks TLS.
+func Handshake(ctx context.Context, address, name string, timeout time.Duration) (tls.ConnectionState, error) {
+	return handshake(ctx, address, name, &tls.Config{ServerName: name, InsecureSkipVerify: true, MinVersion: tls.VersionTLS10}, timeout) //nolint:gosec // detection only
 }
 
 func speaksTLS(ctx context.Context, address, name string, timeout time.Duration) bool {

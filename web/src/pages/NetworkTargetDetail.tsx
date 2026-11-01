@@ -47,7 +47,9 @@ export function NetworkTargetDetail() {
         description={
           <>
             <span className="font-mono break-all">{target.targets.join(", ")}</span> · ports {target.ports || "default"} ·{" "}
-            {target.tls ? "TLS checked" : "TLS not checked"} · {intervalLabel(target.interval_hours)}
+            {target.tls ? "TLS checked" : "TLS not checked"} ·{" "}
+            {target.web ? (target.web_paths ? "web sites checked, with paths" : "web sites checked, without paths") : "web sites not checked"} ·{" "}
+            {intervalLabel(target.interval_hours)}
           </>
         }
         action={
@@ -214,6 +216,34 @@ function Result({ scan, isLatest }: { scan: NetworkScan; isLatest: boolean }) {
           </Table>
         )}
       </Card>
+      {(result.web ?? []).length > 0 && (
+        <Card>
+          <CardHeader title="Web sites" description="Each web site found, as its home page answered. Its findings are listed above." />
+          <Table>
+            <thead>
+              <tr>
+                <Th>Site</Th>
+                <Th>Answer</Th>
+                <Th>Server</Th>
+                <Th className="text-right">Requests</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.web!.map((site) => (
+                <tr key={site.url}>
+                  <Td className="font-mono text-sm break-all">{site.url}</Td>
+                  <Td className="text-sm">
+                    {site.status}
+                    {site.final_url && <span className="block text-xs break-all text-slate-500 dark:text-slate-400">→ {site.final_url}</span>}
+                  </Td>
+                  <Td className="text-sm text-slate-600 dark:text-slate-300">{site.server || "—"}</Td>
+                  <Td className="text-right text-sm tabular-nums">{site.requests}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      )}
       {(result.tls ?? []).length > 0 && (
         <Card>
           <CardHeader title="TLS" description="The certificate and settings of each TLS service." />
