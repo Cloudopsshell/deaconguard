@@ -533,6 +533,18 @@ export interface AuditControl {
   rationale: string;
   remediation: string;
   exception?: AuditException;
+  /** Rules of the DISA STIG for the machine's operating system that the control checks (1.24.0 and later). */
+  stig?: STIGRule[];
+}
+
+/** A DISA STIG rule a baseline control checks. */
+export interface STIGRule {
+  /** The guide, such as "DISA RHEL 9 STIG". */
+  stig: string;
+  /** The rule's vulnerability ID, such as "V-257985". */
+  rule: string;
+  /** What the STIG asks for beyond what the control checks. */
+  note?: string;
 }
 
 export interface ControlCounts {
@@ -585,7 +597,7 @@ export interface PolicyResult {
   controls: AuditControl[];
 }
 
-export type RequirementStatus = "met" | "met_accepted" | "not_met" | "not_checked" | "not_evaluated";
+export type RequirementStatus = "met" | "met_accepted" | "not_met" | "not_checked" | "not_evaluated" | "partial";
 
 export interface Framework {
   id: string;
@@ -599,6 +611,8 @@ export interface ComplianceResult {
   met: number;
   not_met: number;
   other: number;
+  /** Explains an empty result, such as a machine with no DISA STIG. */
+  note?: string;
 }
 
 export interface Policy {

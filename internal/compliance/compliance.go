@@ -34,6 +34,9 @@ const (
 	NotMet       = "not_met"       // a mapped control failed
 	NotChecked   = "not_checked"   // nothing mapped could be checked
 	NotEvaluated = "not_evaluated" // no mapped control applies to this host
+	// Partial is a STIG rule whose controls passed, but which asks for more
+	// than they check, so it needs checking by hand.
+	Partial = "partial"
 )
 
 // Requirement is one framework requirement and what the audit found for it.
@@ -58,6 +61,8 @@ type Result struct {
 	Met          int           `json:"met"`
 	NotMet       int           `json:"not_met"`
 	Other        int           `json:"other"`
+	// Note explains an empty result, such as a machine with no STIG.
+	Note string `json:"note,omitempty"`
 }
 
 // Frameworks lists the frameworks in display order.
@@ -75,6 +80,9 @@ func Find(id string) (Framework, bool) {
 
 // Evaluate reads an audit framework by framework.
 func Evaluate(summary audit.Summary, framework Framework) Result {
+	if framework.ID == STIG {
+		return evaluateSTIG(summary, framework)
+	}
 	evidence := map[string]Evidence{}
 	for _, control := range summary.Controls {
 		evidence[control.ID] = Evidence{ID: control.ID, Title: control.Title, Status: control.Status}
@@ -130,6 +138,50 @@ func Evaluate(summary audit.Summary, framework Framework) Result {
 	sort.Slice(result.Requirements, func(a, b int) bool {
 		return naturalLess(result.Requirements[a].ID, result.Requirements[b].ID)
 	})
+	return result
+}
+
+// evaluateSTIG reads an audit rule by rule of the DISA STIG for the
+// machine's operating system, from the rules each control checks.
+func evaluateSTIG(summary audit.Summary, framework Framework) Result {
+	result := Result{Framework: framework, Requirements: []Requirement{}}
+	byRule := map[string][]Evidence{}
+	stricter := map[string]bool{}
+	for _, control := range summary.Controls {
+		for _, rule := range control.STIG {
+			if len(byRule[rule.Rule]) == 0 {
+				result.Framework.Name = rule.STIG
+			}
+			byRule[rule.Rule] = append(byRule[rule.Rule], Evidence{ID: control.ID, Title: control.Title, Status: control.Status})
+			stricter[rule.Rule] = stricter[rule.Rule] || rule.Note != ""
+		}
+	}
+	if len(byRule) == 0 {
+		result.Note = "DeaconGuard maps its baseline to the DISA STIGs for Ubuntu 22.04 and 24.04 and for RHEL 8 and 9, also used for Rocky Linux and AlmaLinux. This machine's operating system has none of them."
+		return result
+	}
+	for _, guide := range checks.STIGGuides() {
+		if guide.Name == result.Framework.Name {
+			result.Framework.Name += " " + guide.Release
+		}
+	}
+	for id, items := range byRule {
+		sort.Slice(items, func(a, b int) bool { return items[a].ID < items[b].ID })
+		requirement := Requirement{ID: id, Name: checks.STIGTitle(id), Controls: items, Status: status(items)}
+		if stricter[id] && (requirement.Status == Met || requirement.Status == MetAccepted) {
+			requirement.Status = Partial
+		}
+		switch requirement.Status {
+		case Met, MetAccepted:
+			result.Met++
+		case NotMet:
+			result.NotMet++
+		default:
+			result.Other++
+		}
+		result.Requirements = append(result.Requirements, requirement)
+	}
+	sort.Slice(result.Requirements, func(a, b int) bool { return result.Requirements[a].ID < result.Requirements[b].ID })
 	return result
 }
 

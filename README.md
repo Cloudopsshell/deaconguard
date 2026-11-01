@@ -429,7 +429,7 @@ A server audit checks one machine from top to bottom and grades it A to F: for h
 
 See [Server audits](https://docs.deaconguard.io/usage/audits) for the full list of controls.
 
-- **Compliance:** each audit can be read for **NIST SP 800-53 Rev. 5**, **PCI DSS v4.0**, the **HIPAA Security Rule** and **ISO/IEC 27001:2022 Annex A**: every baseline control, and the vulnerability, integrity and malware checks, are mapped to requirement numbers, shown as met, not met or not checked, and included in reports for the frameworks you choose. It's DeaconGuard's mapping for guidance, not a certification. See [Compliance](https://docs.deaconguard.io/usage/compliance).
+- **Compliance:** each audit can be read for **NIST SP 800-53 Rev. 5**, **PCI DSS v4.0**, the **HIPAA Security Rule** and **ISO/IEC 27001:2022 Annex A**: every baseline control, and the vulnerability, integrity and malware checks, are mapped to requirement numbers, shown as met, not met or not checked, and included in reports for the frameworks you choose. On Ubuntu 22.04 and 24.04 and RHEL 8 and 9 (and Rocky Linux and AlmaLinux), each control also names the **DISA STIG** rules it checks, and says when the STIG asks for more. It's DeaconGuard's mapping for guidance, not a certification or a STIG assessment. See [Compliance](https://docs.deaconguard.io/usage/compliance).
 - **Policies:** admins add their own controls in YAML under **Settings → Policies** (an SSH or kernel setting, login.defs, a package, a service, a mount, a port, or a key file's permissions). They test only what the audit already reads, never run anything, show on audits and reports, and don't change the grade. See [Policies](https://docs.deaconguard.io/usage/policies).
 
 ## Notifications
