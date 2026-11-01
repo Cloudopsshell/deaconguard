@@ -16,6 +16,7 @@ import (
 	"deaconguard/internal/agentversion"
 	"deaconguard/internal/buildinfo"
 	"deaconguard/internal/checks"
+	"deaconguard/internal/live"
 	"deaconguard/internal/local"
 	"deaconguard/internal/sbom"
 	"deaconguard/internal/scan"
@@ -165,6 +166,9 @@ func runHost(arguments []string, output io.Writer) error {
 				if host.Agent != nil && host.Agent.Upgrade != nil {
 					agent += ", upgrade to " + host.Agent.Upgrade.To
 					outdated++
+				}
+				if line := liveLine(host.Live); line != "" {
+					agent += "; " + line
 				}
 				fmt.Fprintf(output, "%s  %s  (%s)\n", host.ID, host.Address, agent)
 				continue
@@ -609,4 +613,30 @@ func countAgents(count int) string {
 		return "1 agent is"
 	}
 	return fmt.Sprintf("%d agents are", count)
+}
+
+// liveLine says how live detection is doing on a host, for host list.
+func liveLine(status *store.LiveStatus) string {
+	if status == nil {
+		return ""
+	}
+	if status.Nodes > 0 {
+		return fmt.Sprintf("live detection on %d of %d nodes", status.NodesActive, status.Nodes)
+	}
+	alerts := status.Alerts24h.Critical + status.Alerts24h.High + status.Alerts24h.Medium + status.Alerts24h.Low
+	switch status.State {
+	case live.StateActive:
+		if alerts > 0 {
+			return fmt.Sprintf("live detection active, %d %s in 24 h", alerts, pluralWord(alerts, "alert", "alerts"))
+		}
+		return "live detection active"
+	case live.StateOff:
+		return "live detection off"
+	case store.LiveAgentTooOld:
+		// "upgrade to" already says it.
+		return ""
+	case store.LiveWaiting, live.StateStarting:
+		return "live detection starting"
+	}
+	return "live detection " + status.State + ": " + status.Reason
 }

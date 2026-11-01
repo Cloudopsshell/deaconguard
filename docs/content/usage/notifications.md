@@ -1,6 +1,6 @@
 ---
 title: Notifications
-description: Email, Slack, Microsoft Teams and webhook notifications for newly exploited vulnerabilities on hosts and in their containers, malware, configuration findings, host changes such as new ports, accounts or SSH keys, new attack paths to root, failed scans and offline agents, a summary of every scan, and daily or weekly digests.
+description: Email, Slack, Microsoft Teams and webhook notifications for newly exploited vulnerabilities on hosts and in their containers, malware, configuration findings, host changes such as new ports, accounts or SSH keys, new attack paths to root, live detection alerts, failed scans and offline agents, a summary of every scan, and daily or weekly digests.
 ---
 
 DeaconGuard tells you when something needs attention, so you don't have to watch the dashboard. Admins set it up under **Settings → Notifications**.
@@ -36,6 +36,8 @@ For Jira and ServiceNow, choose the events that need someone to act, such as kno
 | New configuration findings | A host's [security configuration](../checks.md) has medium, high or critical findings its previous configuration check didn't, such as SSH starting to accept passwords. Low ones, such as automatic updates being off, aren't sent. | Critical, or Warning |
 | Host changes | A host that runs the [host changes](./host-changes.md) check has a medium, high or critical change since its previous scan: a new port open to the network, account, administrator, sudoers rule, SSH key, enabled service or scheduled job. Removals aren't sent. | Critical for a new account with UID 0, else Warning |
 | Attack paths | A host that runs the [attack paths](./attack-paths.md) check has high or critical findings its previous scan didn't: a new way for an account to become root, a secret other accounts can newly read, or an SSH key now trusted on many machines. | Critical, or Warning for high only |
+| Runtime alerts | [Live detection](./live-detection.md) saw something suspicious as it happened, such as a shell started by a web server or a change to `sudoers`; a report's alerts come in one message. Also the test alerts the host's **Runtime** tab sends. | Critical for a critical alert, else Warning; Info for a test |
+| Live detection stopped | Live detection stopped on a host where it was running, including when its agent stopped checking in. | Warning |
 | New network findings | A [network target](./network.md#in-the-dashboard) has critical or high findings its previous scan didn't, such as a database that now answers on the network, a certificate about to expire or a web site that publishes its `.git` folder. | Critical, or Warning for high only |
 | Image scan reports | A [watched repository](./images.md#reports-of-new-pushes)'s new push was scanned: its counts, what changed since the previous build, and the most urgent vulnerabilities. Each watch chooses which pushes it reports, and to which of these channels. | Critical for critical or known exploited, Warning for high, else Info |
 | Failed scans | A scan of a host, an image or a network target fails, so its results are out of date. | Warning |

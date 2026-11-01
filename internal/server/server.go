@@ -115,6 +115,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	s.agents.clusterImages, s.agents.nodeImages = images, images.recordNode
 	s.runner.onFinish = s.scanFinished
 	s.agents.presence.onQuiet = s.agentQuiet
+	s.agents.onLive = s.liveReported
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/session", s.session)
 	mux.HandleFunc("POST /api/login", s.login)
@@ -166,6 +167,9 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("PATCH /api/hosts/{id}", s.needs(store.RoleOperator, s.updateHost))
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.needs(store.RoleAdmin, s.removeHost))
 	mux.HandleFunc("PUT /api/hosts/{id}/tags", s.needs(store.RoleOperator, s.setHostTags))
+	mux.HandleFunc("GET /api/hosts/{id}/live", s.getLive)
+	mux.HandleFunc("PUT /api/hosts/{id}/live", s.needs(store.RoleAdmin, s.setLive))
+	mux.HandleFunc("POST /api/hosts/{id}/live/test", s.needs(store.RoleOperator, s.testLive))
 	mux.HandleFunc("GET /api/tags", s.listTags)
 	mux.HandleFunc("GET /api/settings/sla", s.getSLA)
 	mux.HandleFunc("PUT /api/settings/sla", s.needs(store.RoleAdmin, s.updateSLA))
@@ -268,6 +272,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 		agentMux.HandleFunc("POST "+agentapi.PathPrefix+"scans/{id}/result", s.agents.authenticated(s.agents.result))
 		agentMux.HandleFunc("GET "+agentapi.PathPrefix+agentapi.PathYARARules, s.agents.authenticated(s.agents.yaraRules))
 		agentMux.HandleFunc("POST "+agentapi.PathPrefix+agentapi.PathLogs, s.agents.authenticated(s.agents.agentLogs))
+		agentMux.HandleFunc("POST "+agentapi.PathPrefix+agentapi.PathLive, s.agents.authenticated(s.agents.agentLive))
 		agentMux.HandleFunc("GET "+agentapi.PathPrefix+agentapi.PathHello, s.agents.authenticated(s.agents.hello))
 		agentMux.HandleFunc(agentapi.PathPrefix, func(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("unknown agent API endpoint"))

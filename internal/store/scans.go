@@ -577,6 +577,9 @@ type HostSummary struct {
 	ThisServer bool `json:"this_server"`
 	// Tags are the host's tags, sorted.
 	Tags []string `json:"tags"`
+	// Live is the host's live detection, for agent hosts and clusters with
+	// node agents (1.27.0 and later).
+	Live *LiveStatus `json:"live,omitempty"`
 }
 
 // CheckSummary is one check's result within a scan.
@@ -620,9 +623,13 @@ func HostSummaries() ([]HostSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	lives, err := liveStatuses(hosts, agents, time.Now())
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]HostSummary, 0, len(hosts))
 	for _, host := range hosts {
-		summary := HostSummary{Host: host, Tags: tags[host.ID]}
+		summary := HostSummary{Host: host, Tags: tags[host.ID], Live: lives[host.ID]}
 		if summary.Tags == nil {
 			summary.Tags = []string{}
 		}

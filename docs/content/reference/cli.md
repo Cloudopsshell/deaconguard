@@ -10,7 +10,7 @@ Run `deaconguard help` for this list on your machine, and `deaconguard version` 
 | Command | Does |
 | --- | --- |
 | `deaconguard host add [--allow-sudo]` | Register this machine (Linux). |
-| `deaconguard host list` | List hosts, with each agent's version; marks agents older than the server and prints the command that upgrades them. |
+| `deaconguard host list` | List hosts, with each agent's version and how [live detection](../usage/live-detection.md) is doing on it; marks agents older than the server and prints the command that upgrades them. |
 | `deaconguard host sudo HOST_ID on\|off` | Allow or stop the deeper checks using sudo. |
 | `deaconguard host remove HOST_ID` | Remove a host; for an agent host, also revoke its agent. |
 | `deaconguard scan HOST_ID [--checks LIST] [--json]` | Scan a host. `LIST` is a comma-separated choice of `packages,libraries,containers,integrity,malware,config,changes,paths,hardening,antivirus,yara`. |
