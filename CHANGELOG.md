@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-11-01
+
+### Added
+
+- **Agents to upgrade are pointed out.** The server compares each agent's version with its own. On the **Agents** page, an older agent's version shows **Upgrade to** the server's version, and a note above the list says how many agents are older, which checks they can't run until they're upgraded, and the command that upgrades them, keeping their enrollment; for agents in Kubernetes, it says to upgrade their Helm release or Kustomize image tag. An older agent's host page says the same. `deaconguard host list` shows each agent's version, marks the older ones and prints the command. Agents of 1.23.0 and later also log it once when their server is newer. A development build of the server doesn't compare. See [Which agents to upgrade](https://docs.deaconguard.io/installation/upgrade#which-agents-to-upgrade).
+
 ### Fixed
 
 - The server could count a parsed advisory feed as smaller than it is when an older feed was dropped to make room for it, and then keep it although it was over the memory budget for parsed feeds.
@@ -395,7 +401,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.22.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.23.0...HEAD
+[1.23.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.3...v1.21.0
 [1.20.3]: https://github.com/Cloudopsshell/deaconguard/compare/v1.20.2...v1.20.3
