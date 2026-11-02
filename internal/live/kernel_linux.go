@@ -35,13 +35,23 @@ const mapTypeRingbuf = 27
 // accepts a shorter or longer union as long as the rest is zero.
 const attrSize = 128
 
+// loadAttempts bounds how often a program's load is tried again when the
+// kernel's checker gives up for a signal: the Go runtime signals its own
+// threads to switch goroutines, and a long check can meet one.
+const loadAttempts = 10
+
 func bpf(cmd int, attr []byte) (int, error) {
-	fd, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(cmd), uintptr(unsafe.Pointer(&attr[0])), uintptr(len(attr)))
-	runtime.KeepAlive(attr)
-	if errno != 0 {
+	for attempt := 1; ; attempt++ {
+		fd, _, errno := unix.Syscall(unix.SYS_BPF, uintptr(cmd), uintptr(unsafe.Pointer(&attr[0])), uintptr(len(attr)))
+		runtime.KeepAlive(attr)
+		if errno == 0 {
+			return int(fd), nil
+		}
+		if (errno == unix.EAGAIN || errno == unix.EINTR) && cmd == cmdProgLoad && attempt < loadAttempts {
+			continue
+		}
 		return -1, errno
 	}
-	return int(fd), nil
 }
 
 func pointer(data []byte) uint64 {
@@ -168,7 +178,7 @@ func tracefs(hostRoot string) (string, error) {
 			return "/sys/kernel/tracing", nil
 		}
 	}
-	return "", errors.New("the kernel's tracing file system (tracefs) isn't available")
+	return "", errors.New("the kernel's tracing file system (tracefs) isn't mounted on this machine (in Kubernetes, on the node): mount it at /sys/kernel/tracing, as systemd does at boot")
 }
 
 // attach connects a loaded watcher to its tracepoint. ok is false when the
