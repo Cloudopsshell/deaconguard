@@ -254,10 +254,21 @@ func CompleteScan(id string, report map[string]any) error {
 		return err
 	}
 	defer tx.Rollback()
-	if err := applyReport(tx, id, report, nowText()); err != nil {
+	finishedAt := nowText()
+	if err := applyReport(tx, id, report, finishedAt); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// A node's vulnerabilities change its cluster's, counted once.
+	if slices.Contains(reportChecks(report), CheckPackages) {
+		var hostID string
+		if db.QueryRow("SELECT host_id FROM scans WHERE id = ?", id).Scan(&hostID) == nil {
+			updateClusterTrend(hostID, finishedAt[:10])
+		}
+	}
+	return nil
 }
 
 // WaitForInput pauses a running scan until the user responds. message
@@ -580,6 +591,9 @@ type HostSummary struct {
 	// Live is the host's live detection, for agent hosts and clusters with
 	// node agents (1.27.0 and later).
 	Live *LiveStatus `json:"live,omitempty"`
+	// Nodes is a cluster's nodes' vulnerabilities, each counted once
+	// (1.29.0 and later).
+	Nodes *CombinedCounts `json:"nodes,omitempty"`
 }
 
 // CheckSummary is one check's result within a scan.
@@ -627,9 +641,16 @@ func HostSummaries() ([]HostSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	combined, err := ClusterCombinedCounts()
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]HostSummary, 0, len(hosts))
 	for _, host := range hosts {
 		summary := HostSummary{Host: host, Tags: tags[host.ID], Live: lives[host.ID]}
+		if counts, ok := combined[host.ID]; ok && host.IsCluster() {
+			summary.Nodes = &counts
+		}
 		if summary.Tags == nil {
 			summary.Tags = []string{}
 		}
@@ -739,6 +760,8 @@ type AffectedPackage struct {
 	FirstSeen string `json:"first_seen,omitempty"`
 	DueAt     string `json:"due_at,omitempty"`
 	Overdue   bool   `json:"overdue,omitempty"`
+	// ClusterID is the cluster of a node's finding.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // latestFindings selects findings from the newest successful scan of each
@@ -753,7 +776,7 @@ WITH latest AS (
 	) WHERE n = 1
 )
 SELECT s.host_id, COALESCE(NULLIF(h.display_name, ''), h.address), s.id, s.started_at, f.cve, f.package, f.installed_version, f.fixed_version,
-	f.fix, f.severity, f.url, f.title, f.priority, f.kev, f.kev_due, f.ransomware, f.epss, f.cvss_score, COALESCE(seen.first_seen, '')
+	f.fix, f.severity, f.url, f.title, f.priority, f.kev, f.kev_due, f.ransomware, f.epss, f.cvss_score, COALESCE(seen.first_seen, ''), h.cluster_id
 FROM latest
 JOIN scans s ON s.id = latest.id
 JOIN findings f ON f.scan_id = s.id
@@ -783,7 +806,7 @@ func queryLatestFindings(filter string, arguments ...any) ([]AffectedPackage, []
 		var cve string
 		if err := rows.Scan(&item.HostID, &item.Address, &item.ScanID, &item.ScannedAt, &cve, &item.Package,
 			&item.InstalledVersion, &item.FixedVersion, &item.Fix, &item.Severity, &item.URL, &item.Title,
-			&item.Priority, &item.KEV, &item.KEVDue, &item.Ransomware, &item.EPSS, &item.CVSSScore, &item.FirstSeen); err != nil {
+			&item.Priority, &item.KEV, &item.KEVDue, &item.Ransomware, &item.EPSS, &item.CVSSScore, &item.FirstSeen, &item.ClusterID); err != nil {
 			return nil, nil, err
 		}
 		item.Fix = findingFix(item.Fix, item.FixedVersion)
@@ -836,12 +859,17 @@ func Vulnerabilities() ([]Vulnerability, error) {
 		if item.DueAt != "" && (vulnerability.DueAt == "" || item.DueAt < vulnerability.DueAt) {
 			vulnerability.DueAt = item.DueAt
 		}
-		if item.Overdue {
-			overdue[cve][item.HostID] = true
+		// A cluster's nodes count as one host: the cluster.
+		host := item.HostID
+		if item.ClusterID != "" {
+			host = item.ClusterID
 		}
-		hosts[cve][item.HostID] = true
+		if item.Overdue {
+			overdue[cve][host] = true
+		}
+		hosts[cve][host] = true
 		if actionableFix(item.Fix) {
-			fixable[cve][item.HostID] = true
+			fixable[cve][host] = true
 		}
 		packages[cve][item.Package] = true
 	}

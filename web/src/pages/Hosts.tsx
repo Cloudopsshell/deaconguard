@@ -24,7 +24,7 @@ import { useRefreshAll } from "../lib/hooks";
 import { isActive, severityStyle, timeAgo } from "../lib/format";
 import { checkBadgeText, checkMeta, checkOrder, topSeverity } from "../lib/checks";
 import { LiveAlertCounts, LiveBadge } from "../components/LiveDetection";
-import { PackageCountsInline } from "../lib/fixes";
+import { PackageCountsInline, packageBadge } from "../lib/fixes";
 import { ScanDialog } from "../components/ScanDialog";
 import { ClusterBadge, NodeBadge, ThisServerBadge, agentOnline, disconnectedText, groupByCluster, shortConnectionLabel } from "../lib/hosts";
 import { RemoveHostDialog } from "./HostDetail";
@@ -170,28 +170,25 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** The most critical and high vulnerabilities on any one of a cluster's nodes. */
-function NodeFindings({ cluster, nodes }: { cluster: HostSummary; nodes: HostSummary[] }) {
-  const scanned = nodes.filter((node) => node.last_report);
-  if (scanned.length === 0) return null;
-  const critical = Math.max(...scanned.map((node) => node.last_report!.severity.critical));
-  const high = Math.max(...scanned.map((node) => node.last_report!.severity.high));
-  const text = critical + high === 0 ? "Nodes ✓" : ["Nodes", critical > 0 && `${critical} critical`, high > 0 && `${high} high`].filter(Boolean).join(" ");
+/** A cluster's nodes' vulnerabilities, each counted once, linking to them. */
+function NodeFindings({ cluster }: { cluster: HostSummary }) {
+  const nodes = cluster.nodes;
+  if (!nodes) return null;
+  const badge = packageBadge({ finding_count: nodes.findings, severity: nodes.severity, fixes: nodes.fixes });
+  const severity = badge.severity ? topSeverity(badge.severity) : undefined;
   return (
     <Link
-      to={`/hosts/${cluster.id}?view=nodes`}
+      to={`/hosts/${cluster.id}?view=vulnerabilities`}
       onClick={(event) => event.stopPropagation()}
-      title="The most on any one node; each node's are on the cluster's Nodes tab"
+      title={`On the nodes, each counted once: ${badge.title}`}
       className={cx(
         "mt-1.5 inline-block rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset",
-        critical > 0
-          ? severityStyle.CRITICAL.badge
-          : high > 0
-            ? severityStyle.HIGH.badge
-            : "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30",
+        severity
+          ? severityStyle[severity].badge
+          : "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30",
       )}
     >
-      {text}
+      Nodes {badge.text}
     </Link>
   );
 }
@@ -287,7 +284,7 @@ function HostRow({ host, nodes = [] }: { host: HostSummary; nodes?: HostSummary[
           <span className="text-sm text-slate-500 dark:text-slate-400">No vulnerability results</span>
         )}
         <CheckChips host={host} />
-        {cluster && <NodeFindings cluster={host} nodes={nodes} />}
+        {cluster && <NodeFindings cluster={host} />}
       </Td>
       <Td className="text-right">
         <div className="flex items-center justify-end gap-1">

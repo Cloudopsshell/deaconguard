@@ -795,6 +795,49 @@ export interface HostSummary extends Host {
   tags: string[];
   /** Live detection, for agent hosts and clusters with node agents (1.27.0 and later). */
   live?: LiveStatus;
+  /** A cluster's nodes' vulnerabilities, each counted once (1.29.0 and later). */
+  nodes?: CombinedCounts;
+}
+
+/** Vulnerabilities on several machines, each counted once. */
+export interface CombinedCounts {
+  findings: number;
+  severity: SeverityCounts;
+  fixes: FixSummary;
+  exploit: { known: number; known_fixable: number; likely: number };
+  /** The nodes with package results. */
+  scanned: number;
+}
+
+/** One node a combined finding is on. */
+export interface NodeVersion {
+  host_id: string;
+  host: string;
+  installed_version?: string;
+  fixed_version?: string;
+  fix?: FixState;
+}
+
+/** A check's findings on a cluster's nodes, each once with the nodes it's on. */
+export interface ClusterFindings {
+  check: CheckId;
+  nodes: number;
+  checked: number;
+  excluded: number;
+  vulnerabilities?: {
+    cve: string;
+    package: string;
+    severity: Severity;
+    title: string;
+    url: string;
+    priority: string;
+    kev: boolean;
+    fix: FixState;
+    fixed_version?: string;
+    nodes: NodeVersion[];
+  }[];
+  findings?: { rule: string; severity: Severity; title: string; detail: string; evidence: string; nodes: NodeVersion[] }[];
+  counts: SeverityCounts;
 }
 
 export interface HostDetail extends HostSummary {
@@ -1502,6 +1545,7 @@ export const api = {
     request<EnrollmentToken & { disconnected: TokenHost[] }>("DELETE", `/api/enrollment-tokens/${id}${disconnect ? "?disconnect=1" : ""}`),
   deleteRevokedTokens: () => request<{ removed: number }>("DELETE", "/api/enrollment-tokens?status=revoked"),
   clusterView: (id: string) => request<ClusterView>("GET", `/api/hosts/${id}/cluster`),
+  clusterFindings: (id: string, check: CheckId) => request<ClusterFindings>("GET", `/api/hosts/${id}/cluster/findings?check=${check}`),
   audit: () => request<AuditEntry[]>("GET", "/api/audit?limit=500"),
   summary: () => request<Summary>("GET", "/api/summary"),
   hosts: () => request<HostSummary[]>("GET", "/api/hosts"),
