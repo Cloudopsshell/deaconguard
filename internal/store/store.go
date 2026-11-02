@@ -49,6 +49,12 @@ type Host struct {
 	// ClusterID is the cluster a node's host belongs to, when its agent runs
 	// in that cluster (1.21.0 and later).
 	ClusterID string `json:"cluster_id,omitempty"`
+	// Excluded leaves a node out of its cluster's scans and live detection
+	// (1.28.0 and later); it keeps the cluster's tags.
+	Excluded bool `json:"excluded,omitempty"`
+	// LeftClusterAt is when the cluster stopped listing this node; it is
+	// removed once it has been gone a while (1.28.0 and later).
+	LeftClusterAt string `json:"left_cluster_at,omitempty"`
 }
 
 // Disconnection is when, by whom and why a host was disconnected.
@@ -67,6 +73,10 @@ const (
 
 // IsCluster reports whether the host is a Kubernetes cluster.
 func (host Host) IsCluster() bool { return host.Kind == KindCluster }
+
+// IsNode reports whether the host is a node of a cluster, and so follows
+// its settings.
+func (host Host) IsNode() bool { return host.ClusterID != "" }
 
 const (
 	// TransportLocal is the machine DeaconGuard runs on; Address holds its
@@ -324,6 +334,14 @@ func migrate(db *sql.DB) error {
 	}
 	if version < 32 {
 		if err := execInTx(db, schemaV32); err != nil {
+			return err
+		}
+	}
+	if version < 33 {
+		if err := execInTx(db, schemaV33); err != nil {
+			return err
+		}
+		if err := moveNodeSchedules(db); err != nil {
 			return err
 		}
 	}
@@ -859,6 +877,29 @@ ALTER TABLE network_targets ADD COLUMN web INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE network_targets ADD COLUMN web_paths INTEGER NOT NULL DEFAULT 1;
 PRAGMA user_version = 30;`
 
+// schemaV33 manages a Kubernetes cluster as one (1.28.0): its nodes follow
+// its live detection, its scanning when it changes and its tags, and can be
+// excluded. Whatever was on for any node is on for its cluster, so nothing
+// turned on is turned off; node tags join the cluster's. moveNodeSchedules
+// then points schedules that named a node at its cluster.
+const schemaV33 = `
+ALTER TABLE hosts ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE hosts ADD COLUMN left_cluster_at TEXT NOT NULL DEFAULT '';
+UPDATE hosts SET live_enabled = 1
+	WHERE kind = 'cluster' AND EXISTS (SELECT 1 FROM hosts n WHERE n.cluster_id = hosts.id AND n.live_enabled = 1);
+UPDATE hosts SET auto_scan_containers = 1
+	WHERE kind = 'cluster' AND EXISTS (SELECT 1 FROM hosts n WHERE n.cluster_id = hosts.id AND n.auto_scan_containers = 1);
+INSERT OR IGNORE INTO host_tags (host_id, tag)
+	SELECT n.cluster_id, t.tag FROM host_tags t JOIN hosts n ON n.id = t.host_id WHERE n.cluster_id != '';
+UPDATE hosts SET
+	live_enabled = (SELECT c.live_enabled FROM hosts c WHERE c.id = hosts.cluster_id),
+	auto_scan_containers = (SELECT c.auto_scan_containers FROM hosts c WHERE c.id = hosts.cluster_id)
+	WHERE cluster_id != '' AND EXISTS (SELECT 1 FROM hosts c WHERE c.id = hosts.cluster_id);
+DELETE FROM host_tags WHERE host_id IN (SELECT id FROM hosts WHERE cluster_id != '');
+INSERT OR IGNORE INTO host_tags (host_id, tag)
+	SELECT n.id, t.tag FROM hosts n JOIN host_tags t ON t.host_id = n.cluster_id WHERE n.cluster_id != '';
+PRAGMA user_version = 33;`
+
 // schemaV32 keeps live detection's status and alerts, and whether it runs
 // on each host (1.27.0). It's off for every host until someone turns it on.
 const schemaV32 = `
@@ -1068,13 +1109,13 @@ type rowScanner interface {
 	Scan(destinations ...any) error
 }
 
-const hostColumns = "id, address, display_name, username, allow_sudo, transport, auto_scan_containers, kind, disconnected_at, disconnected_by, disconnect_reason, cluster_id"
+const hostColumns = "id, address, display_name, username, allow_sudo, transport, auto_scan_containers, kind, disconnected_at, disconnected_by, disconnect_reason, cluster_id, excluded, left_cluster_at"
 
 func scanHost(row rowScanner) (Host, error) {
 	var host Host
 	var disconnected Disconnection
 	if err := row.Scan(&host.ID, &host.Hostname, &host.Name, &host.Username, &host.AllowSudo, &host.Transport, &host.AutoScanContainers, &host.Kind,
-		&disconnected.At, &disconnected.By, &disconnected.Reason, &host.ClusterID); err != nil {
+		&disconnected.At, &disconnected.By, &disconnected.Reason, &host.ClusterID, &host.Excluded, &host.LeftClusterAt); err != nil {
 		return Host{}, err
 	}
 	if disconnected.At != "" {
@@ -1210,6 +1251,10 @@ func SetAutoScanContainers(id string, on bool) (Host, error) {
 		return Host{}, err
 	} else if changed == 0 {
 		return Host{}, fmt.Errorf("unknown host ID: %s", id)
+	}
+	// A cluster's nodes scan their new containers when it scans its changes.
+	if err := syncIfCluster(id); err != nil {
+		return Host{}, err
 	}
 	return GetHost(id)
 }

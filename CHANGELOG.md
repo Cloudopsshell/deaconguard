@@ -8,6 +8,21 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-11-02
+
+### Changed
+
+- **A Kubernetes cluster is managed as one.** Its live detection, scanning when it changes, schedules and tags are set on the cluster's page, in a new settings card, and every node with a node agent follows them, nodes that join later included. A node's page says **Follows CLUSTER's settings**; its own switches and tags can no longer be changed (the API answers `409`, naming the cluster). The one setting left on a node is **Exclude this node** (admins), which leaves it out of the cluster's scans, schedules and live detection. On upgrade, whatever was turned on for any node is turned on for its cluster, node tags join the cluster's, and schedules that named a node name its cluster, so nothing that was on is turned off. A schedule that scans a cluster scans its nodes too.
+- **One row per cluster on Hosts:** a cluster's nodes are no longer listed under it, but summed in its row: how many, whether online, any on an older agent, live detection on how many, and the most critical and high vulnerabilities on any one node. They're listed on the cluster's **Nodes** tab, which adds each node's live detection and marks a node on an older agent. The dashboard counts a cluster once, with its nodes ("1 server · 1 cluster (3 nodes)"), and so does its **Live detection** card. `deaconguard host list` lists nodes under their cluster.
+- **Scan cluster and nodes:** a cluster's scan runs the Kubernetes check on the cluster and the checks you tick on each node not excluded. `POST /api/hosts/{id}/scans` on a cluster accepts the node checks and answers with `nodes_started` and `nodes_skipped`.
+- **Settings → Live detection** turns it on for new servers; a cluster's nodes follow their cluster. **Turn on for all** covers servers and clusters, and the counts count a cluster once.
+
+### Added
+
+- **The cluster's Runtime tab:** each node's live detection state, events and cost, and one stream of alerts from every node, each naming its node; **Send a test alert** asks every node where it's active.
+- **Nodes that leave are removed:** a node the cluster no longer lists stays on its page, marked as gone, and is removed 3 days later once its agent has been silent since, with an audit log entry. One whose agent still checks in, such as a renamed machine, becomes a host of its own.
+- `PUT /api/hosts/{id}/excluded`; `excluded` and `left_cluster_at` on hosts; a cluster's `GET /api/hosts/{id}/live` has `nodes`, and its alerts name their node (`host`).
+
 ## [1.27.0] - 2026-11-01
 
 ### Added
@@ -433,7 +448,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.27.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.28.0...HEAD
+[1.28.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.24.0...v1.25.0

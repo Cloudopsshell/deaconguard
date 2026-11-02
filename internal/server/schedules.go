@@ -87,7 +87,7 @@ func (s *Server) runSchedule(item store.Schedule) (started, skipped int) {
 	}
 	actor := "schedule: " + item.Name
 	for _, host := range hosts {
-		if !item.Covers(host.ID) {
+		if !item.Covers(host) {
 			continue
 		}
 		// A schedule runs on each host the checks that apply to it: the
