@@ -31,6 +31,7 @@ func TestKernel(t *testing.T) {
 		t.Skip("set DEACONGUARD_LIVE_TEST=1 to load the watchers into this kernel")
 	}
 	detector := NewDetector(os.Getenv("DEACONGUARD_HOST_ROOT"), t.Logf)
+	detector.SetEnabled(true)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go detector.Run(ctx)

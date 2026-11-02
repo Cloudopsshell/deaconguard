@@ -54,11 +54,20 @@ type ErrUnsupported struct{ Reason string }
 
 func (err ErrUnsupported) Error() string { return err.Reason }
 
-// startWatcher loads the watchers into the kernel and attaches them.
-func startWatcher(hostRoot string) (*watcher, error) {
+// unsupportedReason says why this machine can't run live detection, as
+// far as can be told without trying, or "".
+func unsupportedReason() string {
 	release := KernelRelease()
 	if !supportedKernel(release) {
-		return nil, ErrUnsupported{fmt.Sprintf("Linux %s is older than %d.%d, the first version live detection works on", release, minimumKernel[0], minimumKernel[1])}
+		return fmt.Sprintf("Linux %s is older than %d.%d, the first version live detection works on", release, minimumKernel[0], minimumKernel[1])
+	}
+	return ""
+}
+
+// startWatcher loads the watchers into the kernel and attaches them.
+func startWatcher(hostRoot string) (*watcher, error) {
+	if reason := unsupportedReason(); reason != "" {
+		return nil, ErrUnsupported{reason}
 	}
 	object, err := ParseObject(watchObject)
 	if err != nil {

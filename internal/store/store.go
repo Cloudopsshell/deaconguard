@@ -860,9 +860,9 @@ ALTER TABLE network_targets ADD COLUMN web_paths INTEGER NOT NULL DEFAULT 1;
 PRAGMA user_version = 30;`
 
 // schemaV32 keeps live detection's status and alerts, and whether it runs
-// on each host (1.27.0). It's on for every host, existing ones included.
+// on each host (1.27.0). It's off for every host until someone turns it on.
 const schemaV32 = `
-ALTER TABLE hosts ADD COLUMN live_enabled INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE hosts ADD COLUMN live_enabled INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE hosts ADD COLUMN live_test INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE live_status (
 	host_id TEXT PRIMARY KEY REFERENCES hosts (id) ON DELETE CASCADE,

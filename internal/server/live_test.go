@@ -25,8 +25,13 @@ func TestLiveDetection(t *testing.T) {
 		}
 		return decode[liveResponse](t, response)
 	}
-	if status := get(hostID).Status; status == nil || status.State != store.LiveWaiting || !status.Enabled {
-		t.Fatalf("before the first report: %+v", status)
+	// Off until someone turns it on.
+	if status := get(hostID).Status; status == nil || status.State != live.StateOff || status.Enabled {
+		t.Fatalf("a new host: %+v", status)
+	}
+	on := do(t, s, call{method: http.MethodPut, path: "/api/hosts/" + hostID + "/live", body: map[string]bool{"enabled": true}, cookie: cookie})
+	if on.Code != http.StatusOK || decode[liveResponse](t, on).Status.State != store.LiveWaiting {
+		t.Fatalf("turned on: %d %s", on.Code, on.Body.String())
 	}
 	if status := get(oldID).Status; status == nil || status.State != store.LiveAgentTooOld {
 		t.Fatalf("1.26.0 agent: %+v", status)
@@ -102,5 +107,46 @@ func TestLiveDetection(t *testing.T) {
 	}
 	if !strings.Contains(get(oldID).Status.Reason, "1.27.0") {
 		t.Fatal("no reason for the old agent")
+	}
+}
+
+func TestLiveSettings(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	first, _ := enrollTestAgent(t, s, cookie, "web-01", "1.27.0")
+	enrollTestAgent(t, s, cookie, "web-02", "1.27.0")
+	enrollTestAgent(t, s, cookie, "old-01", "1.26.0")
+
+	overview := decode[store.LiveOverview](t, do(t, s, call{method: http.MethodGet, path: "/api/settings/live", cookie: cookie}))
+	if overview.NewHosts || overview.On != 0 || overview.Off != 2 || overview.TooOld != 1 {
+		t.Fatalf("before: %+v", overview)
+	}
+	all := do(t, s, call{method: http.MethodPost, path: "/api/settings/live/hosts", body: map[string]bool{"enabled": true}, cookie: cookie})
+	if all.Code != http.StatusOK {
+		t.Fatalf("all on: %d %s", all.Code, all.Body.String())
+	}
+	if overview := decode[store.LiveOverview](t, all); overview.On != 2 || overview.Off != 0 {
+		t.Fatalf("all on: %+v", overview)
+	}
+	if enabled, _, _ := store.LiveSettings(first); !enabled {
+		t.Fatal("web-01 not turned on")
+	}
+
+	// New machines start as the setting says.
+	set := do(t, s, call{method: http.MethodPut, path: "/api/settings/live", body: map[string]bool{"new_hosts": true}, cookie: cookie})
+	if set.Code != http.StatusOK || !decode[store.LiveOverview](t, set).NewHosts {
+		t.Fatalf("new hosts: %d %s", set.Code, set.Body.String())
+	}
+	later, _ := enrollTestAgent(t, s, cookie, "web-03", "1.27.0")
+	if enabled, _, _ := store.LiveSettings(later); !enabled {
+		t.Fatal("a new host didn't start with live detection on")
+	}
+	do(t, s, call{method: http.MethodPut, path: "/api/settings/live", body: map[string]bool{"new_hosts": false}, cookie: cookie})
+	off, _ := enrollTestAgent(t, s, cookie, "web-04", "1.27.0")
+	if enabled, _, _ := store.LiveSettings(off); enabled {
+		t.Fatal("a new host started on with the setting off")
+	}
+	if missing := do(t, s, call{method: http.MethodPut, path: "/api/settings/live", body: map[string]any{}, cookie: cookie}); missing.Code != http.StatusBadRequest {
+		t.Fatalf("no new_hosts: %d", missing.Code)
 	}
 }
