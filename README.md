@@ -431,7 +431,7 @@ Between scans, the agent watches its machine, the machine's containers, and Kube
 | `DG-RT-004` | a downloaded script is piped into a shell, with no person at a terminal |
 | `DG-RT-010` to `DG-RT-013` | accounts, sudo rules, SSH keys and the SSH server's settings, scheduled jobs, services and `/etc/ld.so.preload` are written, but not by the package manager |
 
-It needs Linux 5.8 or later and the agent 1.27.0 or later, and is on by default. Each host's **Runtime** tab shows whether it runs, its alerts, and **Send a test alert**; the Hosts list and the dashboard show which hosts are watched. Only alerts leave the machine. At rest the agent uses about 20 ms of CPU a minute for it. See [Live detection](https://docs.deaconguard.io/usage/live-detection) for what it watches, what it doesn't yet, and where it can't run (serverless and sandboxed containers, Macs).
+It's off until you turn it on, for a host on its **Runtime** tab or for all hosts (and new ones) under **Settings → Live detection**; scans, schedules and notifications work the same either way. It needs Linux 5.8 or later and the agent 1.27.0 or later. Each host's **Runtime** tab shows whether it runs, its alerts, and **Send a test alert**; the Hosts list and the dashboard show which hosts are watched. Only alerts leave the machine. At rest the agent uses about 20 ms of CPU a minute for it. See [Live detection](https://docs.deaconguard.io/usage/live-detection) for what it watches, what it doesn't yet, and where it can't run (serverless and sandboxed containers, Macs).
 
 ## Server audits
 

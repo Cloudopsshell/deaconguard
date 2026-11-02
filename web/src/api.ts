@@ -125,6 +125,15 @@ export interface LiveAlert {
   repeats?: number;
 }
 
+/** Settings → Live detection: whether new machines start with it on, and how many machines have it. */
+export interface LiveOverview {
+  new_hosts: boolean;
+  on: number;
+  off: number;
+  unsupported: number;
+  agent_too_old: number;
+}
+
 export interface LiveDetail {
   status: LiveStatus | null;
   alerts: LiveAlert[];
@@ -1530,6 +1539,9 @@ export const api = {
   live: (hostId: string) => request<LiveDetail>("GET", `/api/hosts/${hostId}/live`),
   setLive: (hostId: string, enabled: boolean) => request<LiveDetail>("PUT", `/api/hosts/${hostId}/live`, { enabled }),
   testLive: (hostId: string) => request<void>("POST", `/api/hosts/${hostId}/live/test`),
+  liveSettings: () => request<LiveOverview>("GET", "/api/settings/live"),
+  setLiveNewHosts: (on: boolean) => request<LiveOverview>("PUT", "/api/settings/live", { new_hosts: on }),
+  setLiveAll: (enabled: boolean) => request<LiveOverview>("POST", "/api/settings/live/hosts", { enabled }),
   renameHost: (hostId: string, name: string) => request<Host>("PATCH", `/api/hosts/${hostId}`, { name }),
   startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
   prompts: () => request<Prompt[]>("GET", "/api/prompts"),

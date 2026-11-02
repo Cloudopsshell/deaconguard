@@ -5,7 +5,7 @@ description: Find attacks on Linux machines, containers and Kubernetes nodes as 
 
 Scans tell you what a machine looks like when they run. **Live detection** watches it all the time: the agent loads small watchers into the Linux kernel that see every program that starts and every write to a few sensitive files, as it happens, and its rules raise an alert within seconds when something looks like an attack.
 
-It needs the DeaconGuard agent 1.27.0 or later, and it's on by default: upgrade the agents and it starts. The watchers, the code that loads them and the rules are all DeaconGuard's own; nothing else sits between the agent and the kernel.
+It's **off until you turn it on**, for each host or for all of them; scans, schedules and notifications work the same whether it's on or off. It needs the DeaconGuard agent 1.27.0 or later. A host with it off loads nothing into its kernel. The watchers, the code that loads them and the rules are all DeaconGuard's own; nothing else sits between the agent and the kernel.
 
 ## Where it runs
 
@@ -24,19 +24,27 @@ The watchers run in the machine's kernel, which every container on the machine s
 
 With a server installed with [Docker Compose](../installation/docker.md), its machine is watched when the Compose file's optional agent runs (`docker compose --profile agent up -d`). In an alert from a container, the alert names the program; naming the container and the pod is planned for a later release.
 
+## Turn it on
+
+- **One host:** on the host's **Runtime** tab, **Turn on live detection** (admins). The tab says what it watches, what it costs, and whether the machine can run it. It starts within about 15 seconds, at the agent's next report.
+- **Every host:** under **Settings → Live detection**, **Turn on for all** (admins). **Turn off for all** stops it everywhere.
+- **New hosts:** under **Settings → Live detection**, **Turn on for new hosts** starts it on every machine enrolled from then on. It's off unless you choose it.
+
+Turning it off unloads the watchers at the agent's next report. The audit log records each change.
+
 ## Is it running?
 
 Every agent reports every 15 seconds. On the dashboard:
 
 - The **Hosts** list has a **Live detection** column, and a cluster shows how many of its nodes are watched, such as **Live on 2 of 2 nodes**.
-- The **Dashboard** has a **Live detection** card: how many hosts are watched, and why each other one isn't.
+- The **Dashboard** has a **Live detection** card: how many hosts are watched, how many could be but have it off, and which stopped.
 - Each host has a **Runtime** tab with its state, since when, the agent's last report, and four numbers: the events the watchers looked at in the last hour (proof that it's watching), the last day's alerts, missed events, and the agent's CPU and memory.
 
 | State | Meaning | What to do |
 | --- | --- | --- |
 | **Live** | Watching | Nothing |
 | **Stopped** | It was running and stopped, with the reason: the agent stopped reporting, or the kernel refused something | Look at the reason and the agent's log on the host's page; the agent restarts it after a minute |
-| **Off** | An administrator turned it off for this host | **Turn on**, on the Runtime tab |
+| **Off** | Not turned on for this host: the default | **Turn on live detection** on the Runtime tab, or for all hosts in Settings |
 | **Not supported** | The machine can't run it, with the reason: an old kernel, a Mac, or an agent without the rights to load the watchers | See [Where it runs](#where-it-runs) |
 | **Agent too old** | The agent is older than 1.27.0 | [Upgrade the agent](../installation/upgrade.md#which-agents-to-upgrade) |
 | **Starting** | Waiting for the agent's first report | Wait 15 seconds |
@@ -44,8 +52,6 @@ Every agent reports every 15 seconds. On the dashboard:
 **Missed events** counts events the kernel dropped because the agent fell behind, and alerts left out over the limit of 30 a minute. It stays at 0 on all but very busy machines.
 
 **Send a test alert**, on the Runtime tab (operators and admins), proves the whole chain: the agent starts a harmless program (a copy of `true`) from a temporary folder, the watchers see it start, the rule for programs in temporary folders matches it, and a **Test** alert arrives on the tab within about 20 seconds, and on the notification channels that tick **Runtime alerts**. Test alerts don't count as alerts. If the machine's temporary folders don't allow running programs, the tab says so.
-
-**Turn off** and **Turn on** (admins) stop and start it for one host; the audit log records who did.
 
 To be told when it stops, tick **Live detection stopped** on a [notification channel](./notifications.md#events): it's sent when a host where it was running stops, including when its agent stops checking in.
 

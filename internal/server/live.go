@@ -209,3 +209,61 @@ func (s *Server) testLive(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "host.live_test", host.Address, "test alert")
 	w.WriteHeader(http.StatusAccepted)
 }
+
+// liveSettings serves Settings → Live detection: GET /api/settings/live.
+func (s *Server) liveSettings(w http.ResponseWriter, r *http.Request) {
+	overview, err := store.LiveSummary()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
+}
+
+type liveSettingsRequest struct {
+	NewHosts *bool `json:"new_hosts"`
+}
+
+// setLiveSettings sets whether new machines start with live detection on:
+// PUT /api/settings/live.
+func (s *Server) setLiveSettings(w http.ResponseWriter, r *http.Request) {
+	var request liveSettingsRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	if request.NewHosts == nil {
+		writeError(w, http.StatusBadRequest, errors.New("new_hosts is required"))
+		return
+	}
+	if err := store.SetLiveNewHosts(*request.NewHosts); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.audit(r, "settings.live", "new hosts", fmt.Sprintf("live detection for new hosts: %t", *request.NewHosts))
+	s.liveSettings(w, r)
+}
+
+// setLiveAll turns live detection on or off for every machine:
+// POST /api/settings/live/hosts.
+func (s *Server) setLiveAll(w http.ResponseWriter, r *http.Request) {
+	var request setLiveRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	if request.Enabled == nil {
+		writeError(w, http.StatusBadRequest, errors.New("enabled is required"))
+		return
+	}
+	changed, err := store.SetLiveAll(*request.Enabled)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	state := "off"
+	if *request.Enabled {
+		state = "on"
+	}
+	s.audit(r, "settings.live", "all hosts", fmt.Sprintf("live detection %s for all hosts (%d changed)", state, changed))
+	serverLog("", store.LogInfo, "%s turned live detection %s for all hosts (%d changed)", s.actor(r), state, changed)
+	s.liveSettings(w, r)
+}

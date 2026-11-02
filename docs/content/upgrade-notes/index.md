@@ -11,7 +11,7 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.18 to 1.27) a
 
 | Release | Released | What to do |
 | --- | --- | --- |
-| [1.27.0](./v1-27/v1-27-0.md) | 2026-11-01 | Back up: database schema 32; upgrade the agents, and the Helm chart or Kustomize base for the node agent's new capabilities |
+| [1.27.0](./v1-27/v1-27-0.md) | 2026-11-01 | Back up: database schema 32. Live detection is off until you turn it on; upgrade the agents, and the Helm chart or Kustomize base for the node agent's new capabilities, to use it |
 | [1.26.0](./v1-26/v1-26-0.md) | 2026-11-01 | Back up: database schema 31; upgrade the agents and schedule the new Attack paths check to use it |
 | [1.25.0](./v1-25/v1-25-0.md) | 2026-11-01 | Back up: database schema 30; tick web checks on existing network targets to use them |
 | [1.24.0](./v1-24/v1-24-0.md) | 2026-11-01 | Nothing |

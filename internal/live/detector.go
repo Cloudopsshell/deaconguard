@@ -84,11 +84,12 @@ func NewDetector(hostRoot string, logf func(format string, arguments ...any)) *D
 		hostRoot: hostRoot,
 		machine:  newMachine(hostRoot),
 		logf:     logf,
-		enabled:  true,
-		changed:  make(chan struct{}, 1),
-		ready:    make(chan struct{}, 1),
-		seen:     map[string]*seenAlert{},
-		status:   Status{State: StateStarting, Since: time.Now().UTC(), Kernel: KernelRelease()},
+		// Off until the server says it's turned on for this machine.
+		enabled: false,
+		changed: make(chan struct{}, 1),
+		ready:   make(chan struct{}, 1),
+		seen:    map[string]*seenAlert{},
+		status:  Status{State: StateStarting, Since: time.Now().UTC(), Kernel: KernelRelease()},
 	}
 }
 
@@ -238,7 +239,13 @@ func (d *Detector) Run(ctx context.Context) {
 		enabled := d.enabled
 		d.mu.Unlock()
 		if !enabled {
-			d.setState(StateOff, "turned off on the dashboard")
+			// Off, though a machine that couldn't run it says so, so the
+			// dashboard doesn't offer to turn it on.
+			if reason := unsupportedReason(); reason != "" {
+				d.setState(StateUnsupported, reason)
+			} else {
+				d.setState(StateOff, "")
+			}
 			select {
 			case <-ctx.Done():
 				return

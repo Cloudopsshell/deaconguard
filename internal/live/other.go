@@ -40,3 +40,5 @@ func (noMachine) User(uint32) string             { return "" }
 func newMachine(string) Machine { return noMachine{} }
 
 func runTestProgram(string) error { return ErrUnsupported{"live detection runs on Linux only"} }
+
+func unsupportedReason() string { return "live detection runs on Linux only" }

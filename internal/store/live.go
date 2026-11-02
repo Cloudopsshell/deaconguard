@@ -251,8 +251,10 @@ func liveStatuses(hosts []Host, agents map[string]Agent, now time.Time) (map[str
 		switch {
 		case !agentversion.SupportsLive(agent.Version):
 			status.State, status.Reason = LiveAgentTooOld, "the agent runs "+agent.Version+"; live detection needs 1.27.0 or later"
+		// Off, unless the machine couldn't run it anyway.
+		case !status.Enabled && status.State != live.StateUnsupported:
+			status.State, status.Reason = live.StateOff, ""
 		case !status.Enabled:
-			status.State, status.Reason = live.StateOff, "turned off on the dashboard"
 		case status.UpdatedAt == nil:
 			status.State, status.Reason = LiveWaiting, "waiting for the agent's first report"
 		case now.Sub(*status.UpdatedAt) > liveQuiet && status.State != live.StateUnsupported:
@@ -265,12 +267,16 @@ func liveStatuses(hosts []Host, agents map[string]Agent, now time.Time) (map[str
 		if !host.IsCluster() {
 			continue
 		}
-		cluster := &LiveStatus{Enabled: true}
+		cluster := &LiveStatus{}
+		enabled := 0
 		for _, node := range hosts {
 			if node.ClusterID != host.ID || statuses[node.ID] == nil {
 				continue
 			}
 			cluster.Nodes++
+			if statuses[node.ID].Enabled {
+				enabled++
+			}
 			if statuses[node.ID].State == live.StateActive {
 				cluster.NodesActive++
 			}
@@ -281,10 +287,15 @@ func liveStatuses(hosts []Host, agents map[string]Agent, now time.Time) (map[str
 			cluster.Alerts24h.Low += alerts.Low
 		}
 		if cluster.Nodes > 0 {
-			cluster.State = live.StateActive
-			if cluster.NodesActive < cluster.Nodes {
+			cluster.Enabled = enabled > 0
+			switch {
+			case enabled == 0:
+				cluster.State = live.StateOff
+			case cluster.NodesActive < enabled:
 				cluster.State = live.StateStopped
-				cluster.Reason = "live detection runs on " + plural(cluster.NodesActive, "node") + " of " + plural(cluster.Nodes, "node")
+				cluster.Reason = "live detection runs on " + plural(cluster.NodesActive, "node") + " of the " + plural(enabled, "node") + " it's turned on for"
+			default:
+				cluster.State = live.StateActive
 			}
 			statuses[host.ID] = cluster
 		}
@@ -315,4 +326,87 @@ func HostLive(hostID string) (*LiveStatus, error) {
 		return nil, err
 	}
 	return statuses[hostID], nil
+}
+
+// metaLiveNewHosts, when "1", turns live detection on for machines as they
+// enroll.
+const metaLiveNewHosts = "live_new_hosts"
+
+// LiveNewHosts reports whether machines start with live detection on.
+func LiveNewHosts() (bool, error) {
+	value, err := Meta(metaLiveNewHosts)
+	return value == "1", err
+}
+
+// SetLiveNewHosts sets whether machines start with live detection on.
+func SetLiveNewHosts(on bool) error {
+	value := "0"
+	if on {
+		value = "1"
+	}
+	return SetMeta(metaLiveNewHosts, value)
+}
+
+// SetLiveAll turns live detection on or off for every machine with an
+// agent, and returns how many changed.
+func SetLiveAll(on bool) (int, error) {
+	db, err := database()
+	if err != nil {
+		return 0, err
+	}
+	result, err := db.Exec("UPDATE hosts SET live_enabled = ? WHERE transport = ? AND kind = ? AND live_enabled != ?", on, TransportAgent, KindMachine, on)
+	if err != nil {
+		return 0, err
+	}
+	changed, err := result.RowsAffected()
+	return int(changed), err
+}
+
+// LiveOverview counts the machines by live detection's state, for Settings.
+type LiveOverview struct {
+	NewHosts bool `json:"new_hosts"`
+	// On counts the machines it's turned on for, running or not; Off those
+	// that could run it but have it off.
+	On          int `json:"on"`
+	Off         int `json:"off"`
+	Unsupported int `json:"unsupported"`
+	TooOld      int `json:"agent_too_old"`
+}
+
+// LiveSummary counts every machine's live detection.
+func LiveSummary() (LiveOverview, error) {
+	var overview LiveOverview
+	var err error
+	if overview.NewHosts, err = LiveNewHosts(); err != nil {
+		return overview, err
+	}
+	hosts, err := ListHosts()
+	if err != nil {
+		return overview, err
+	}
+	agents, err := Agents()
+	if err != nil {
+		return overview, err
+	}
+	statuses, err := liveStatuses(hosts, agents, time.Now())
+	if err != nil {
+		return overview, err
+	}
+	for _, host := range hosts {
+		status := statuses[host.ID]
+		if status == nil || host.IsCluster() {
+			continue
+		}
+		switch {
+		case status.State == LiveAgentTooOld:
+			overview.TooOld++
+		case status.State == live.StateUnsupported:
+			overview.Unsupported++
+		case status.Enabled:
+			overview.On++
+		default:
+			overview.Off++
+		}
+	}
+	return overview, nil
 }

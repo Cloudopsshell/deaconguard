@@ -73,7 +73,7 @@ export function LiveBadge({ live }: { live?: LiveStatus }) {
   if (!live) return <span className="text-xs text-slate-400">–</span>;
   const style = liveStyle[live.state] ?? liveStyle.stopped;
   const label =
-    live.nodes !== undefined && live.nodes > 0
+    live.nodes !== undefined && live.nodes > 0 && live.state !== "off"
       ? live.nodes_active === live.nodes
         ? `Live on ${live.nodes} of ${live.nodes} nodes`
         : `Live on ${live.nodes_active ?? 0} of ${live.nodes} nodes`
@@ -193,6 +193,77 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
           description="Live detection runs on machines with the DeaconGuard agent, and on Kubernetes nodes with the node agent."
         />
       </Card>
+    );
+  }
+  if (status.state === "off") {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-6 px-5 py-5">
+            <div className="max-w-2xl min-w-64 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className="size-2.5 rounded-full bg-slate-400"
+                  aria-hidden
+                />
+                <h3 className="text-lg font-semibold">Live detection is off</h3>
+                <LiveBadge live={status} />
+              </div>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                Scans, schedules and notifications work as before. Turn live
+                detection on to also watch this machine{" "}
+                <strong>between scans</strong>, as attacks happen: programs
+                started from temporary folders, shells started by web servers,
+                crypto miners, and changes to accounts, sudo rules, SSH keys and
+                scheduled jobs. Alerts arrive within seconds.
+              </p>
+              <ul className="mt-3 space-y-1 text-sm text-slate-500 dark:text-slate-400">
+                {status.kernel && (
+                  <li>✓ This machine can run it: Linux {status.kernel}</li>
+                )}
+                <li>
+                  ✓ Light: about 20 ms of CPU a minute at rest, and about 25 MB
+                  of memory
+                </li>
+                <li>
+                  ✓ Only alerts leave the machine; turn it off again at any time
+                </li>
+              </ul>
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                {canToggle ? (
+                  <>
+                    To turn it on for every host at once, use{" "}
+                    <Link className="underline" to="/settings">
+                      Settings
+                    </Link>
+                    .{" "}
+                  </>
+                ) : (
+                  "An administrator can turn it on. "
+                )}
+                <a
+                  className="underline"
+                  href={liveDocs}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  What it watches
+                </a>
+              </p>
+              {toggle.error && <ErrorMessage error={toggle.error} />}
+            </div>
+            {canToggle && (
+              <Button
+                loading={toggle.isPending}
+                onClick={() => toggle.mutate(true)}
+              >
+                Turn on live detection
+              </Button>
+            )}
+          </div>
+        </Card>
+        {data.alerts.length > 0 && <AlertsTable alerts={data.alerts} />}
+      </div>
     );
   }
   const sentence = stateSentence(status);
@@ -403,7 +474,7 @@ function AlertsTable({ alerts }: { alerts: LiveAlert[] }) {
   );
 }
 
-/** The dashboard's card: how many hosts are watched live, and which aren't. */
+/** The dashboard's card: how many hosts are watched, which could be, and which stopped. */
 export function LiveCard({
   hosts,
   className,
@@ -411,74 +482,212 @@ export function LiveCard({
   hosts: HostSummary[];
   className?: string;
 }) {
-  const watched = hosts.filter(
-    (host) => host.live && host.kind !== "cluster" && host.live.state !== "off",
-  );
-  if (watched.length === 0) return null;
-  const active = watched.filter((host) => host.live?.state === "active");
-  const others = watched.filter((host) => host.live?.state !== "active");
-  const percent = Math.round((active.length / watched.length) * 100);
+  const canToggle = useCan("admin");
+  const machines = hosts.filter((host) => host.live && host.kind !== "cluster");
+  if (machines.length === 0) return null;
+  const state = (host: HostSummary) => host.live!.state;
+  const active = machines.filter((host) => state(host) === "active");
+  const off = machines.filter((host) => state(host) === "off");
+  const tooOld = machines.filter((host) => state(host) === "agent_too_old");
+  const stopped = machines.filter((host) => state(host) === "stopped");
+  const percent = Math.round((active.length / machines.length) * 100);
   return (
     <Card className={className}>
       <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
         <div>
           <h2 className="text-base font-semibold">Live detection</h2>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            Watching for attacks as they happen
+            Watching for attacks as they happen, on the hosts it's turned on for
           </p>
         </div>
         <p className="text-3xl font-semibold tabular-nums">
           {active.length}{" "}
           <span className="text-base font-normal text-slate-500 dark:text-slate-400">
-            of {watched.length} hosts active
+            of {machines.length} hosts watched
           </span>
         </p>
       </div>
       <div
         className="h-1.5 bg-slate-100 dark:bg-slate-800"
         role="img"
-        aria-label={`${percent}% of hosts active`}
+        aria-label={`${percent}% of hosts watched`}
       >
         <div
           className="h-full bg-emerald-500"
           style={{ width: `${percent}%` }}
         />
       </div>
-      {others.length > 0 && (
-        <ul className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
-          {others.slice(0, 8).map((host) => (
-            <li
-              key={host.id}
-              className="flex items-center justify-between gap-3 px-5 py-2.5"
-            >
-              <span className="min-w-0">
-                <span
-                  className={cx(
-                    "mr-2 inline-block size-2 rounded-full",
-                    (liveStyle[host.live!.state] ?? liveStyle.stopped).dot,
-                  )}
-                  aria-hidden
-                />
-                <span className="font-medium">{host.address}</span>{" "}
-                <span className="text-slate-500 dark:text-slate-400">
-                  · {(liveStyle[host.live!.state] ?? liveStyle.stopped).label}
-                  {host.live?.reason ? `: ${host.live.reason}` : ""}
-                </span>
+      <ul className="divide-y divide-slate-200 text-sm dark:divide-slate-800">
+        {stopped.slice(0, 8).map((host) => (
+          <li
+            key={host.id}
+            className="flex items-center justify-between gap-3 px-5 py-2.5"
+          >
+            <span className="min-w-0">
+              <span
+                className={cx(
+                  "mr-2 inline-block size-2 rounded-full",
+                  liveStyle.stopped.dot,
+                )}
+                aria-hidden
+              />
+              <span className="font-medium">{host.address}</span>{" "}
+              <span className="text-slate-500 dark:text-slate-400">
+                · Stopped{host.live?.reason ? `: ${host.live.reason}` : ""}
               </span>
+            </span>
+            <Link
+              className="shrink-0 text-indigo-600 hover:underline dark:text-indigo-300"
+              to={`/hosts/${host.id}?tab=runtime`}
+            >
+              Open
+            </Link>
+          </li>
+        ))}
+        {off.length > 0 && (
+          <li className="flex items-center justify-between gap-3 px-5 py-2.5">
+            <span className="text-slate-500 dark:text-slate-400">
+              {off.length === 1
+                ? "1 host could run it but has it off."
+                : `${off.length} hosts could run it but have it off.`}
+            </span>
+            {canToggle && (
               <Link
                 className="shrink-0 text-indigo-600 hover:underline dark:text-indigo-300"
-                to={`/hosts/${host.id}?tab=runtime`}
+                to="/settings"
               >
-                Open
+                Turn on in Settings
               </Link>
-            </li>
-          ))}
-          {others.length > 8 && (
-            <li className="px-5 py-2.5 text-slate-500 dark:text-slate-400">
-              And {others.length - 8} more on the Hosts page.
-            </li>
-          )}
-        </ul>
+            )}
+          </li>
+        )}
+        {tooOld.length > 0 && (
+          <li className="flex items-center justify-between gap-3 px-5 py-2.5">
+            <span className="text-slate-500 dark:text-slate-400">
+              {tooOld.length === 1
+                ? "1 agent needs"
+                : `${tooOld.length} agents need`}{" "}
+              upgrading to 1.27.0 or later to run it.
+            </span>
+            <Link
+              className="shrink-0 text-indigo-600 hover:underline dark:text-indigo-300"
+              to="/agents"
+            >
+              Agents
+            </Link>
+          </li>
+        )}
+      </ul>
+    </Card>
+  );
+}
+
+/** Settings → Live detection: on for new hosts, and on or off for all at once. */
+export function LiveSettings() {
+  const queryClient = useQueryClient();
+  const { data, error, isPending } = useQuery({
+    queryKey: ["live-settings"],
+    queryFn: api.liveSettings,
+  });
+  const update = (overview: unknown) => {
+    queryClient.setQueryData(["live-settings"], overview);
+    void queryClient.invalidateQueries({ queryKey: ["hosts"] });
+    void queryClient.invalidateQueries({ queryKey: ["summary"] });
+  };
+  const newHosts = useMutation({
+    mutationFn: api.setLiveNewHosts,
+    onSuccess: update,
+  });
+  const all = useMutation({ mutationFn: api.setLiveAll, onSuccess: update });
+  if (isPending) return null;
+  if (error) return <ErrorMessage error={error} />;
+  const counts = [
+    `${data.on} on`,
+    `${data.off} off`,
+    data.unsupported > 0 && `${data.unsupported} can't run it`,
+    data.agent_too_old > 0 &&
+      `${data.agent_too_old} ${data.agent_too_old === 1 ? "needs its agent" : "need their agents"} upgraded to 1.27.0`,
+  ].filter(Boolean);
+  return (
+    <Card className="mb-6">
+      <CardHeader
+        title="Live detection"
+        description={
+          <>
+            Watch machines between scans, as attacks happen. Off unless you turn
+            it on; scans, schedules and notifications don't depend on it.{" "}
+            <a
+              className="underline"
+              href={liveDocs}
+              target="_blank"
+              rel="noreferrer"
+            >
+              What it watches
+            </a>
+          </>
+        }
+      />
+      <div className="divide-y divide-slate-200 dark:divide-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <p className="font-medium">Turn on for new hosts</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Machines enrolled from now on start with live detection on.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={data.new_hosts}
+            aria-label="Turn on live detection for new hosts"
+            disabled={newHosts.isPending}
+            onClick={() => newHosts.mutate(!data.new_hosts)}
+            className={cx(
+              "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-60",
+              data.new_hosts
+                ? "bg-indigo-600"
+                : "bg-slate-300 dark:bg-slate-700",
+            )}
+          >
+            <span
+              className={cx(
+                "inline-block size-4 rounded-full bg-white shadow transition-transform",
+                data.new_hosts ? "translate-x-4.5" : "translate-x-0.5",
+              )}
+            />
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <p className="font-medium">Existing hosts</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {counts.join(", ")}. Each host can also be turned on or off on its
+              Runtime tab.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              disabled={data.on === 0}
+              loading={all.isPending && all.variables === false}
+              onClick={() => all.mutate(false)}
+            >
+              Turn off for all
+            </Button>
+            <Button
+              disabled={data.off === 0}
+              loading={all.isPending && all.variables === true}
+              onClick={() => all.mutate(true)}
+            >
+              Turn on for all {data.off > 0 ? data.off : ""}
+            </Button>
+          </div>
+        </div>
+      </div>
+      {(newHosts.error || all.error) && (
+        <div className="px-5 pb-4">
+          <ErrorMessage error={newHosts.error ?? all.error} />
+        </div>
       )}
     </Card>
   );
