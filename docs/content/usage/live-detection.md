@@ -109,4 +109,4 @@ The watchers use only the kernel's stable tracepoints, for system calls and for 
 
 - Linux 5.8 or later, on `x86_64` or `arm64`.
 - The agent running as root, as it does when installed with the install script or the packages. In Kubernetes and Docker Compose, the agent's container needs the `BPF` and `PERFMON` capabilities, which the Helm chart, the Kustomize base and the Compose file give it from 1.27.0.
-- The kernel's tracing file system at `/sys/kernel/tracing`, which systemd mounts at boot; the agent mounts it when it isn't.
+- The kernel's tracing file system at `/sys/kernel/tracing` (or `/sys/kernel/debug/tracing`), which systemd mounts at boot. An agent installed on the machine mounts it when it isn't; an agent in a container can't, so on a Kubernetes node or a machine running the Compose agent without it, the host shows **Not supported**, saying so: mount it on the machine with `mount -t tracefs tracefs /sys/kernel/tracing`.
