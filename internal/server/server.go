@@ -167,6 +167,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("PATCH /api/hosts/{id}", s.needs(store.RoleOperator, s.updateHost))
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.needs(store.RoleAdmin, s.removeHost))
 	mux.HandleFunc("PUT /api/hosts/{id}/tags", s.needs(store.RoleOperator, s.setHostTags))
+	mux.HandleFunc("PUT /api/hosts/{id}/excluded", s.needs(store.RoleAdmin, s.setExcluded))
 	mux.HandleFunc("GET /api/hosts/{id}/live", s.getLive)
 	mux.HandleFunc("PUT /api/hosts/{id}/live", s.needs(store.RoleAdmin, s.setLive))
 	mux.HandleFunc("POST /api/hosts/{id}/live/test", s.needs(store.RoleOperator, s.testLive))
@@ -735,6 +736,12 @@ func (s *Server) updateHost(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "host.sudo", host.Address, fmt.Sprintf("allow sudo: %t", *request.AllowSudo))
 	}
 	if request.AutoScanContainers != nil {
+		if before, err := store.GetHost(r.PathValue("id")); err == nil {
+			if err := store.NodeSettingError(before); err != nil {
+				writeError(w, http.StatusConflict, err)
+				return
+			}
+		}
 		if host, err = store.SetAutoScanContainers(r.PathValue("id"), *request.AutoScanContainers); err != nil {
 			writeError(w, http.StatusNotFound, err)
 			return
@@ -777,6 +784,10 @@ func (s *Server) setHostTags(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
+	if err := store.NodeSettingError(host); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
 	tags, err := store.SetHostTags(host.ID, request.Tags)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -784,6 +795,39 @@ func (s *Server) setHostTags(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "host.tags", host.Address, "tags: "+strings.Join(tags, ", "))
 	writeJSON(w, http.StatusOK, tagsRequest{Tags: tags})
+}
+
+type excludedRequest struct {
+	Excluded *bool `json:"excluded"`
+}
+
+// setExcluded leaves a node out of its cluster's scans and live detection,
+// or brings it back: PUT /api/hosts/{id}/excluded.
+func (s *Server) setExcluded(w http.ResponseWriter, r *http.Request) {
+	var request excludedRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	if request.Excluded == nil {
+		writeError(w, http.StatusBadRequest, errors.New("excluded is required"))
+		return
+	}
+	host, err := store.GetHost(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if host, err = store.SetExcluded(host.ID, *request.Excluded); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	what := "follows its cluster again"
+	if host.Excluded {
+		what = "excluded from its cluster's scans and live detection"
+	}
+	s.audit(r, "host.exclude", host.Address, what)
+	serverLog(host.ID, store.LogInfo, "%s: %s %s", s.actor(r), host.Address, what)
+	writeJSON(w, http.StatusOK, host)
 }
 
 func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
@@ -886,6 +930,13 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fmt.Errorf("%s was disconnected: %s. Enroll its agent again with a new token to scan it", host.Address, host.Disconnected.Reason))
 		return
 	}
+	// A cluster's scan runs the Kubernetes check on the cluster and the
+	// other checks asked for on each of its nodes not excluded.
+	var nodeChecks []string
+	if host.IsCluster() {
+		nodeChecks = checks.ForHost(store.KindMachine, selected)
+		selected = []string{checks.Kubernetes}
+	}
 	if err := checkAgentVersion(host, selected); err != nil {
 		writeError(w, http.StatusConflict, err)
 		return
@@ -904,11 +955,60 @@ func (s *Server) startScan(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "scan.start", host.Address, strings.Join(selected, ", "))
 	serverLog(host.ID, store.LogInfo, "Scan of %s started by %s: %s", host.Address, s.actor(r), strings.Join(selected, ", "))
-	writeJSON(w, http.StatusAccepted, scan)
+	response := startScanResponse{Scan: scan}
+	if len(nodeChecks) > 0 {
+		response.NodesStarted, response.NodesSkipped = s.scanNodes(r, host, nodeChecks)
+	}
+	writeJSON(w, http.StatusAccepted, response)
 }
 
 type startScanRequest struct {
 	Checks []string `json:"checks"`
+}
+
+type startScanResponse struct {
+	store.Scan
+	// For a cluster: how many of its nodes' scans started, and why others
+	// didn't.
+	NodesStarted int      `json:"nodes_started,omitempty"`
+	NodesSkipped []string `json:"nodes_skipped,omitempty"`
+}
+
+// scanNodes starts the scans of a cluster's nodes, with the checks each
+// node's agent can run.
+func (s *Server) scanNodes(r *http.Request, cluster store.Host, selected []string) (started int, skipped []string) {
+	nodes, err := store.ClusterNodes(cluster.ID)
+	if err != nil {
+		return 0, []string{err.Error()}
+	}
+	for _, node := range nodes {
+		reason := ""
+		switch {
+		case node.Excluded:
+			continue
+		case node.Disconnected != nil:
+			reason = "disconnected"
+		default:
+			if err := checkAgentVersion(node, selected); err != nil {
+				reason = err.Error()
+			} else if _, err := s.runner.start(node, selected, false); errors.Is(err, errScanInProgress) {
+				reason = "a scan is already queued or running"
+			} else if err != nil {
+				reason = err.Error()
+			}
+		}
+		if reason != "" {
+			skipped = append(skipped, node.Address+": "+reason)
+			continue
+		}
+		started++
+		s.agents.wake(node.ID)
+		serverLog(node.ID, store.LogInfo, "Scan of %s started by %s with its cluster %s: %s", node.Address, s.actor(r), cluster.Address, strings.Join(selected, ", "))
+	}
+	if started > 0 {
+		s.audit(r, "scan.start", cluster.Address, fmt.Sprintf("%s: %s", plural(started, "node", "nodes"), strings.Join(selected, ", ")))
+	}
+	return started, skipped
 }
 
 func (s *Server) listPrompts(w http.ResponseWriter, r *http.Request) {

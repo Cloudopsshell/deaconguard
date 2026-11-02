@@ -54,6 +54,8 @@ type LiveAlert struct {
 	ID     int64     `json:"id"`
 	HostID string    `json:"host_id"`
 	At     time.Time `json:"at"`
+	// Host names the node, in a cluster's alerts.
+	Host string `json:"host,omitempty"`
 	live.Alert
 }
 
@@ -121,8 +123,12 @@ func LiveSettings(hostID string) (enabled, test bool, err error) {
 }
 
 // SetLiveEnabled turns live detection on or off for a host.
+// For a cluster, its nodes follow.
 func SetLiveEnabled(hostID string, enabled bool) error {
-	return updateHostLive("UPDATE hosts SET live_enabled = ? WHERE id = ?", enabled, hostID)
+	if err := updateHostLive("UPDATE hosts SET live_enabled = ? WHERE id = ?", enabled, hostID); err != nil {
+		return err
+	}
+	return syncIfCluster(hostID)
 }
 
 // AskLiveTest has the host's agent send a test alert with its next report;
@@ -152,12 +158,23 @@ func updateHostLive(query string, value bool, hostID string) error {
 
 // LiveAlerts lists a host's alerts, newest first, at most limit of them.
 func LiveAlerts(hostID string, count int) ([]LiveAlert, error) {
+	return queryLiveAlerts("a.host_id = ?", hostID, count)
+}
+
+// ClusterLiveAlerts lists the alerts of all a cluster's nodes, newest
+// first, each naming its node.
+func ClusterLiveAlerts(clusterID string, count int) ([]LiveAlert, error) {
+	return queryLiveAlerts("h.cluster_id = ?", clusterID, count)
+}
+
+func queryLiveAlerts(where, value string, count int) ([]LiveAlert, error) {
 	db, err := database()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(`SELECT id, host_id, at, rule, severity, title, detail, pid, user, program, parent, command, path, test, repeats
-		FROM live_alerts WHERE host_id = ? ORDER BY id DESC LIMIT ?`, hostID, count)
+	rows, err := db.Query(`SELECT a.id, a.host_id, CASE WHEN h.display_name != '' THEN h.display_name ELSE h.address END, a.at, a.rule, a.severity,
+		a.title, a.detail, a.pid, a.user, a.program, a.parent, a.command, a.path, a.test, a.repeats
+		FROM live_alerts a JOIN hosts h ON h.id = a.host_id WHERE `+where+` ORDER BY a.id DESC LIMIT ?`, value, count)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +183,7 @@ func LiveAlerts(hostID string, count int) ([]LiveAlert, error) {
 	for rows.Next() {
 		var alert LiveAlert
 		var at string
-		if err := rows.Scan(&alert.ID, &alert.HostID, &at, &alert.Rule, &alert.Severity, &alert.Title, &alert.Detail, &alert.PID, &alert.User,
+		if err := rows.Scan(&alert.ID, &alert.HostID, &alert.Host, &at, &alert.Rule, &alert.Severity, &alert.Title, &alert.Detail, &alert.PID, &alert.User,
 			&alert.Program, &alert.Parent, &alert.Command, &alert.Path, &alert.Test, &alert.Repeats); err != nil {
 			return nil, err
 		}
@@ -262,23 +279,28 @@ func liveStatuses(hosts []Host, agents map[string]Agent, now time.Time) (map[str
 		}
 		statuses[host.ID] = &status
 	}
-	// A cluster counts its nodes'.
+	// A cluster has its own switch, which its nodes follow, and counts its
+	// nodes' state and alerts.
 	for _, host := range hosts {
 		if !host.IsCluster() {
 			continue
 		}
-		cluster := &LiveStatus{}
-		enabled := 0
+		cluster := &LiveStatus{Enabled: enabled[host.ID]}
+		following := 0
 		for _, node := range hosts {
 			if node.ClusterID != host.ID || statuses[node.ID] == nil {
 				continue
 			}
 			cluster.Nodes++
 			if statuses[node.ID].Enabled {
-				enabled++
+				following++
 			}
 			if statuses[node.ID].State == live.StateActive {
 				cluster.NodesActive++
+				// Watching since the first node started.
+				if since := statuses[node.ID].Since; cluster.Since.IsZero() || since.Before(cluster.Since) {
+					cluster.Since = since
+				}
 			}
 			alerts := statuses[node.ID].Alerts24h
 			cluster.Alerts24h.Critical += alerts.Critical
@@ -286,19 +308,22 @@ func liveStatuses(hosts []Host, agents map[string]Agent, now time.Time) (map[str
 			cluster.Alerts24h.Medium += alerts.Medium
 			cluster.Alerts24h.Low += alerts.Low
 		}
-		if cluster.Nodes > 0 {
-			cluster.Enabled = enabled > 0
-			switch {
-			case enabled == 0:
-				cluster.State = live.StateOff
-			case cluster.NodesActive < enabled:
-				cluster.State = live.StateStopped
-				cluster.Reason = "live detection runs on " + plural(cluster.NodesActive, "node") + " of the " + plural(enabled, "node") + " it's turned on for"
-			default:
-				cluster.State = live.StateActive
-			}
-			statuses[host.ID] = cluster
+		if cluster.Since.IsZero() {
+			cluster.Since = time.Now().UTC()
 		}
+		switch {
+		case !cluster.Enabled:
+			cluster.State = live.StateOff
+		case following == 0:
+			cluster.State = live.StateStopped
+			cluster.Reason = "no node of the cluster runs a node agent that can run it"
+		case cluster.NodesActive < following:
+			cluster.State = live.StateStopped
+			cluster.Reason = "live detection runs on " + plural(cluster.NodesActive, "node") + " of the " + plural(following, "node") + " it's turned on for"
+		default:
+			cluster.State = live.StateActive
+		}
+		statuses[host.ID] = cluster
 	}
 	return statuses, nil
 }
@@ -354,12 +379,17 @@ func SetLiveAll(on bool) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	result, err := db.Exec("UPDATE hosts SET live_enabled = ? WHERE transport = ? AND kind = ? AND live_enabled != ?", on, TransportAgent, KindMachine, on)
+	// Machines of their own, and clusters, whose nodes follow.
+	result, err := db.Exec("UPDATE hosts SET live_enabled = ? WHERE transport = ? AND (kind = ? AND cluster_id = '' OR kind = ?) AND live_enabled != ?",
+		on, TransportAgent, KindMachine, KindCluster, on)
 	if err != nil {
 		return 0, err
 	}
 	changed, err := result.RowsAffected()
-	return int(changed), err
+	if err != nil {
+		return 0, err
+	}
+	return int(changed), syncAllClusters()
 }
 
 // LiveOverview counts the machines by live detection's state, for Settings.
@@ -393,8 +423,9 @@ func LiveSummary() (LiveOverview, error) {
 		return overview, err
 	}
 	for _, host := range hosts {
+		// Servers, and clusters, each counted once: nodes follow theirs.
 		status := statuses[host.ID]
-		if status == nil || host.IsCluster() {
+		if status == nil || host.IsNode() {
 			continue
 		}
 		switch {

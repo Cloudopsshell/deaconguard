@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Bug, ChevronDown, ChevronRight, Info } from "lucide-react";
 import {
@@ -15,6 +15,7 @@ import {
 import { Card, ErrorMessage, Loading, SearchBox, SeverityBadge, Table, Td, Th, cx } from "./ui";
 import { AgentStatus } from "../pages/Agents";
 import { agentOnline } from "../lib/hosts";
+import { LiveBadge, RuntimeTab } from "./LiveDetection";
 import { timeAgo } from "../lib/format";
 
 /**
@@ -24,21 +25,28 @@ import { timeAgo } from "../lib/format";
  */
 export function ClusterOverview({ hostId }: { hostId: string }) {
   const { data, error, isPending } = useQuery({ queryKey: ["cluster", hostId], queryFn: () => api.clusterView(hostId), refetchInterval: 30_000 });
-  const [tab, setTab] = useState<"workloads" | "nodes" | "images" | "settings">("workloads");
+  // The tab is in the address, so links can open the Nodes or Runtime tab.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabIds = ["workloads", "nodes", "runtime", "images", "settings"] as const;
+  type TabId = (typeof tabIds)[number];
+  const requested = (searchParams.get("view") ?? (searchParams.get("tab") === "runtime" ? "runtime" : "")) as TabId;
+  const tab: TabId = tabIds.includes(requested) ? requested : "workloads";
+  const setTab = (id: TabId) => setSearchParams(id === "workloads" ? {} : { view: id }, { replace: true });
   if (isPending) return <Loading />;
   if (error) return <ErrorMessage error={error} />;
   if (!data.scan_id) {
     return (
       <Card className="mb-6">
         <p className="p-5 text-sm text-slate-600 dark:text-slate-300">
-          Not scanned yet. Press Scan now: the cluster agent lists the cluster's nodes, namespaces and pods, and checks its settings.
+          Not scanned yet. Press Scan cluster and nodes: the cluster agent lists the cluster's nodes, namespaces and pods, and checks its settings.
         </p>
       </Card>
     );
   }
-  const tabs: { id: typeof tab; label: string }[] = [
+  const tabs: { id: TabId; label: string }[] = [
     { id: "workloads", label: "Workloads" },
     { id: "nodes", label: `Nodes (${data.nodes.length})` },
+    { id: "runtime", label: "Runtime" },
     { id: "images", label: `Images (${data.images.length})` },
     { id: "settings", label: `Cluster settings (${data.findings.length})` },
   ];
@@ -73,6 +81,7 @@ export function ClusterOverview({ hostId }: { hostId: string }) {
       <div className="mt-4">
         {tab === "workloads" && <WorkloadTree view={data} />}
         {tab === "nodes" && <NodeTable view={data} />}
+        {tab === "runtime" && <RuntimeTab hostId={hostId} />}
         {tab === "images" && <ImageTable view={data} />}
         {tab === "settings" && <ClusterFindings findings={data.findings} />}
       </div>
@@ -503,11 +512,34 @@ function FindingRow({ finding, indent }: { finding: CheckFinding; indent: string
   );
 }
 
+/** Whether version a is older than b, comparing numbers. */
+function olderVersion(a: string, b: string): boolean {
+  const parts = (version: string) => version.replace(/^v/, "").split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+  }
+  return false;
+}
+
 function NodeTable({ view }: { view: ClusterView }) {
   if (!view.inventory) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">Upgrade the cluster agent to 1.21.0 or later to list the nodes.</p>;
   }
+  const versions = view.nodes.map((node) => node.host?.agent?.version ?? "").filter(Boolean);
+  const newest = versions.reduce((a, b) => (olderVersion(a, b) ? b : a), "");
+  const behind = versions.filter((version) => olderVersion(version, newest)).length;
   return (
+    <>
+    {behind > 0 && (
+      <p className="mb-3 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-800 ring-1 ring-amber-600/20 ring-inset dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-400/30">
+        {behind === 1 ? "1 node runs" : `${behind} nodes run`} an older node agent than {newest}: upgrade the chart's node agents, as{" "}
+        <a className="underline" href="https://docs.deaconguard.io/installation/upgrade" target="_blank" rel="noreferrer">
+          Upgrading
+        </a>{" "}
+        shows.
+      </p>
+    )}
     <Card>
       <Table>
         <thead>
@@ -516,6 +548,7 @@ function NodeTable({ view }: { view: ClusterView }) {
             <Th>Status</Th>
             <Th>System</Th>
             <Th>Node agent</Th>
+            <Th>Live detection</Th>
             <Th>Problems</Th>
           </tr>
         </thead>
@@ -554,10 +587,25 @@ function NodeTable({ view }: { view: ClusterView }) {
                 {node.host ? (
                   <>
                     <AgentStatus online={agentOnline(node.host)} lastSeen={node.host.agent?.last_seen_at} disconnected={!!node.host.disconnected} />
-                    <p className="font-mono text-slate-500 dark:text-slate-400">{node.host.agent?.version}</p>
+                    <p className="font-mono text-slate-500 dark:text-slate-400">
+                      {node.host.agent?.version}
+                      {node.host.agent?.version && newest && olderVersion(node.host.agent.version, newest) && (
+                        <span className="ml-1.5 rounded bg-amber-50 px-1 font-sans text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">older</span>
+                      )}
+                    </p>
                   </>
                 ) : (
                   <span className="text-slate-500 dark:text-slate-400">none: turn on agent.enabled in the chart</span>
+                )}
+              </Td>
+              <Td className="text-xs">
+                {node.host ? (
+                  <>
+                    <LiveBadge live={node.host.live} />
+                    {node.host.excluded && <p className="mt-1 text-slate-500 dark:text-slate-400">excluded</p>}
+                  </>
+                ) : (
+                  <span className="text-slate-400">—</span>
                 )}
               </Td>
               <Td className="text-xs">
@@ -576,7 +624,12 @@ function NodeTable({ view }: { view: ClusterView }) {
           ))}
         </tbody>
       </Table>
+      <p className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        Nodes follow the cluster's settings, nodes that join later included. A node that leaves the cluster is removed 3 days later, once its agent has
+        gone quiet.
+      </p>
     </Card>
+    </>
   );
 }
 

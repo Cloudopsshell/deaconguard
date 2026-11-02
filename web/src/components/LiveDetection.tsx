@@ -5,6 +5,7 @@ import {
   api,
   type HostSummary,
   type LiveAlert,
+  type LiveDetail,
   type LiveState,
   type LiveStatus,
 } from "../api";
@@ -159,7 +160,17 @@ function formatCount(value: number) {
 }
 
 /** The host's Runtime tab: is detection running, what it costs, and its alerts. */
-export function RuntimeTab({ hostId }: { hostId: string }) {
+/**
+ * A host's live detection. A cluster's shows all its nodes; a node's says it
+ * follows its cluster, whose switch turns it on and off.
+ */
+export function RuntimeTab({
+  hostId,
+  follows,
+}: {
+  hostId: string;
+  follows?: { id: string; name: string; excluded?: boolean };
+}) {
   const queryClient = useQueryClient();
   const canTest = useCan("operator");
   const canToggle = useCan("admin");
@@ -184,6 +195,12 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
   if (isPending) return <Loading />;
   if (error) return <ErrorMessage error={error} />;
   const status = data.status;
+  const cluster = data.nodes !== undefined;
+  const clusterLink = follows && (
+    <Link className="text-indigo-600 hover:underline dark:text-indigo-300" to={`/hosts/${follows.id}?tab=runtime`}>
+      {follows.name}
+    </Link>
+  );
   if (!status) {
     return (
       <Card>
@@ -206,12 +223,27 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
                   className="size-2.5 rounded-full bg-slate-400"
                   aria-hidden
                 />
-                <h3 className="text-lg font-semibold">Live detection is off</h3>
+                <h3 className="text-lg font-semibold">
+                  {follows?.excluded
+                    ? "Live detection is off: this node is excluded"
+                    : follows
+                      ? "Live detection is off for this cluster"
+                      : "Live detection is off"}
+                </h3>
                 <LiveBadge live={status} />
               </div>
+              {follows && (
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  {follows.excluded ? (
+                    <>This node is left out of {clusterLink}'s scans and live detection; bring it back from its page's header.</>
+                  ) : (
+                    <>This node follows its cluster, {clusterLink}: turn live detection on there, for every node at once.</>
+                  )}
+                </p>
+              )}
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
                 Scans, schedules and notifications work as before. Turn live
-                detection on to also watch this machine{" "}
+                detection on to also watch {cluster ? "every node of this cluster, nodes that join later included," : "this machine"}{" "}
                 <strong>between scans</strong>, as attacks happen: programs
                 started from temporary folders, shells started by web servers,
                 crypto miners, and changes to accounts, sudo rules, SSH keys and
@@ -220,6 +252,9 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
               <ul className="mt-3 space-y-1 text-sm text-slate-500 dark:text-slate-400">
                 {status.kernel && (
                   <li>✓ This machine can run it: Linux {status.kernel}</li>
+                )}
+                {cluster && (status.nodes ?? 0) > 0 && (
+                  <li>✓ {status.nodes === 1 ? "Its node has" : `Its ${status.nodes} nodes have`} a node agent to run it</li>
                 )}
                 <li>
                   ✓ Light: about 20 ms of CPU a minute at rest, and about 25 MB
@@ -230,7 +265,7 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
                 </li>
               </ul>
               <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                {canToggle ? (
+                {follows ? null : canToggle ? (
                   <>
                     To turn it on for every host at once, use{" "}
                     <Link className="underline" to="/settings">
@@ -252,12 +287,12 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
               </p>
               {toggle.error && <ErrorMessage error={toggle.error} />}
             </div>
-            {canToggle && (
+            {canToggle && !follows && (
               <Button
                 loading={toggle.isPending}
                 onClick={() => toggle.mutate(true)}
               >
-                Turn on live detection
+                {cluster ? "Turn on for the cluster" : "Turn on live detection"}
               </Button>
             )}
           </div>
@@ -311,6 +346,9 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
             {(test.error || toggle.error) && (
               <ErrorMessage error={test.error ?? toggle.error} />
             )}
+            {follows && (
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Follows its cluster, {clusterLink}: turn it on or off there.</p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             {canTest && status.state === "active" && (
@@ -322,18 +360,20 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
                 Send a test alert
               </Button>
             )}
-            {canToggle && status.state !== "agent_too_old" && (
+            {canToggle && !follows && status.state !== "agent_too_old" && (
               <Button
                 variant="secondary"
                 loading={toggle.isPending}
                 onClick={() => toggle.mutate(!status.enabled)}
               >
                 {status.enabled ? "Turn off" : "Turn on"}
+                {cluster && " for the cluster"}
               </Button>
             )}
           </div>
         </div>
-        {status.state === "active" && (
+        {cluster && <NodeLiveTable nodes={data.nodes ?? []} />}
+        {!cluster && status.state === "active" && (
           <dl className="grid grid-cols-2 border-t border-slate-200 text-sm sm:grid-cols-4 dark:border-slate-800">
             <div className="px-5 py-3">
               <dt className="text-slate-500 dark:text-slate-400">
@@ -387,7 +427,7 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
           </dl>
         )}
       </Card>
-      <AlertsTable alerts={data.alerts} />
+      <AlertsTable alerts={data.alerts} cluster={cluster} />
       <p className="text-xs text-slate-500 dark:text-slate-400">
         What live detection watches, and what it doesn't:{" "}
         <a
@@ -404,18 +444,69 @@ export function RuntimeTab({ hostId }: { hostId: string }) {
   );
 }
 
-function AlertsTable({ alerts }: { alerts: LiveAlert[] }) {
+/** A cluster's nodes: each one's state, and what live detection costs it. */
+function NodeLiveTable({ nodes }: { nodes: NonNullable<LiveDetail["nodes"]> }) {
+  if (nodes.length === 0) {
+    return (
+      <p className="border-t border-slate-200 px-5 py-3 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        No node has a node agent yet: turn on agent.enabled in the chart, and each node's agent follows this switch.
+      </p>
+    );
+  }
+  return (
+    <Table>
+      <thead>
+        <tr>
+          <Th>Node</Th>
+          <Th>State</Th>
+          <Th className="text-right">Events, last hour</Th>
+          <Th className="text-right">Agent's cost</Th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+        {nodes.map((node) => (
+          <tr key={node.host_id}>
+            <Td>
+              <Link className="font-medium text-indigo-600 hover:underline dark:text-indigo-300" to={`/hosts/${node.host_id}?tab=runtime`}>
+                {node.host}
+              </Link>
+              {node.excluded && <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">excluded</span>}
+            </Td>
+            <Td>
+              <LiveBadge live={node.status ?? undefined} />
+              {node.status?.state === "stopped" && node.status.reason && (
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{node.status.reason}</p>
+              )}
+            </Td>
+            <Td className="text-right tabular-nums">{node.status?.state === "active" ? formatCount(node.status.events_last_hour) : "–"}</Td>
+            <Td className="text-right tabular-nums">
+              {node.status?.state === "active"
+                ? `${node.status.cpu_percent.toFixed(1)}% CPU · ${Math.round(node.status.memory_bytes / (1 << 20))} MB`
+                : "–"}
+            </Td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  );
+}
+
+function AlertsTable({ alerts, cluster = false }: { alerts: LiveAlert[]; cluster?: boolean }) {
   return (
     <Card>
       <CardHeader
         title="Alerts"
-        description="Newest first. Only alerts leave the machine, never what programs read or write."
+        description={
+          cluster
+            ? "Newest first, from every node. Only alerts leave the nodes, never what programs read or write."
+            : "Newest first. Only alerts leave the machine, never what programs read or write."
+        }
       />
       {alerts.length === 0 ? (
         <EmptyState
           icon={<ShieldCheck className="size-6" />}
           title="No alerts"
-          description="Nothing suspicious has started or changed on this machine."
+          description={cluster ? "Nothing suspicious has started or changed on the cluster's nodes." : "Nothing suspicious has started or changed on this machine."}
         />
       ) : (
         <Table>
@@ -424,6 +515,7 @@ function AlertsTable({ alerts }: { alerts: LiveAlert[] }) {
               <Th>When</Th>
               <Th>Severity</Th>
               <Th>What happened</Th>
+              {cluster && <Th>Node</Th>}
               <Th>Process</Th>
             </tr>
           </thead>
@@ -456,6 +548,13 @@ function AlertsTable({ alerts }: { alerts: LiveAlert[] }) {
                       : ""}
                   </p>
                 </Td>
+                {cluster && (
+                  <Td className="whitespace-nowrap">
+                    <Link className="text-indigo-600 hover:underline dark:text-indigo-300" to={`/hosts/${alert.host_id}?tab=runtime`}>
+                      {alert.host}
+                    </Link>
+                  </Td>
+                )}
                 <Td className="max-w-md font-mono text-xs break-all text-slate-700 dark:text-slate-300">
                   {alert.parent && <span>{alert.parent} › </span>}
                   {alert.command || alert.program}
@@ -483,8 +582,11 @@ export function LiveCard({
   className?: string;
 }) {
   const canToggle = useCan("admin");
-  const machines = hosts.filter((host) => host.live && host.kind !== "cluster");
+  // A cluster counts once, with its nodes; its nodes aren't counted again.
+  const machines = hosts.filter((host) => host.live && !host.cluster_id);
   if (machines.length === 0) return null;
+  const clusters = machines.filter((host) => host.kind === "cluster");
+  const servers = machines.length - clusters.length;
   const state = (host: HostSummary) => host.live!.state;
   const active = machines.filter((host) => state(host) === "active");
   const off = machines.filter((host) => state(host) === "off");
@@ -497,13 +599,16 @@ export function LiveCard({
         <div>
           <h2 className="text-base font-semibold">Live detection</h2>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            Watching for attacks as they happen, on the hosts it's turned on for
+            Watching for attacks as they happen, on the servers and clusters it's turned on for
           </p>
         </div>
         <p className="text-3xl font-semibold tabular-nums">
           {active.length}{" "}
           <span className="text-base font-normal text-slate-500 dark:text-slate-400">
-            of {machines.length} hosts watched
+            of {[servers > 0 && `${servers} ${servers === 1 ? "server" : "servers"}`, clusters.length > 0 && `${clusters.length} ${clusters.length === 1 ? "cluster" : "clusters"}`]
+              .filter(Boolean)
+              .join(" and ")}{" "}
+            watched
           </span>
         </p>
       </div>
@@ -548,8 +653,8 @@ export function LiveCard({
           <li className="flex items-center justify-between gap-3 px-5 py-2.5">
             <span className="text-slate-500 dark:text-slate-400">
               {off.length === 1
-                ? "1 host could run it but has it off."
-                : `${off.length} hosts could run it but have it off.`}
+                ? `${off[0].address} could run it but has it off.`
+                : `${off.length} servers and clusters could run it but have it off.`}
             </span>
             {canToggle && (
               <Link
@@ -582,7 +687,7 @@ export function LiveCard({
   );
 }
 
-/** Settings → Live detection: on for new hosts, and on or off for all at once. */
+/** Settings → Live detection: on for new servers, and on or off for all at once. */
 export function LiveSettings() {
   const queryClient = useQueryClient();
   const { data, error, isPending } = useQuery({
@@ -630,16 +735,16 @@ export function LiveSettings() {
       <div className="divide-y divide-slate-200 dark:divide-slate-800">
         <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
           <div>
-            <p className="font-medium">Turn on for new hosts</p>
+            <p className="font-medium">Turn on for new servers</p>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Machines enrolled from now on start with live detection on.
+              Servers enrolled from now on start with live detection on. A cluster's nodes follow their cluster's own switch.
             </p>
           </div>
           <button
             type="button"
             role="switch"
             aria-checked={data.new_hosts}
-            aria-label="Turn on live detection for new hosts"
+            aria-label="Turn on live detection for new servers"
             disabled={newHosts.isPending}
             onClick={() => newHosts.mutate(!data.new_hosts)}
             className={cx(
@@ -659,9 +764,9 @@ export function LiveSettings() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
           <div>
-            <p className="font-medium">Existing hosts</p>
+            <p className="font-medium">Existing servers and clusters</p>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              {counts.join(", ")}. Each host can also be turned on or off on its
+              {counts.join(", ")}, a cluster counted once with its nodes. Each can also be turned on or off on its
               Runtime tab.
             </p>
           </div>

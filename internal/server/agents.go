@@ -106,6 +106,15 @@ func (h *agentHub) expire() {
 	}
 	h.mu.Unlock()
 	h.presence.sweep(time.Now(), busy)
+	// Nodes that left their cluster days ago, with their agents silent since.
+	if removed, err := store.RemoveGoneNodes(time.Now()); err != nil {
+		serverLog("", store.LogError, "Could not remove the nodes that left their clusters: %v", err)
+	} else {
+		for _, host := range removed {
+			store.Audit("server", "host.remove", host.Address, "the node left its cluster; its agent was silent for 3 days", "")
+			serverLog(host.ClusterID, store.LogInfo, "Removed %s: the node left the cluster and its agent was silent for 3 days", host.Address)
+		}
+	}
 	for _, id := range expired {
 		if record, err := store.GetScan(id); err == nil {
 			serverLog(record.HostID, store.LogWarning, "The agent on %s did not pick up its scan within %s; check that it is running", record.Address, queuedScanTimeout)

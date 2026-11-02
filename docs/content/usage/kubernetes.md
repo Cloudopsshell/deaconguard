@@ -26,15 +26,30 @@ Kubernetes' own objects (`kube-system`, `kube-public`, `kube-node-lease`, and th
 
 To check a cluster from the server, on a schedule and with notifications, install the **cluster agent** in it: `cluster.enabled=true` in the [Helm chart](../installation/kubernetes.md#4-the-cluster-itself). It enrolls with the same token as the chart's node agents, `enrollment.existingSecret` (create it with **Enroll a machine** > **Kubernetes**), and appears on **Hosts** as a Kubernetes cluster, with its own page.
 
+### The cluster is what you manage
+
+From 1.28.0, you manage a cluster as one, not node by node. Its settings are set on the cluster's page, and every node with a [node agent](../installation/kubernetes.md#3-the-agents) follows them, nodes that join later included:
+
+- **Live detection:** one switch for the whole cluster. See [Live detection](./live-detection.md#kubernetes).
+- **Scan when the cluster changes:** checks the cluster within a minute of a change, and the nodes' new containers as they start.
+- **Schedules:** a schedule that scans the cluster scans its nodes too, with the checks that apply to each: the Kubernetes check on the cluster, the others on the nodes.
+- **Tags:** the cluster's tags are its nodes' tags, for [notifications](./notifications.md) and maintenance windows.
+- **Scan cluster and nodes:** the cluster's scan runs the Kubernetes check on the cluster, and the checks you tick on each node.
+
+A node's page says **Follows CLUSTER's settings**, and a node's own switches, tags and live detection can't be changed: the API answers `409` and names the cluster. The one thing set on a node is **Exclude this node** (admins): an excluded node is left out of the cluster's scans and schedules, and live detection is off on it; it keeps the cluster's tags, and you can still scan it with **Scan this node**.
+
+A cluster is one entry on **Hosts**, **Agents** and the dashboard, marked **Kubernetes**, with its nodes summed in it: how many, whether they're online, whether any runs an older agent, live detection on how many, and the most critical and high vulnerabilities on any one node. Its nodes are listed on its page, not as hosts of their own. The server ties a node agent's host to its cluster by the node's name, from the cluster agent's scan; when two machines have the same name, the one enrolled with the cluster's token wins.
+
+A node that leaves the cluster, as when a node pool scales down, stays on the cluster's page, marked as gone, and is removed 3 days later once its agent has been silent since; the audit log says so. A node the cluster no longer lists whose agent still checks in, such as a renamed machine, becomes a host of its own.
+
 ### The cluster's page
 
-From 1.21.0, a cluster is one entry on **Hosts** and **Agents**, marked **Kubernetes**, and the hosts of its [node agents](../installation/kubernetes.md#3-the-agents) are listed under it, marked **Node**, instead of as hosts of their own. A node's page links back to its cluster. The server ties a node agent's host to its cluster by the node's name, from the cluster agent's scan; when two machines have the same name, the one enrolled with the cluster's token wins.
-
-The cluster's page shows what it runs, from its latest scan:
+The cluster's page shows its settings, then what it runs, from its latest scan:
 
 - **Summary:** its nodes (Ready, and with a node agent), namespaces, pods and containers, and the critical and high vulnerabilities, misconfigurations and malware found in them.
 - **Workloads:** a tree of **Namespace** > workload (**Deployment**, **StatefulSet**, **DaemonSet**, **CronJob**, …) > **Pod** > **Container**. Each level adds up the problems of those under it: a container's vulnerabilities and malware, a workload's [findings about its settings](#rules-for-clusters), a namespace's own (no NetworkPolicy, no Pod Security Standard). Each pod links to the node it runs on; each container shows its image, and whether its node agent checked that very container or the server checked its image. **Only with problems** is on at first, and Kubernetes' own namespaces are hidden until you show them; the filter finds a namespace, workload, pod, node or image by name.
-- **Nodes:** each node's status, roles, address, OS, kernel and container runtime, its node agent, and its own vulnerabilities and malware. A node without a node agent says so: its packages aren't checked, and its containers only through their images.
+- **Nodes:** each node's status, roles, address, OS, kernel and container runtime, its node agent and its version, its live detection, and its own vulnerabilities and malware. A node on an older agent than the others is marked, with how to upgrade. A node without a node agent says so: its packages aren't checked, and its containers only through their images. Each node opens its own page.
+- **Runtime:** live detection on all the nodes: each node's state, events looked at and cost, and one stream of alerts from every node, each naming its node.
 - **Images:** every image the pods run, with the namespaces and pods that run it and its vulnerabilities.
 - **Cluster settings:** findings about the cluster as a whole, such as roles that give cluster-admin, the API server's settings, and the Kubernetes version.
 

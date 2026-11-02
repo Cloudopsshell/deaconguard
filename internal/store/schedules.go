@@ -175,13 +175,17 @@ func ScheduleRan(id string, ranAt time.Time, next string) error {
 	return err
 }
 
-// Covers reports whether the schedule scans host.
-func (schedule Schedule) Covers(hostID string) bool {
+// Covers reports whether the schedule scans host: a node when it scans its
+// cluster, unless the node is excluded.
+func (schedule Schedule) Covers(host Host) bool {
+	if host.Excluded {
+		return false
+	}
 	if schedule.AllHosts {
 		return true
 	}
 	for _, id := range schedule.HostIDs {
-		if id == hostID {
+		if id == host.ID || host.ClusterID != "" && id == host.ClusterID {
 			return true
 		}
 	}
@@ -207,7 +211,7 @@ func nextScans(hosts []Host) (map[string]NextScan, error) {
 			continue
 		}
 		for _, host := range hosts {
-			if !schedule.Covers(host.ID) {
+			if !schedule.Covers(host) {
 				continue
 			}
 			if current, ok := result[host.ID]; !ok || strings.Compare(schedule.NextRunAt, current.At) < 0 {

@@ -585,11 +585,20 @@ func ValidHostname(name string) bool {
 	}) < 0
 }
 
+// nodeQuietAfter is how long a node's agent may be silent before the node
+// counts as gone with its cluster's node, rather than renamed.
+const nodeQuietAfter = 10 * time.Minute
+
 // LinkClusterNodes records which hosts are the nodes of a cluster, from the
 // node names its cluster agent reported: the agent hosts of machines with
 // those names. When two machines share a name, the one enrolled with the
 // cluster's token wins, then one already linked; otherwise neither is
-// linked. Hosts no longer among its nodes are unlinked.
+// linked. Linked nodes follow the cluster's settings (syncNodes).
+//
+// A node the cluster no longer lists, whose agent still checks in, has
+// become a machine of its own (renamed, or moved to another cluster) and is
+// unlinked. One whose agent has gone quiet left with its node: it stays
+// linked, marked as gone, until RemoveGoneNodes removes it.
 func LinkClusterNodes(clusterID string, nodeNames []string) error {
 	db, err := database()
 	if err != nil {
@@ -604,8 +613,40 @@ func LinkClusterNodes(clusterID string, nodeNames []string) error {
 	if err := tx.QueryRow("SELECT token_id FROM agents WHERE host_id = ?", clusterID).Scan(&clusterToken); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if _, err := tx.Exec("UPDATE hosts SET cluster_id = '' WHERE cluster_id = ?", clusterID); err != nil {
+	listed := map[string]bool{}
+	for _, name := range nodeNames {
+		listed[name] = true
+	}
+	now := time.Now().UTC()
+	quiet := now.Add(-nodeQuietAfter).Format(time.RFC3339)
+	rows, err := tx.Query(`SELECT hosts.id, hosts.address, hosts.left_cluster_at, COALESCE(agents.last_seen_at, '') FROM hosts
+		LEFT JOIN agents ON agents.host_id = hosts.id WHERE hosts.cluster_id = ?`, clusterID)
+	if err != nil {
 		return err
+	}
+	type linkedNode struct{ id, name, left, seen string }
+	var linked []linkedNode
+	for rows.Next() {
+		var node linkedNode
+		if err := rows.Scan(&node.id, &node.name, &node.left, &node.seen); err != nil {
+			rows.Close()
+			return err
+		}
+		linked = append(linked, node)
+	}
+	rows.Close()
+	for _, node := range linked {
+		switch {
+		case listed[node.name]:
+		case node.seen > quiet:
+			if _, err := tx.Exec("UPDATE hosts SET cluster_id = '', left_cluster_at = '', excluded = 0 WHERE id = ?", node.id); err != nil {
+				return err
+			}
+		case node.left == "":
+			if _, err := tx.Exec("UPDATE hosts SET left_cluster_at = ? WHERE id = ?", now.Format(time.RFC3339), node.id); err != nil {
+				return err
+			}
+		}
 	}
 	for _, name := range nodeNames {
 		rows, err := tx.Query(`SELECT hosts.id, COALESCE(agents.token_id, ''), hosts.cluster_id FROM hosts LEFT JOIN agents ON agents.host_id = hosts.id
@@ -635,9 +676,12 @@ func LinkClusterNodes(clusterID string, nodeNames []string) error {
 		if chosen == "" {
 			continue
 		}
-		if _, err := tx.Exec("UPDATE hosts SET cluster_id = ? WHERE id = ?", clusterID, chosen); err != nil {
+		if _, err := tx.Exec("UPDATE hosts SET cluster_id = ?, left_cluster_at = '' WHERE id = ?", clusterID, chosen); err != nil {
 			return err
 		}
+	}
+	if err := syncNodes(tx, clusterID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

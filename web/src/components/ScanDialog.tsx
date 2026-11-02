@@ -31,20 +31,26 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
   const saveSudo = useMutation({ mutationFn: (allow: boolean) => api.setAllowSudo(host.id, allow), onSuccess: refresh });
 
   const cluster = host.kind === "cluster";
-  // A cluster runs only the Kubernetes check; a machine every other.
-  const runnable = checksFor(host, definitions.data?.map((check) => check.id) ?? []);
-  const chosen = cluster
-    ? runnable
-    : checksFor(host, selected ?? definitions.data?.filter((check) => check.default).map((check) => check.id) ?? []);
+  // A cluster runs the Kubernetes check itself, and the checks chosen
+  // below on each of its nodes; a machine runs every other check.
+  const machine = { kind: "machine" };
+  const runnable = cluster
+    ? definitions.data?.map((check) => check.id) ?? []
+    : checksFor(host, definitions.data?.map((check) => check.id) ?? []);
+  const nodeChecks = checksFor(cluster ? machine : host, selected ?? definitions.data?.filter((check) => check.default).map((check) => check.id) ?? []);
+  const chosen: CheckId[] = cluster ? ["kubernetes", ...nodeChecks] : nodeChecks;
   const chosenDefinitions = definitions.data?.filter((check) => chosen.includes(check.id)) ?? [];
-  const wantsSudo = chosenDefinitions.some((check) => check.sudo === "recommended");
+  const wantsSudo = !cluster && chosenDefinitions.some((check) => check.sudo === "recommended");
 
   // The advanced scan is a level of the antivirus check, not a check of its own:
   // it always runs with ClamAV, and goes when the antivirus check is unticked.
   const advanced = definitions.data?.find((check) => check.id === "yara");
-  const listed = definitions.data?.filter((check) => check.id !== "yara" && runnable.includes(check.id)) ?? [];
+  const listed = (definitions.data?.filter((check) => check.id !== "yara" && runnable.includes(check.id)) ?? []).sort(
+    (a, b) => Number(b.id === "kubernetes") - Number(a.id === "kubernetes"),
+  );
 
   function toggle(id: CheckId) {
+    if (id === "kubernetes") return;
     setSelected(
       chosen.includes(id)
         ? chosen.filter((value) => value !== id && !(id === "antivirus" && value === "yara"))
@@ -59,7 +65,7 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
 
   async function start() {
     if (!cluster && allowSudo !== host.allow_sudo) await saveSudo.mutateAsync(allowSudo);
-    if (!cluster) rememberChecks(chosen);
+    rememberChecks(nodeChecks);
     await startScan.mutateAsync({ hostId: host.id, checks: chosen });
     onClose();
   }
@@ -74,10 +80,17 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
         <div className="space-y-4">
           <fieldset className="space-y-2">
             <legend className="mb-2 text-sm font-medium">Choose what to check</legend>
-            {listed.map((check) => {
+            {listed.map((check, index) => {
               const Icon = checkMeta[check.id].icon;
               const checked = chosen.includes(check.id);
-              return (
+              const heading =
+                cluster && index === listed.findIndex((item) => item.id !== "kubernetes") ? (
+                  <p key="nodes" className="pt-2 text-sm font-medium">
+                    On each of its nodes, those not excluded
+                  </p>
+                ) : null;
+              return [
+                heading,
                 <label
                   key={check.id}
                   className={cx(
@@ -90,6 +103,7 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
                   <input
                     type="checkbox"
                     checked={checked}
+                    disabled={check.id === "kubernetes"}
                     onChange={() => toggle(check.id)}
                     className="mt-1 size-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
                   />
@@ -113,8 +127,8 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
                       <AntivirusLevel advanced={advanced} on={chosen.includes("yara")} onChange={setAdvanced} />
                     )}
                   </span>
-                </label>
-              );
+                </label>,
+              ];
             })}
           </fieldset>
 

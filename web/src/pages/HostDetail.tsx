@@ -20,7 +20,7 @@ import { RunAuditDialog } from "../components/RunAuditDialog";
 import { GradeBadge } from "../lib/audit";
 import { useCan } from "../lib/role";
 import { api, type CheckId, type Host, type HostDetail as HostDetailData, type Scan } from "../api";
-import { RuntimeTab, liveStyle } from "../components/LiveDetection";
+import { LiveBadge, RuntimeTab, liveStyle } from "../components/LiveDetection";
 import { CheckResultView } from "../components/CheckResultView";
 import { ScanConsole } from "../components/ScanConsole";
 import { ScanDialog } from "../components/ScanDialog";
@@ -94,7 +94,7 @@ export function HostDetail() {
               {cluster.data.address}
             </Link>
             <span aria-hidden>/</span>
-            <span>nodes</span>
+            <span>{data.address}</span>
           </>
         )}
       </div>
@@ -131,24 +131,18 @@ export function HostDetail() {
               </span>
             )}
             <span className="mt-1.5 block">
-              <TagEditor key={data.tags.join(",")} hostId={data.id} tags={data.tags} canEdit={canOperate} />
+              {/* A node carries its cluster's tags. */}
+              <TagEditor key={data.tags.join(",")} hostId={data.id} tags={data.tags} canEdit={canOperate && !data.cluster_id} />
             </span>
             {data.transport === "local" && <SudoToggle host={data} />}
-            {data.transport === "agent" && <ContainerScanToggle host={data} />}
+            {data.transport === "agent" && data.kind !== "cluster" && !data.cluster_id && <ContainerScanToggle host={data} />}
             {data.transport === "agent" && (
               <span className="mt-1 block">
                 <AgentStatus online={agentOnline(data)} lastSeen={data.agent?.last_seen_at} disconnected={!!data.disconnected} />
               </span>
             )}
-            {data.cluster_id && cluster.data && (
-              <span className="mt-1 block text-sm">
-                A node of the Kubernetes cluster{" "}
-                <Link to={`/hosts/${cluster.data.id}`} className="text-indigo-600 hover:underline dark:text-indigo-400">
-                  {cluster.data.address}
-                </Link>
-                : its node agent checks the machine and the containers it runs.
-              </span>
-            )}
+            {/* A cluster's and its nodes' schedule is in the cluster's settings below. */}
+            {data.kind !== "cluster" && !data.cluster_id && (
             <span className="mt-1 flex items-center gap-1.5 text-sm">
               <CalendarClock className="size-4 text-slate-400" aria-hidden />
               {data.next_scan ? (
@@ -169,6 +163,7 @@ export function HostDetail() {
                 </span>
               )}
             </span>
+            )}
           </>
         }
         action={
@@ -195,7 +190,11 @@ export function HostDetail() {
                   ? "Waiting for agent…"
                   : running
                     ? "Scanning…"
-                    : "Scan now"}
+                    : data.kind === "cluster"
+                      ? "Scan cluster and nodes"
+                      : data.cluster_id
+                        ? "Scan this node"
+                        : "Scan now"}
             </Button>
             )}
           </>
@@ -218,6 +217,9 @@ export function HostDetail() {
           </div>
         </Card>
       )}
+
+      {data.kind === "cluster" && <ClusterSettings host={data} />}
+      {data.cluster_id && cluster.data && <FollowsCluster node={data} cluster={cluster.data} />}
 
       {data.kind === "cluster" && <ClusterOverview hostId={data.id} />}
 
@@ -274,7 +276,7 @@ export function HostDetail() {
           </div>
         </details>
       ) : (
-        <Results host={data} onRun={(check) => setScanning({ initial: [check] })} />
+        <Results host={data} cluster={cluster.data} onRun={(check) => setScanning({ initial: [check] })} />
       )}
 
       <TrendChart host={data.id} title="This host's vulnerabilities over time" />
@@ -431,6 +433,145 @@ function SudoToggle({ host }: { host: Host }) {
   );
 }
 
+function Switch({ on, label, disabled, onClick }: { on: boolean; label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cx(
+        "relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-60",
+        on ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-700",
+      )}
+    >
+      <span className={cx("inline-block size-4 rounded-full bg-white shadow transition-transform", on ? "translate-x-4.5" : "translate-x-0.5")} />
+    </button>
+  );
+}
+
+/**
+ * A cluster's settings, which every node follows, nodes that join later
+ * included: live detection, scanning as it changes, and its schedule.
+ */
+function ClusterSettings({ host }: { host: HostDetailData }) {
+  const canAdmin = useCan("admin");
+  const canOperate = useCan("operator");
+  const refresh = useRefreshAll();
+  const live = host.live;
+  const setLive = useMutation({ mutationFn: (on: boolean) => api.setLive(host.id, on), onSettled: refresh });
+  const setAuto = useMutation({ mutationFn: (on: boolean) => api.setAutoScanContainers(host.id, on), onSettled: refresh });
+  const auto = host.auto_scan_containers ?? false;
+  const nodes = live?.nodes ?? 0;
+  return (
+    <Card className="mb-6">
+      <p className="border-b border-slate-200 px-5 py-2.5 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
+        These settings, and the cluster's tags, apply to the cluster and <strong>every node in it</strong>, nodes that join later included.
+      </p>
+      <div className="grid divide-y divide-slate-200 md:grid-cols-3 md:divide-x md:divide-y-0 dark:divide-slate-800">
+        <div className="flex gap-3 p-4">
+          <Switch
+            on={live?.enabled ?? false}
+            label="Live detection for the cluster"
+            disabled={!canAdmin || setLive.isPending}
+            onClick={() => setLive.mutate(!(live?.enabled ?? false))}
+          />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium">
+              <Link to="?tab=runtime" className="hover:underline">
+                Live detection: {live?.enabled ? "on" : "off"}
+              </Link>
+            </p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-slate-500 dark:text-slate-400">
+              {live?.enabled && nodes > 0 && <LiveBadge live={live} />}
+              {nodes === 0 ? "no node has a node agent yet" : live?.enabled ? "new nodes start watched" : `${nodes} ${nodes === 1 ? "node" : "nodes"} could run it`}
+            </p>
+            {!canAdmin && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">An administrator can change this.</p>}
+            {setLive.error && <ErrorMessage error={setLive.error} />}
+          </div>
+        </div>
+        <div className="flex gap-3 p-4">
+          <Switch on={auto} label="Scan when the cluster changes" disabled={!canOperate || setAuto.isPending} onClick={() => setAuto.mutate(!auto)} />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium">Scan when the cluster changes: {auto ? "on" : "off"}</p>
+            <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+              {auto
+                ? "Workloads, roles and policies checked within a minute; nodes' new containers within 10"
+                : "Turn on to check the cluster, and nodes' new containers, as they change"}
+            </p>
+            {setAuto.error && <ErrorMessage error={setAuto.error} />}
+          </div>
+        </div>
+        <div className="flex gap-3 p-4">
+          <CalendarClock className="mt-0.5 size-5 shrink-0 text-slate-400" aria-hidden />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium">{host.next_scan ? `Schedule: ${host.next_scan.schedule}` : "Not on a schedule"}</p>
+            <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+              {host.next_scan ? `Next ${dateTime(host.next_scan.at)}, the cluster and its nodes · ` : "Scanned when someone presses Scan · "}
+              <Link to="/schedules" className="text-indigo-600 hover:underline dark:text-indigo-400">
+                {host.next_scan ? "Change" : "Add a schedule"}
+              </Link>
+            </p>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** A node's settings come from its cluster; it can only be excluded. */
+function FollowsCluster({ node, cluster }: { node: HostDetailData; cluster: HostDetailData }) {
+  const canAdmin = useCan("admin");
+  const refresh = useRefreshAll();
+  const exclude = useMutation({ mutationFn: (on: boolean) => api.setExcluded(node.id, on), onSettled: refresh });
+  const excluded = node.excluded ?? false;
+  const clusterLink = (
+    <Link to={`/hosts/${cluster.id}`} className="text-indigo-600 hover:underline dark:text-indigo-400">
+      {cluster.address}
+    </Link>
+  );
+  return (
+    <Card className="mb-6">
+      <div className="flex flex-wrap items-start justify-between gap-4 p-4">
+        <div className="min-w-64 flex-1 text-sm">
+          <p className="font-medium">
+            {excluded ? <>Excluded from {clusterLink}'s scans and live detection</> : <>Follows {clusterLink}'s settings</>}
+          </p>
+          <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+            {excluded ? (
+              "Its cluster's schedules and scans leave it out, and live detection is off here. Scan it yourself with Scan this node."
+            ) : (
+              <>
+                Live detection {cluster.live?.enabled ? "on" : "off"} · scan when the cluster changes {cluster.auto_scan_containers ? "on" : "off"} ·{" "}
+                {cluster.next_scan ? `schedule ${cluster.next_scan.schedule}` : "no schedule"}
+                {cluster.tags.length > 0 && ` · tags ${cluster.tags.join(", ")}`} ·{" "}
+                <Link to={`/hosts/${cluster.id}`} className="text-indigo-600 hover:underline dark:text-indigo-400">
+                  change on the cluster
+                </Link>
+              </>
+            )}
+          </p>
+          {node.left_cluster_at && (
+            <p className="mt-1 text-amber-700 dark:text-amber-300">
+              The cluster stopped listing this node {timeAgo(node.left_cluster_at)}; it's removed 3 days after it left, unless its agent checks in again.
+            </p>
+          )}
+          {exclude.error && <ErrorMessage error={exclude.error} />}
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <Switch on={excluded} label="Exclude this node" disabled={!canAdmin || exclude.isPending} onClick={() => exclude.mutate(!excluded)} />
+          <span>
+            Exclude this node
+            <span className="block text-xs text-slate-500 dark:text-slate-400">no cluster scans, no live detection</span>
+          </span>
+        </label>
+      </div>
+    </Card>
+  );
+}
+
 /** Whether new containers on an agent host get scanned as they start. */
 function ContainerScanToggle({ host }: { host: Host }) {
   const canOperate = useCan("operator");
@@ -473,7 +614,7 @@ function ContainerScanToggle({ host }: { host: Host }) {
 }
 
 /** One tab per check, each showing that check's newest successful result on this host. */
-function Results({ host, onRun }: { host: HostDetailData; onRun: (check: CheckId) => void }) {
+function Results({ host, onRun, cluster }: { host: HostDetailData; onRun: (check: CheckId) => void; cluster?: HostDetailData }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get("tab") as CheckId | null;
   const tabs = checksFor(host);
@@ -555,7 +696,11 @@ function Results({ host, onRun }: { host: HostDetailData; onRun: (check: CheckId
           return index === 0 && runtimeTab ? [button, runtimeTab] : button;
         })}
       </div>
-      {runtimeOpen ? <RuntimeTab hostId={host.id} /> : <CheckTab host={host} check={active} onRun={onRun} />}
+      {runtimeOpen ? (
+        <RuntimeTab hostId={host.id} follows={cluster ? { id: cluster.id, name: cluster.address, excluded: host.excluded } : undefined} />
+      ) : (
+        <CheckTab host={host} check={active} onRun={onRun} />
+      )}
     </section>
   );
 }

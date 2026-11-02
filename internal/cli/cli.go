@@ -153,12 +153,37 @@ func runHost(arguments []string, output io.Writer) error {
 			return nil
 		}
 		outdated := 0
+		// A cluster's nodes are listed under it.
+		clusters := map[string]bool{}
+		nodes := map[string][]store.HostSummary{}
 		for _, host := range hosts {
+			if host.IsCluster() {
+				clusters[host.ID] = true
+			}
+		}
+		var listed []store.HostSummary
+		for _, host := range hosts {
+			if host.ClusterID != "" && clusters[host.ClusterID] {
+				nodes[host.ClusterID] = append(nodes[host.ClusterID], host)
+			}
+		}
+		for _, host := range hosts {
+			if host.ClusterID != "" && clusters[host.ClusterID] {
+				continue
+			}
+			listed = append(listed, host)
+			listed = append(listed, nodes[host.ID]...)
+		}
+		for _, host := range listed {
 			sudo := ""
 			if host.AllowSudo {
 				sudo = "  (sudo allowed)"
 			}
 			if host.Transport == store.TransportAgent {
+				prefix := ""
+				if host.ClusterID != "" && clusters[host.ClusterID] {
+					prefix = "  └ "
+				}
 				agent := "agent"
 				if host.Agent != nil && host.Agent.Version != "" {
 					agent += " " + host.Agent.Version
@@ -170,7 +195,13 @@ func runHost(arguments []string, output io.Writer) error {
 				if line := liveLine(host.Live); line != "" {
 					agent += "; " + line
 				}
-				fmt.Fprintf(output, "%s  %s  (%s)\n", host.ID, host.Address, agent)
+				if prefix != "" {
+					agent = "node, follows the cluster; " + agent
+					if host.Excluded {
+						agent = "node, excluded from the cluster's scans and live detection; " + strings.TrimPrefix(agent, "node, follows the cluster; ")
+					}
+				}
+				fmt.Fprintf(output, "%s%s  %s  (%s)\n", prefix, host.ID, host.Address, agent)
 				continue
 			}
 			fmt.Fprintf(output, "%s  this machine (%s, as %s)%s\n", host.ID, host.Address, host.Username, sudo)
@@ -620,7 +651,7 @@ func liveLine(status *store.LiveStatus) string {
 	if status == nil {
 		return ""
 	}
-	if status.Nodes > 0 {
+	if status.Nodes > 0 && status.Enabled {
 		return fmt.Sprintf("live detection on %d of %d nodes", status.NodesActive, status.Nodes)
 	}
 	alerts := status.Alerts24h.Critical + status.Alerts24h.High + status.Alerts24h.Medium + status.Alerts24h.Low
