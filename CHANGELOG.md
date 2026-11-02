@@ -8,6 +8,17 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.29.0] - 2026-11-02
+
+### Added
+
+- **A cluster's nodes' findings, combined:** the cluster's page has **Vulnerabilities**, **Malware** (with the antivirus check's findings) and **File integrity** tabs listing the nodes' findings from their latest scans, each once, with how many of the nodes it's on ("all 3 nodes", "1 of 3 nodes"); opening it names the nodes and, for a package, each node's version. `GET /api/hosts/{id}/cluster/findings?check=packages|malware|antivirus|integrity`.
+
+### Changed
+
+- **A cluster's vulnerabilities count once:** the same package and vulnerability on several of a cluster's nodes is one finding of the cluster on the dashboard (what to fix, known exploited, fix deadlines), its trends, the Vulnerabilities page's host counts, and the Hosts list's **Nodes** badge, which now opens the cluster's Vulnerabilities tab. Hosts have `nodes`, a cluster's combined counts. Trends count a cluster once from its first node scan after upgrading; before, its nodes counted one by one.
+- **Live detection tries again every 5 minutes** on a machine that couldn't run it, instead of every hour, so mounting tracefs or granting the capabilities takes effect without restarting the agent.
+
 ## [1.28.0] - 2026-11-02
 
 ### Changed
@@ -448,7 +459,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.28.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.29.0...HEAD
+[1.29.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.25.0...v1.26.0

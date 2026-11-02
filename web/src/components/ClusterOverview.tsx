@@ -16,6 +16,7 @@ import { Card, ErrorMessage, Loading, SearchBox, SeverityBadge, Table, Td, Th, c
 import { AgentStatus } from "../pages/Agents";
 import { agentOnline } from "../lib/hosts";
 import { LiveBadge, RuntimeTab } from "./LiveDetection";
+import { ClusterCheckFindings, ClusterVulnerabilities } from "./ClusterFindings";
 import { timeAgo } from "../lib/format";
 
 /**
@@ -27,7 +28,7 @@ export function ClusterOverview({ hostId }: { hostId: string }) {
   const { data, error, isPending } = useQuery({ queryKey: ["cluster", hostId], queryFn: () => api.clusterView(hostId), refetchInterval: 30_000 });
   // The tab is in the address, so links can open the Nodes or Runtime tab.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabIds = ["workloads", "nodes", "runtime", "images", "settings"] as const;
+  const tabIds = ["workloads", "nodes", "runtime", "vulnerabilities", "malware", "integrity", "images", "settings"] as const;
   type TabId = (typeof tabIds)[number];
   const requested = (searchParams.get("view") ?? (searchParams.get("tab") === "runtime" ? "runtime" : "")) as TabId;
   const tab: TabId = tabIds.includes(requested) ? requested : "workloads";
@@ -47,6 +48,9 @@ export function ClusterOverview({ hostId }: { hostId: string }) {
     { id: "workloads", label: "Workloads" },
     { id: "nodes", label: `Nodes (${data.nodes.length})` },
     { id: "runtime", label: "Runtime" },
+    { id: "vulnerabilities", label: "Vulnerabilities" },
+    { id: "malware", label: "Malware" },
+    { id: "integrity", label: "File integrity" },
     { id: "images", label: `Images (${data.images.length})` },
     { id: "settings", label: `Cluster settings (${data.findings.length})` },
   ];
@@ -82,6 +86,13 @@ export function ClusterOverview({ hostId }: { hostId: string }) {
         {tab === "workloads" && <WorkloadTree view={data} />}
         {tab === "nodes" && <NodeTable view={data} />}
         {tab === "runtime" && <RuntimeTab hostId={hostId} />}
+        {tab === "vulnerabilities" && <ClusterVulnerabilities hostId={hostId} />}
+        {tab === "malware" && (
+          <ClusterCheckFindings hostId={hostId} checks={["malware", "antivirus"]} title="Malware on the nodes" empty="No malware found on the nodes" />
+        )}
+        {tab === "integrity" && (
+          <ClusterCheckFindings hostId={hostId} checks={["integrity"]} title="File integrity on the nodes" empty="No changed system files on the nodes" />
+        )}
         {tab === "images" && <ImageTable view={data} />}
         {tab === "settings" && <ClusterFindings findings={data.findings} />}
       </div>

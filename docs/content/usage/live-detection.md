@@ -52,7 +52,7 @@ Every agent reports every 15 seconds. On the dashboard:
 | **Live** | Watching | Nothing |
 | **Stopped** | It was running and stopped, with the reason: the agent stopped reporting, or the kernel refused something | Look at the reason and the agent's log on the host's page; the agent restarts it after a minute |
 | **Off** | Not turned on for this host: the default | **Turn on live detection** on the Runtime tab, or for all hosts in Settings; for a node, the switch on its cluster's page |
-| **Not supported** | The machine can't run it, with the reason: an old kernel, a Mac, or an agent without the rights to load the watchers | See [Where it runs](#where-it-runs) |
+| **Not supported** | The machine can't run it, with the reason: an old kernel, a Mac, or an agent without the rights to load the watchers | See [Where it runs](#where-it-runs). The agent tries again every 5 minutes, so a fix such as mounting tracefs takes effect without restarting it (from 1.29.0; every hour before) |
 | **Agent too old** | The agent is older than 1.27.0 | [Upgrade the agent](../installation/upgrade.md#which-agents-to-upgrade) |
 | **Starting** | Waiting for the agent's first report | Wait 15 seconds |
 
