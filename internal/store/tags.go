@@ -66,6 +66,10 @@ func SetHostTags(hostID string, tags []string) ([]string, error) {
 			return nil, err
 		}
 	}
+	// A cluster's nodes carry its tags.
+	if err := syncNodes(tx, hostID); err != nil {
+		return nil, err
+	}
 	return tags, tx.Commit()
 }
 
