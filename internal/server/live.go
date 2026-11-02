@@ -130,6 +130,15 @@ func (s *Server) liveStopped(host store.Host, reason string) {
 type liveResponse struct {
 	Status *store.LiveStatus `json:"status"`
 	Alerts []store.LiveAlert `json:"alerts"`
+	// Nodes is each node's live detection, for a cluster.
+	Nodes []nodeLive `json:"nodes,omitempty"`
+}
+
+type nodeLive struct {
+	HostID   string            `json:"host_id"`
+	Host     string            `json:"host"`
+	Excluded bool              `json:"excluded,omitempty"`
+	Status   *store.LiveStatus `json:"status"`
 }
 
 // getLive serves a host's live detection: GET /api/hosts/{id}/live.
@@ -144,14 +153,32 @@ func (s *Server) getLive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	alerts := []store.LiveAlert{}
-	if !host.IsCluster() {
-		if alerts, err = store.LiveAlerts(host.ID, liveAlertsShown); err != nil {
+	response := liveResponse{Status: status}
+	if host.IsCluster() {
+		// A cluster's live detection runs on its nodes: one stream for all.
+		if response.Alerts, err = store.ClusterLiveAlerts(host.ID, liveAlertsShown); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		nodes, err := store.ClusterNodes(host.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		response.Nodes = []nodeLive{}
+		for _, node := range nodes {
+			nodeStatus, err := store.HostLive(node.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			response.Nodes = append(response.Nodes, nodeLive{HostID: node.ID, Host: node.Address, Excluded: node.Excluded, Status: nodeStatus})
+		}
+	} else if response.Alerts, err = store.LiveAlerts(host.ID, liveAlertsShown); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
 	}
-	writeJSON(w, http.StatusOK, liveResponse{Status: status, Alerts: alerts})
+	writeJSON(w, http.StatusOK, response)
 }
 
 type setLiveRequest struct {
@@ -171,6 +198,10 @@ func (s *Server) setLive(w http.ResponseWriter, r *http.Request) {
 	host, err := store.GetHost(r.PathValue("id"))
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if err := store.NodeSettingError(host); err != nil {
+		writeError(w, http.StatusConflict, err)
 		return
 	}
 	if err := store.SetLiveEnabled(host.ID, *request.Enabled); err != nil {
@@ -193,12 +224,37 @@ func (s *Server) testLive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
+	if host.IsCluster() {
+		// Every node where it's active sends one.
+		nodes, err := store.ClusterNodes(host.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		asked := 0
+		for _, node := range nodes {
+			if status, err := store.HostLive(node.ID); err == nil && status != nil && status.State == live.StateActive {
+				if err := store.AskLiveTest(node.ID); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+				asked++
+			}
+		}
+		if asked == 0 {
+			writeError(w, http.StatusConflict, errors.New("live detection isn't active on any of this cluster's nodes, so none can send a test alert"))
+			return
+		}
+		s.audit(r, "host.live_test", host.Address, fmt.Sprintf("test alert from %s", plural(asked, "node", "nodes")))
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
 	status, err := store.HostLive(host.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if status == nil || host.IsCluster() || status.State != live.StateActive {
+	if status == nil || status.State != live.StateActive {
 		writeError(w, http.StatusConflict, errors.New("live detection isn't active on this host, so it can't send a test alert"))
 		return
 	}

@@ -75,7 +75,7 @@ A finding in a container names it, as `namespace/pod/container` on Kubernetes, w
 
 On an agent's host page, turn on **Scan new containers automatically** (operators and admins). The agent then looks at the running containers about once a minute; when new ones have started, it tells the server, which queues a Running containers scan of that machine. So a container you deploy is checked within about two minutes, without waiting for the next scheduled scan.
 
-- It is **off** by default, per machine.
+- It is **off** by default, per machine. A Kubernetes node follows its cluster: **Scan when the cluster changes**, on the cluster's page, turns it on for every node (1.28.0 and later).
 - At most **one automatic scan every 10 minutes** per machine, and none while another scan of it is waiting or running, so a machine that starts containers all the time, such as a CI runner, isn't scanned all the time. Containers that start in between are covered by the next one.
 - Stopped containers don't trigger anything. The agent only counts container IDs; the scan itself reads the containers as described above.
 - It needs agent 1.2.0 or later. The automatic scans appear in the scan history and the audit log, started by `server`.

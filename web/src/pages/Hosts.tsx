@@ -140,19 +140,66 @@ export function Hosts() {
   );
 }
 
-/** A host, and when it is a cluster, its nodes under it. */
+/** A host; a cluster is one row, its nodes summed in it and listed on its page. */
 function HostGroupRows({ host, nodes }: { host: HostSummary; nodes: HostSummary[] }) {
+  return <HostRow host={host} nodes={nodes} />;
+}
+
+/** A cluster's nodes in a few words: how many, online, and agents behind. */
+function nodesLine(nodes: HostSummary[]): string {
+  if (nodes.length === 0) return "no node agents yet";
+  const online = nodes.filter(agentOnline).length;
+  const versions = nodes.map((node) => node.agent?.version ?? "").filter(Boolean);
+  const newest = versions.reduce((a, b) => (compareVersions(a, b) >= 0 ? a : b), "");
+  const behind = versions.filter((version) => compareVersions(version, newest) < 0).length;
+  return [
+    `${nodes.length} ${nodes.length === 1 ? "node" : "nodes"}`,
+    online === nodes.length ? "all online" : `${online} online`,
+    behind > 0 && `${behind} on an older agent`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function compareVersions(a: string, b: string): number {
+  const parts = (version: string) => version.replace(/^v/, "").split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
+  }
+  return 0;
+}
+
+/** The most critical and high vulnerabilities on any one of a cluster's nodes. */
+function NodeFindings({ cluster, nodes }: { cluster: HostSummary; nodes: HostSummary[] }) {
+  const scanned = nodes.filter((node) => node.last_report);
+  if (scanned.length === 0) return null;
+  const critical = Math.max(...scanned.map((node) => node.last_report!.severity.critical));
+  const high = Math.max(...scanned.map((node) => node.last_report!.severity.high));
+  const text = critical + high === 0 ? "Nodes ✓" : ["Nodes", critical > 0 && `${critical} critical`, high > 0 && `${high} high`].filter(Boolean).join(" ");
   return (
-    <>
-      <HostRow host={host} nodes={nodes.length} />
-      {nodes.map((node) => (
-        <HostRow key={node.id} host={node} node />
-      ))}
-    </>
+    <Link
+      to={`/hosts/${cluster.id}?view=nodes`}
+      onClick={(event) => event.stopPropagation()}
+      title="The most on any one node; each node's are on the cluster's Nodes tab"
+      className={cx(
+        "mt-1.5 inline-block rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset",
+        critical > 0
+          ? severityStyle.CRITICAL.badge
+          : high > 0
+            ? severityStyle.HIGH.badge
+            : "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30",
+      )}
+    >
+      {text}
+    </Link>
   );
 }
 
-function HostRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?: boolean; nodes?: number }) {
+function HostRow({ host, nodes = [] }: { host: HostSummary; nodes?: HostSummary[] }) {
+  // A node whose cluster isn't listed shows as a node, on its own.
+  const node = !!host.cluster_id;
+  const cluster = host.kind === "cluster";
   const navigate = useNavigate();
   const [removing, setRemoving] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -167,14 +214,9 @@ function HostRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?: 
         (node || host.kind === "cluster") && "bg-sky-50/40 dark:bg-sky-500/[0.04]",
       )}
     >
-      <Td className={node ? "pl-10" : undefined}>
+      <Td>
         {/* Name and label stay on one line, so a wide Findings column cannot push the label down. */}
         <div className="flex items-center gap-2 whitespace-nowrap">
-          {node && (
-            <span className="text-slate-400 dark:text-slate-500" aria-hidden>
-              └
-            </span>
-          )}
           {node && <NodeBadge />}
           <Link to={`/hosts/${host.id}`} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
             {host.address}
@@ -196,8 +238,8 @@ function HostRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?: 
           )}
           {host.kind === "cluster" ? "cluster agent" : node ? "node agent" : shortConnectionLabel(host)}
           {host.transport === "agent" && (host.disconnected ? " · disconnected" : agentOnline(host) ? " · online" : " · offline")}
-          {host.kind === "cluster" && nodes > 0 && ` · ${nodes} ${nodes === 1 ? "node" : "nodes"} with an agent`}
         </p>
+        {cluster && <p className="text-xs text-slate-600 dark:text-slate-300">{nodesLine(nodes)}</p>}
         {host.disconnected && (
           <p className="mt-1 max-w-md text-xs whitespace-normal text-amber-700 dark:text-amber-300">{disconnectedText(host)}</p>
         )}
@@ -205,13 +247,21 @@ function HostRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?: 
       </Td>
       <Td className="text-slate-600 dark:text-slate-300">
         {host.last_report?.os || host.agent?.os || "—"}
+        {cluster && nodes.length > 0 && (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {[...new Set(nodes.map((item) => item.last_report?.os || item.agent?.os).filter(Boolean))].join(", ")} nodes
+          </p>
+        )}
         <ReleaseBadge lifecycle={host.last_report?.lifecycle} onlyProblems className="ml-2" />
       </Td>
       <Td>
         {host.last_scan ? (
           <div className="space-y-1">
             <StatusBadge status={host.last_scan.status} />
-            <p className="text-xs text-slate-500 dark:text-slate-400">{timeAgo(host.last_scan.started_at)}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {timeAgo(host.last_scan.started_at)}
+              {cluster && nodes.length > 0 && ", nodes on the cluster's page"}
+            </p>
           </div>
         ) : (
           <span className="text-sm text-slate-500 dark:text-slate-400">Never scanned</span>
@@ -237,6 +287,7 @@ function HostRow({ host, node = false, nodes = 0 }: { host: HostSummary; node?: 
           <span className="text-sm text-slate-500 dark:text-slate-400">No vulnerability results</span>
         )}
         <CheckChips host={host} />
+        {cluster && <NodeFindings cluster={host} nodes={nodes} />}
       </Td>
       <Td className="text-right">
         <div className="flex items-center justify-end gap-1">

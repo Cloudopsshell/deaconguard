@@ -26,25 +26,32 @@ With a server installed with [Docker Compose](../installation/docker.md), its ma
 
 ## Turn it on
 
-- **One host:** on the host's **Runtime** tab, **Turn on live detection** (admins). The tab says what it watches, what it costs, and whether the machine can run it. It starts within about 15 seconds, at the agent's next report.
-- **Every host:** under **Settings → Live detection**, **Turn on for all** (admins). **Turn off for all** stops it everywhere.
-- **New hosts:** under **Settings → Live detection**, **Turn on for new hosts** starts it on every machine enrolled from then on. It's off unless you choose it.
+- **One server:** on the host's **Runtime** tab, **Turn on live detection** (admins). The tab says what it watches, what it costs, and whether the machine can run it. It starts within about 15 seconds, at the agent's next report.
+- **A Kubernetes cluster:** on the cluster's page, the **Live detection** switch (admins). See [Kubernetes](#kubernetes).
+- **Every server and cluster:** under **Settings → Live detection**, **Turn on for all** (admins). **Turn off for all** stops it everywhere.
+- **New servers:** under **Settings → Live detection**, **Turn on for new servers** starts it on every server enrolled from then on. It's off unless you choose it. A new cluster's nodes follow their cluster's switch.
 
 Turning it off unloads the watchers at the agent's next report. The audit log records each change.
+
+### Kubernetes
+
+From 1.28.0, a cluster has one switch, on its page, and every node with a [node agent](../installation/kubernetes.md#3-the-agents) follows it, nodes that join later included: turn it on once, and a node that joins next week is watched within a minute of the cluster agent's next scan seeing it. A node's own **Runtime** tab shows its state and its alerts, and says it follows its cluster; it has no switch of its own. **Exclude this node**, on a node's page, turns it off for that node only, and leaves the node out of the cluster's scans.
+
+The cluster's **Runtime** tab shows every node's state, the events each looked at in the last hour and what it costs, and one stream of alerts from all the nodes, each naming its node. **Send a test alert** there asks every node where it's active for one.
 
 ## Is it running?
 
 Every agent reports every 15 seconds. On the dashboard:
 
 - The **Hosts** list has a **Live detection** column, and a cluster shows how many of its nodes are watched, such as **Live on 2 of 2 nodes**.
-- The **Dashboard** has a **Live detection** card: how many hosts are watched, how many could be but have it off, and which stopped.
+- The **Dashboard** has a **Live detection** card: how many servers and clusters are watched, a cluster counted once with its nodes, how many could be but have it off, and which stopped.
 - Each host has a **Runtime** tab with its state, since when, the agent's last report, and four numbers: the events the watchers looked at in the last hour (proof that it's watching), the last day's alerts, missed events, and the agent's CPU and memory.
 
 | State | Meaning | What to do |
 | --- | --- | --- |
 | **Live** | Watching | Nothing |
 | **Stopped** | It was running and stopped, with the reason: the agent stopped reporting, or the kernel refused something | Look at the reason and the agent's log on the host's page; the agent restarts it after a minute |
-| **Off** | Not turned on for this host: the default | **Turn on live detection** on the Runtime tab, or for all hosts in Settings |
+| **Off** | Not turned on for this host: the default | **Turn on live detection** on the Runtime tab, or for all hosts in Settings; for a node, the switch on its cluster's page |
 | **Not supported** | The machine can't run it, with the reason: an old kernel, a Mac, or an agent without the rights to load the watchers | See [Where it runs](#where-it-runs) |
 | **Agent too old** | The agent is older than 1.27.0 | [Upgrade the agent](../installation/upgrade.md#which-agents-to-upgrade) |
 | **Starting** | Waiting for the agent's first report | Wait 15 seconds |

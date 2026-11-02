@@ -49,10 +49,6 @@ func TestClustersRunOnlyTheKubernetesCheck(t *testing.T) {
 	if bad := do(t, s, call{method: http.MethodPost, path: "/agent/v1/enroll", body: agentapi.EnrollRequest{Secret: "x", Hostname: "y", Kind: "router"}}); bad.Code != http.StatusBadRequest {
 		t.Fatalf("an unknown kind: %d", bad.Code)
 	}
-	if refused := do(t, s, call{method: http.MethodPost, path: "/api/hosts/" + clusterID + "/scans", cookie: cookie, body: map[string]any{"checks": []string{"packages"}}}); refused.Code == http.StatusAccepted ||
-		!strings.Contains(refused.Body.String(), "only the Kubernetes check") {
-		t.Fatalf("packages on a cluster: %d %s", refused.Code, refused.Body.String())
-	}
 	if refused := do(t, s, call{method: http.MethodPost, path: "/api/hosts/" + machineID + "/scans", cookie: cookie, body: map[string]any{"checks": []string{"kubernetes"}}}); refused.Code == http.StatusAccepted ||
 		!strings.Contains(refused.Body.String(), "runs on clusters") {
 		t.Fatalf("kubernetes on a machine: %d %s", refused.Code, refused.Body.String())
@@ -199,4 +195,60 @@ func (f *fakeClusterImages) Cached(image checks.RunningImage, platform string) (
 func (f *fakeClusterImages) Check(_ context.Context, image checks.RunningImage, platform string) (scan.ImageSummary, error) {
 	f.asked = append(f.asked, image.Image+" "+platform)
 	return f.summaries[image.Image], nil
+}
+
+// A cluster is managed as one: its nodes follow its settings, refuse their
+// own, can be excluded, and are scanned with it.
+func TestClusterManagedAsOne(t *testing.T) {
+	s := newNetworkTestServer(t)
+	cookie := signIn(t, s)
+	clusterID, _ := enrollTestCluster(t, s, cookie, "prod-eu")
+	one, _ := enrollTestAgent(t, s, cookie, "node-1", "1.28.0")
+	two, _ := enrollTestAgent(t, s, cookie, "node-2", "1.28.0")
+	if err := store.LinkClusterNodes(clusterID, []string{"node-1", "node-2"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []call{
+		{method: http.MethodPut, path: "/api/hosts/" + one + "/live", body: map[string]bool{"enabled": true}},
+		{method: http.MethodPut, path: "/api/hosts/" + one + "/tags", body: map[string]any{"tags": []string{"x"}}},
+		{method: http.MethodPatch, path: "/api/hosts/" + one, body: map[string]bool{"auto_scan_containers": true}},
+	} {
+		c.cookie = cookie
+		if refused := do(t, s, c); refused.Code != http.StatusConflict || !strings.Contains(refused.Body.String(), "change them on the cluster") {
+			t.Errorf("%s %s on a node: %d %s", c.method, c.path, refused.Code, refused.Body.String())
+		}
+	}
+	if response := do(t, s, call{method: http.MethodPut, path: "/api/hosts/" + clusterID + "/live", body: map[string]bool{"enabled": true}, cookie: cookie}); response.Code != http.StatusOK {
+		t.Fatalf("live on the cluster: %d %s", response.Code, response.Body.String())
+	}
+	if response := do(t, s, call{method: http.MethodPut, path: "/api/hosts/" + two + "/excluded", body: map[string]bool{"excluded": true}, cookie: cookie}); response.Code != http.StatusOK {
+		t.Fatalf("exclude: %d %s", response.Code, response.Body.String())
+	}
+	if response := do(t, s, call{method: http.MethodPut, path: "/api/hosts/" + clusterID + "/excluded", body: map[string]bool{"excluded": true}, cookie: cookie}); response.Code != http.StatusConflict {
+		t.Fatalf("exclude a cluster: %d", response.Code)
+	}
+	for id, want := range map[string]bool{one: true, two: false} {
+		if live, _, _ := store.LiveSettings(id); live != want {
+			t.Errorf("%s: live %t", id, live)
+		}
+	}
+	view := decode[liveResponse](t, do(t, s, call{method: http.MethodGet, path: "/api/hosts/" + clusterID + "/live", cookie: cookie}))
+	if len(view.Nodes) != 2 {
+		t.Fatalf("cluster live: %+v", view)
+	}
+
+	started := do(t, s, call{method: http.MethodPost, path: "/api/hosts/" + clusterID + "/scans", cookie: cookie, body: map[string]any{"checks": []string{"kubernetes", "packages"}}})
+	if started.Code != http.StatusAccepted {
+		t.Fatalf("cluster scan: %d %s", started.Code, started.Body.String())
+	}
+	response := decode[startScanResponse](t, started)
+	if strings.Join(response.Checks, ",") != "kubernetes" || response.NodesStarted != 1 {
+		t.Fatalf("cluster scan: %+v", response)
+	}
+	if scans, _ := store.ListScans(one, 5); len(scans) != 1 || strings.Join(scans[0].Checks, ",") != "packages" {
+		t.Errorf("node-1 scans: %+v", scans)
+	}
+	if scans, _ := store.ListScans(two, 5); len(scans) != 0 {
+		t.Errorf("excluded node-2 scanned: %+v", scans)
+	}
 }

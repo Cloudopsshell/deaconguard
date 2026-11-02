@@ -119,7 +119,12 @@ export function Dashboard() {
   const attention = data.host_summaries.filter(
     (host) => host.last_scan?.status === "failed",
   );
-  const neverScanned = data.host_summaries.filter((host) => !host.last_report && !attention.includes(host));
+  const neverScanned = data.host_summaries.filter((host) => !host.last_report && host.kind !== "cluster" && !attention.includes(host));
+  // A cluster counts once, its nodes with it.
+  const clusters = data.host_summaries.filter((host) => host.kind === "cluster");
+  const clusterIds = new Set(clusters.map((host) => host.id));
+  const nodeCount = data.host_summaries.filter((host) => host.cluster_id && clusterIds.has(host.cluster_id)).length;
+  const servers = data.host_summaries.filter((host) => host.kind !== "cluster" && !(host.cluster_id && clusterIds.has(host.cluster_id)));
   const ranked: HostSummary[] = data.host_summaries
     .filter((host) => host.last_report)
     .sort(
@@ -223,8 +228,19 @@ export function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           label="Hosts"
-          value={data.hosts}
-          detail={neverScanned.length > 0 ? `${neverScanned.length} not scanned yet` : "All hosts have results"}
+          value={servers.length + clusters.length}
+          detail={[
+            clusters.length > 0 &&
+              [
+                servers.length > 0 && `${servers.length} ${servers.length === 1 ? "server" : "servers"}`,
+                `${clusters.length} ${clusters.length === 1 ? "cluster" : "clusters"} (${nodeCount} ${nodeCount === 1 ? "node" : "nodes"})`,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            neverScanned.length > 0 ? `${neverScanned.length} not scanned yet` : "All hosts have results",
+          ]
+            .filter(Boolean)
+            .join("; ")}
           icon={<Server className="size-5" />}
           tone="bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"
         />

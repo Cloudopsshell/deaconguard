@@ -40,6 +40,10 @@ export interface Host {
   disconnected?: { at: string; by: string; reason: string };
   /** The cluster a node's host belongs to (1.21.0 and later). */
   cluster_id?: string;
+  /** A node left out of its cluster's scans and live detection (1.28.0 and later). */
+  excluded?: boolean;
+  /** When the cluster stopped listing this node; it's removed 3 days later. */
+  left_cluster_at?: string;
 }
 
 /** What the Kubernetes check read of a cluster. */
@@ -123,6 +127,8 @@ export interface LiveAlert {
   test?: boolean;
   /** The same alerts held back since this one was last sent. */
   repeats?: number;
+  /** The node, in a cluster's alerts. */
+  host?: string;
 }
 
 /** Settings → Live detection: whether new machines start with it on, and how many machines have it. */
@@ -137,6 +143,14 @@ export interface LiveOverview {
 export interface LiveDetail {
   status: LiveStatus | null;
   alerts: LiveAlert[];
+  /** For a cluster: each node's live detection. */
+  nodes?: { host_id: string; host: string; excluded?: boolean; status: LiveStatus | null }[];
+}
+
+/** A started scan; for a cluster, also how many of its nodes' scans started. */
+export interface StartedScan extends Scan {
+  nodes_started?: number;
+  nodes_skipped?: string[];
 }
 
 export interface Capabilities {
@@ -1543,7 +1557,8 @@ export const api = {
   setLiveNewHosts: (on: boolean) => request<LiveOverview>("PUT", "/api/settings/live", { new_hosts: on }),
   setLiveAll: (enabled: boolean) => request<LiveOverview>("POST", "/api/settings/live/hosts", { enabled }),
   renameHost: (hostId: string, name: string) => request<Host>("PATCH", `/api/hosts/${hostId}`, { name }),
-  startScan: (hostId: string, checks: CheckId[]) => request<Scan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
+  startScan: (hostId: string, checks: CheckId[]) => request<StartedScan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
+  setExcluded: (hostId: string, excluded: boolean) => request<Host>("PUT", `/api/hosts/${hostId}/excluded`, { excluded }),
   prompts: () => request<Prompt[]>("GET", "/api/prompts"),
   activity: () => request<Activity[]>("GET", "/api/activity"),
   respond: (scanId: string, answer: { value?: string; cancel?: boolean }) =>
