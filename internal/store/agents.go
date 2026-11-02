@@ -472,8 +472,15 @@ func EnrollAgent(secret string, enrollment AgentEnrollment) (Host, string, error
 	if host.Name != "" {
 		host.Address = host.Name
 	}
-	if _, err := tx.Exec(`INSERT INTO hosts (id, address, display_name, username, transport, allow_sudo, kind, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
-		host.ID, host.Hostname, host.Name, host.Username, host.Transport, host.Kind, now); err != nil {
+	// Live detection starts on for new machines only when an admin chose so.
+	var live bool
+	if host.Kind == KindMachine {
+		if err := tx.QueryRow("SELECT COUNT(*) FROM meta WHERE key = ? AND value = '1'", metaLiveNewHosts).Scan(&live); err != nil {
+			return Host{}, "", err
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO hosts (id, address, display_name, username, transport, allow_sudo, kind, created_at, live_enabled) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+		host.ID, host.Hostname, host.Name, host.Username, host.Transport, host.Kind, now, live); err != nil {
 		return Host{}, "", err
 	}
 	if _, err := tx.Exec(`INSERT INTO agents (host_id, credential_hash, enrolled_at, last_seen_at, version, os, remote, token_id)

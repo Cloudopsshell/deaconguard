@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"deaconguard/internal/agentapi"
@@ -237,6 +238,13 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 		}
 		go serveAdmission(ctx, log)
 	}
+	// The node or machine agent watches it live too; a cluster agent has
+	// no machine of its own.
+	var current atomic.Pointer[serverClient]
+	current.Store(client)
+	if config.Cluster == "" {
+		go runLive(ctx, &current, log)
+	}
 	backoff := time.Duration(0)
 	connected := false
 	// nudged is the server version the agent last compared itself with.
@@ -252,6 +260,7 @@ func Run(ctx context.Context, config Config, path string, logf func(format strin
 		}
 		// Before waiting for work, so lines kept while the server could not be
 		// reached arrive as soon as it answers again.
+		current.Store(client)
 		log.send(ctx, client)
 		watch.poll(time.Now())
 		fresh := watch.take()
