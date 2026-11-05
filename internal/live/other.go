@@ -18,6 +18,7 @@ type watcher struct{}
 
 func (w *watcher) poll(int, func(Event)) error { return nil }
 func (w *watcher) counters() (Counters, error) { return Counters{}, nil }
+func (w *watcher) mark(uint32)                 {}
 func (w *watcher) close()                      {}
 
 func startWatcher(string) (*watcher, error) {
