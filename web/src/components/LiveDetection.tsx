@@ -246,8 +246,9 @@ export function RuntimeTab({
                 detection on to also watch {cluster ? "every node of this cluster, nodes that join later included," : "this machine"}{" "}
                 <strong>between scans</strong>, as attacks happen: programs
                 started from temporary folders, shells started by web servers,
-                crypto miners, and changes to accounts, sudo rules, SSH keys and
-                scheduled jobs. Alerts arrive within seconds.
+                crypto miners, reverse shells and suspicious connections out,
+                and changes to accounts, sudo rules, SSH keys and scheduled
+                jobs. Alerts arrive within seconds.
               </p>
               <ul className="mt-3 space-y-1 text-sm text-slate-500 dark:text-slate-400">
                 {status.kernel && (
@@ -559,6 +560,7 @@ function AlertsTable({ alerts, cluster = false }: { alerts: LiveAlert[]; cluster
                   {alert.parent && <span>{alert.parent} › </span>}
                   {alert.command || alert.program}
                   {alert.path && <span> › {alert.path}</span>}
+                  {alert.remote && <span> → {alert.remote}</span>}
                   <span className="block text-slate-500 dark:text-slate-400">
                     pid {alert.pid}
                     {alert.user && ` · ${alert.user}`}

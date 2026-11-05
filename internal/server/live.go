@@ -92,7 +92,7 @@ func (s *Server) liveReported(host store.Host, previous string, status live.Stat
 			lines = append(lines, line)
 		}
 		data = append(data, map[string]any{"rule": alert.Rule, "severity": alert.Severity, "title": alert.Title, "program": alert.Program,
-			"parent": alert.Parent, "user": alert.User, "path": alert.Path, "command": alert.Command})
+			"parent": alert.Parent, "user": alert.User, "path": alert.Path, "command": alert.Command, "remote": alert.Remote})
 	}
 	if len(real) > 10 {
 		lines = append(lines, fmt.Sprintf("And %d more on the host's Runtime tab.", len(real)-10))

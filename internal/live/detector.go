@@ -23,8 +23,8 @@ type Status struct {
 	Reason string    `json:"reason,omitempty"`
 	Since  time.Time `json:"since"`
 	Kernel string    `json:"kernel,omitempty"`
-	// EventsLastHour counts the programs started and files written that
-	// the watchers looked at in the last hour.
+	// EventsLastHour counts the programs started, files written and
+	// connections made that the watchers looked at in the last hour.
 	EventsLastHour uint64 `json:"events_last_hour"`
 	// Lost counts events the kernel dropped because the agent fell behind.
 	Lost uint64 `json:"lost"`
@@ -51,7 +51,16 @@ const (
 	// unsupportedRetry is how long a machine that can't run it waits before
 	// trying again.
 	unsupportedRetry = 5 * time.Minute
+	// recheckDelay is how long after a shell connects out its input and
+	// output are looked at again, and maxRechecks how many may wait.
+	recheckDelay = time.Second
+	maxRechecks  = 64
 )
+
+type recheck struct {
+	at    time.Time
+	event Event
+}
 
 // Detector runs live detection for the agent.
 type Detector struct {
@@ -74,6 +83,7 @@ type Detector struct {
 	lastCPU   time.Duration
 	lastUsage time.Time
 	testAsked bool
+	rechecks  []recheck
 }
 
 type seenAlert struct {
@@ -183,6 +193,11 @@ func (d *Detector) add(alerts []Alert, now time.Time) {
 	queued := false
 	for _, alert := range alerts {
 		key := alert.Rule + "\x00" + alert.Program + "\x00" + alert.Parent + "\x00" + alert.Path
+		// A reverse shell is one connection, whichever of its processes
+		// (the shell, what started it, what it became) holds it.
+		if alert.Rule == RuleReverseShell {
+			key = alert.Rule + "\x00" + alert.Remote
+		}
 		if !alert.Test {
 			if seen, ok := d.seen[key]; ok && now.Sub(seen.at) < dedupeWindow {
 				seen.repeats++
@@ -323,19 +338,32 @@ func (d *Detector) watch(ctx context.Context, w eventSource) error {
 			}
 		default:
 		}
-		if err := w.poll(1000, func(event Event) {
-			d.add(Evaluate(event, d.machine), time.Now())
+		timeout := 1000
+		if len(d.rechecks) > 0 {
+			timeout = 250
+		}
+		if err := w.poll(timeout, func(event Event) {
+			now := time.Now()
+			alerts := Evaluate(event, d.machine)
+			d.add(alerts, now)
+			if needsRecheck(event, alerts) && len(d.rechecks) < maxRechecks {
+				d.rechecks = append(d.rechecks, recheck{at: now.Add(recheckDelay), event: event})
+			}
 		}); err != nil {
 			return err
 		}
 		now := time.Now()
+		for len(d.rechecks) > 0 && !now.Before(d.rechecks[0].at) {
+			d.add(Recheck(d.rechecks[0].event, d.machine), now)
+			d.rechecks = d.rechecks[1:]
+		}
 		if now.Sub(lastCount) >= 5*time.Second {
 			lastCount = now
 			counters, err := w.counters()
 			if err != nil {
 				return err
 			}
-			d.count(counters.Execs+counters.Writes, now)
+			d.count(counters.Execs+counters.Writes+counters.Connects, now)
 			d.mu.Lock()
 			d.status.Lost = counters.Lost
 			d.mu.Unlock()
