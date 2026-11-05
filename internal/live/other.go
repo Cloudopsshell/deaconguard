@@ -11,7 +11,7 @@ func (err ErrUnsupported) Error() string { return err.Reason }
 
 // Counters are the watchers' running totals since they started.
 type Counters struct {
-	Execs, Writes, Lost uint64
+	Execs, Writes, Connects, Lost uint64
 }
 
 type watcher struct{}
@@ -36,6 +36,8 @@ func (noMachine) HasTerminal(uint32) bool        { return false }
 func (noMachine) Ancestors(uint32) []string      { return nil }
 func (noMachine) WorkingDirectory(uint32) string { return "" }
 func (noMachine) User(uint32) string             { return "" }
+func (noMachine) Parent(uint32) uint32           { return 0 }
+func (noMachine) NetworkStdio(uint32) string     { return "" }
 
 func newMachine(string) Machine { return noMachine{} }
 

@@ -10,6 +10,7 @@ package live
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"path"
 	"path/filepath"
@@ -27,6 +28,9 @@ const (
 	RuleSudoers      = "DG-RT-011"
 	RuleSSHLogins    = "DG-RT-012"
 	RulePersistence  = "DG-RT-013"
+	RuleReverseShell = "DG-RT-020"
+	RuleMarkedOut    = "DG-RT-021"
+	RulePoolPort     = "DG-RT-022"
 )
 
 // Alert is what a rule found, as the agent sends it to the server.
@@ -45,6 +49,8 @@ type Alert struct {
 	Command string `json:"command,omitempty"`
 	// Path is the file written.
 	Path string `json:"path,omitempty"`
+	// Remote is the address and port a connection went to.
+	Remote string `json:"remote,omitempty"`
 	// Test marks the alert "Send a test alert" asked for.
 	Test bool `json:"test,omitempty"`
 	// Repeats counts the same alerts left out since this one was last sent.
@@ -67,6 +73,11 @@ type Machine interface {
 	WorkingDirectory(pid uint32) string
 	// User is the account name for uid.
 	User(uid uint32) string
+	// Parent is the process's parent's ID, or 0.
+	Parent(pid uint32) uint32
+	// NetworkStdio is the address and port at the other end, when the
+	// process's input and output are both TCP connections, or "".
+	NetworkStdio(pid uint32) string
 }
 
 // testProgramName starts the name of the program "Send a test alert" runs
@@ -120,6 +131,19 @@ var services = []string{
 	"mysqld", "mariadbd", "redis-server", "mongod", "memcached", "uwsgi",
 }
 
+// execMarkedFolders are where a program that starts is marked by the
+// watchers, with the processes it starts, so their connections are
+// reported: the temporary folders, and /dev/fd and /proc/self/fd, where a
+// program run from memory starts.
+var execMarkedFolders = append(append([]string{}, temporaryFolders...), "/dev/fd/", "/proc/self/fd/")
+
+// poolPorts are ports crypto-mining pools listen on, for miners that are
+// renamed or given their pool in a file rather than on the command line.
+var poolPorts = map[uint16]bool{
+	3333: true, 3334: true, 3335: true, 3336: true, 3357: true, 4444: true, 5555: true, 5556: true,
+	7777: true, 9999: true, 14433: true, 14444: true, 45560: true, 45700: true,
+}
+
 // minerNames are crypto miners' usual program names.
 var minerNames = regexp.MustCompile(`(?i)^(xmrig|xmr-stak|minerd|cpuminer|ethminer|nbminer|lolminer|t-rex|teamredminer|cgminer|bfgminer|srbminer|kdevtmpfsi|kinsing|nanominer|phoenixminer|gminer)`)
 
@@ -158,6 +182,8 @@ func Evaluate(event Event, machine Machine) []Alert {
 		if alert, ok := evaluateWrite(event, machine); ok {
 			return []Alert{alert}
 		}
+	case KindConnect:
+		return evaluateConnect(event, machine)
 	}
 	return nil
 }
@@ -238,12 +264,116 @@ func evaluateExec(event Event, machine Machine) []Alert {
 				"Stop it, find how it got there (cron, systemd, a container) and remove that too.")
 	}
 
+	// A shell whose input and output are a network connection: started by
+	// a program that connected out and handed it the connection (nc -e,
+	// socat), or under one that did and kept it (a script's pty.spawn).
+	if shells[program] {
+		remote := machine.NetworkStdio(event.PID)
+		if remote == "" {
+			if parent := machine.Parent(event.PID); parent > 1 {
+				remote = machine.NetworkStdio(parent)
+			}
+		}
+		if remote != "" {
+			alert := reverseShell(event.PID, machine.User(event.UID), event.Path, remote)
+			alert.Parent, alert.Command = event.Parent, base.Command
+			alerts = append(alerts, alert)
+		}
+	}
+
 	if shells[program] && downloadToShell.MatchString(event.Args) && !machine.HasTerminal(event.PID) {
 		add(RuleDownloadRun, "HIGH", "A downloaded script was piped into a shell",
 			"A shell ran a command that downloads a script and runs it at once, with no person at a terminal: from a scheduled job, a service or a script. "+
 				"Attackers use it to fetch their next stage. Check where it downloads from and what started it.")
 	}
 	return alerts
+}
+
+func reverseShell(pid uint32, user, program, remote string) Alert {
+	return Alert{Rule: RuleReverseShell, Severity: "CRITICAL", PID: pid, User: user, Program: program, Remote: remote,
+		Title: fmt.Sprintf("A shell is controlled over the network from %s", remote),
+		Detail: fmt.Sprintf("%s's input and output are a network connection to %s, so whoever is at the other end types its commands: a reverse shell, "+
+			"the usual way attackers take control after a break-in. Shells are normally run by people at a terminal or by scripts, never wired to a connection. "+
+			"Block the address, stop the shell and what started it, and treat the machine as compromised.", program, remote)}
+}
+
+// public reports whether an address is on the internet: not this machine,
+// a private network or a link-local one.
+func public(address netip.Addr) bool {
+	return address.IsValid() && !address.IsLoopback() && !address.IsPrivate() && !address.IsLinkLocalUnicast() &&
+		!address.IsUnspecified() && !address.IsMulticast()
+}
+
+func evaluateConnect(event Event, machine Machine) []Alert {
+	remote := netip.AddrPortFrom(event.Address, event.Port).String()
+	var alerts []Alert
+	if event.Why&WhyComm != 0 && shells[event.Comm] {
+		if stdio := machine.NetworkStdio(event.PID); stdio != "" {
+			alerts = append(alerts, reverseShell(event.PID, machine.User(event.UID), orUnknown(machine.Executable(event.PID)), stdio))
+		}
+	}
+	// Name lookups, which also connect, and connections inside the machine
+	// are left out.
+	if event.Address.IsLoopback() || event.Port == 53 || !event.Address.IsValid() {
+		return alerts
+	}
+	program := machine.Executable(event.PID)
+	if program == "" {
+		program = event.Comm
+	}
+	if event.Why&WhyMarked != 0 && !goBuild(program, machine.Ancestors(event.PID)) {
+		alerts = append(alerts, Alert{Rule: RuleMarkedOut, Severity: "HIGH", PID: event.PID, User: machine.User(event.UID), Program: program, Remote: remote,
+			Title: fmt.Sprintf("A program from a temporary folder connected to %s", remote),
+			Detail: fmt.Sprintf("%s (%s), started from a temporary folder or memory, or by a program that was, connected to %s. "+
+				"Attackers' tools run from there, and connect out to fetch more tools, take orders or send data away. "+
+				"Find out what the program is and what the address is; if nobody on your team ran it, block the address and treat the machine as compromised.",
+				event.Comm, program, remote)})
+	}
+	if event.Why&WhyPort != 0 && poolPorts[event.Port] && public(event.Address) {
+		alerts = append(alerts, Alert{Rule: RulePoolPort, Severity: "MEDIUM", PID: event.PID, User: machine.User(event.UID), Program: program, Remote: remote,
+			Title: fmt.Sprintf("%s connected to %s, a port mining pools use", event.Comm, remote),
+			Detail: fmt.Sprintf("%s (%s) connected to port %d on %s, on the internet. Crypto-mining pools listen on this port, and a miner renamed to look harmless shows this way; "+
+				"other software uses it too, so check what the program is and who the address belongs to.", event.Comm, program, event.Port, event.Address)})
+	}
+	return alerts
+}
+
+// Recheck looks again at a shell's connection a moment later: a shell that
+// connects out with /dev/tcp hands the connection its input and output
+// just after, while one checking that a port is open has left by then.
+func Recheck(event Event, machine Machine) []Alert {
+	if stdio := machine.NetworkStdio(event.PID); stdio != "" {
+		return []Alert{reverseShell(event.PID, machine.User(event.UID), orUnknown(machine.Executable(event.PID)), stdio)}
+	}
+	return nil
+}
+
+// needsRecheck reports whether a connection is a shell's, which Recheck
+// should look at again unless Evaluate already found it controlled.
+func needsRecheck(event Event, alerts []Alert) bool {
+	if event.Kind != KindConnect || event.Why&WhyComm == 0 || !shells[event.Comm] {
+		return false
+	}
+	for _, alert := range alerts {
+		if alert.Rule == RuleReverseShell {
+			return false
+		}
+	}
+	return true
+}
+
+// goBuild reports whether program is one the go tool built in /tmp and
+// started, as go test and go run do.
+func goBuild(program string, ancestors []string) bool {
+	if !strings.HasPrefix(program, "/tmp/go-build") {
+		return false
+	}
+	for _, ancestor := range ancestors {
+		if ancestor == "go" {
+			return true
+		}
+	}
+	return false
 }
 
 func orUnknown(value string) string {

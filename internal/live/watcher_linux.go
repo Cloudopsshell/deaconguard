@@ -24,7 +24,7 @@ type watcher struct {
 
 // Counters are the watchers' running totals since they started.
 type Counters struct {
-	Execs, Writes, Lost uint64
+	Execs, Writes, Connects, Lost uint64
 }
 
 // minimumKernel is the first kernel with everything the watchers use,
@@ -96,12 +96,12 @@ func startWatcher(hostRoot string) (*watcher, error) {
 			ringSize = spec.MaxEntries
 		}
 	}
-	if err := w.configure(); err != nil {
-		return fail(err)
-	}
 	root, err := tracefs(hostRoot)
 	if err != nil {
 		return fail(ErrUnsupported{err.Error()})
+	}
+	if err := w.configure(root); err != nil {
+		return fail(err)
 	}
 	attached := map[string]bool{}
 	for _, program := range object.Programs {
@@ -136,9 +136,9 @@ func startWatcher(hostRoot string) (*watcher, error) {
 	return w, nil
 }
 
-// configure tells the watchers which paths to report and which process is
-// the agent.
-func (w *watcher) configure() error {
+// configure tells the watchers which paths, programs and ports to report,
+// which process is the agent, and how to read a new process's ID.
+func (w *watcher) configure(tracefsRoot string) error {
 	key := make([]byte, 4)
 	put := func(mapName string, index int, value []byte) error {
 		binary.LittleEndian.PutUint32(key, uint32(index))
@@ -160,9 +160,56 @@ func (w *watcher) configure() error {
 			return err
 		}
 	}
+	for index, folder := range execMarkedFolders {
+		if err := put("exec_paths", index, watchedPathValue(folder, "")); err != nil {
+			return err
+		}
+	}
+	index := 0
+	for shell := range shells {
+		if err := put("connect_comms", index, watchedNameValue(shell)); err != nil {
+			return err
+		}
+		index++
+	}
+	one := []byte{1, 0, 0, 0}
+	for port := range poolPorts {
+		if err := put("watched_ports", int(port), one); err != nil {
+			return err
+		}
+	}
+	settings := make([]byte, 4)
+	binary.LittleEndian.PutUint32(settings, forkChildOffset(tracefsRoot))
+	if err := put("settings", 0, settings); err != nil {
+		return err
+	}
 	self := make([]byte, 4)
 	binary.LittleEndian.PutUint32(self, uint32(os.Getpid()))
 	return put("self", 0, self)
+}
+
+// forkChildOffset reads where sched_process_fork keeps the new process's
+// ID: 44 in older kernels, 20 since the names moved out of the record. Any
+// other layout returns 0, and the watchers don't follow forks.
+func forkChildOffset(tracefsRoot string) uint32 {
+	format, err := os.ReadFile(tracefsRoot + "/events/sched/sched_process_fork/format")
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(format), "\n") {
+		if !strings.Contains(line, " child_pid;") {
+			continue
+		}
+		_, after, ok := strings.Cut(line, "offset:")
+		if !ok {
+			return 0
+		}
+		offset, err := strconv.Atoi(strings.TrimSpace(strings.SplitN(after, ";", 2)[0]))
+		if err == nil && (offset == 20 || offset == 44) {
+			return uint32(offset)
+		}
+	}
+	return 0
 }
 
 // poll waits up to timeoutMS for events and hands each to handle.
@@ -199,6 +246,9 @@ func (w *watcher) counters() (Counters, error) {
 		return counters, err
 	}
 	if counters.Writes, err = read(1); err != nil {
+		return counters, err
+	}
+	if counters.Connects, err = read(3); err != nil {
 		return counters, err
 	}
 	counters.Lost, err = read(2)

@@ -5,10 +5,12 @@
 // stable, so one build works on every supported kernel without reading
 // the kernel's internal structures.
 //
-// They report two kinds of event to the agent through a ring buffer:
+// They report three kinds of event to the agent through a ring buffer:
 // programs that start (with the program that started them and their
-// arguments), and files opened for writing, renamed or linked under a
-// short list of sensitive paths. Everything else is dropped here, in the
+// arguments); files opened for writing, renamed or linked under a short
+// list of sensitive paths; and network connections made by shells, by
+// programs started from a temporary folder (and the processes they start),
+// or to a short list of ports. Everything else is dropped here, in the
 // kernel, so the agent only sees the few events its rules look at.
 //
 // Build with scripts/build-bpf.sh. Every function is inlined and no string
@@ -24,6 +26,7 @@ typedef unsigned long long u64;
 #define INLINE static inline __attribute__((always_inline))
 
 // Map types, from the kernel's bpf_map_type.
+#define MAP_HASH 1
 #define MAP_ARRAY 2
 #define MAP_PERCPU_ARRAY 6
 #define MAP_LRU_HASH 9
@@ -62,6 +65,7 @@ static void (*ring_submit)(void *data, u64 flags) = (void *)132;
 
 #define KIND_EXEC 1
 #define KIND_WRITE 2
+#define KIND_CONNECT 3
 
 // How a file was written: the agent says so in its alert.
 #define HOW_OPEN 1
@@ -69,7 +73,9 @@ static void (*ring_submit)(void *data, u64 flags) = (void *)132;
 #define HOW_LINK 3
 
 // One event for the agent. internal/live/event.go reads it at fixed
-// offsets: keep the two in step.
+// offsets: keep the two in step. For KIND_CONNECT, how is the port
+// connected to, args_len the address family, path the address's 4 or 16
+// bytes, and args[0] why the connection was reported (the WHY_ bits).
 struct event {
 	u32 kind;
 	u32 pid;
@@ -119,12 +125,23 @@ struct name {
 
 #define WATCHED_MAX 24
 #define NAMES_MAX 16
+#define EXEC_PATHS_MAX 8
+#define PORTS_MAX 32
+
+// Why a connection was reported.
+#define WHY_MARKED 1
+#define WHY_PORT 2
+#define WHY_COMM 4
+
+#define AF_INET 2
+#define AF_INET6 10
 
 // Counters: programs started, writes looked at, events lost because the
-// ring buffer was full.
+// ring buffer was full, connections looked at.
 #define COUNT_EXEC 0
 #define COUNT_WRITE 1
 #define COUNT_LOST 2
+#define COUNT_CONNECT 3
 #define COUNTERS 4
 
 struct dg_map events SEC("maps") = {MAP_RINGBUF, 0, 0, 1 << 18, 0};
@@ -137,6 +154,17 @@ struct dg_map watched_names SEC("maps") = {MAP_ARRAY, sizeof(u32), sizeof(struct
 struct dg_map counters SEC("maps") = {MAP_PERCPU_ARRAY, sizeof(u32), sizeof(u64), COUNTERS, 0};
 // The agent's own process, whose writes and programs are its own business.
 struct dg_map self SEC("maps") = {MAP_ARRAY, sizeof(u32), sizeof(u32), 1, 0};
+// Folders a program started from is marked for, and the processes marked,
+// by process ID: a marked process's connections are reported, and the
+// processes it starts are marked in turn.
+struct dg_map exec_paths SEC("maps") = {MAP_ARRAY, sizeof(u32), sizeof(struct watched), EXEC_PATHS_MAX, 0};
+struct dg_map marked SEC("maps") = {MAP_LRU_HASH, sizeof(u32), sizeof(u32), 4096, 0};
+// Process names whose connections are reported (shells), and ports.
+struct dg_map connect_comms SEC("maps") = {MAP_ARRAY, sizeof(u32), sizeof(struct name), NAMES_MAX, 0};
+struct dg_map watched_ports SEC("maps") = {MAP_HASH, sizeof(u32), sizeof(u32), PORTS_MAX, 0};
+// Settings from the agent: [0] where sched_process_fork keeps the new
+// process's ID, which changed between kernels (0: don't follow forks).
+struct dg_map settings SEC("maps") = {MAP_ARRAY, sizeof(u32), sizeof(u32), 1, 0};
 
 char dg_license[] SEC("license") = "Dual MIT/GPL";
 
@@ -209,6 +237,24 @@ struct process_exec {
 	s32 old_pid;
 };
 
+// Whether a path, read into buf, starts with one of the folders in
+// exec_paths, compared a word at a time as in watched below.
+INLINE int marked_path(const char *buf) {
+	const u64 *words = (const u64 *)buf;
+	for (u32 i = 0; i < EXEC_PATHS_MAX; i++) {
+		u32 key = i;
+		struct watched *w = map_lookup(&exec_paths, &key);
+		if (!w || w->kind == 0)
+			break;
+		u64 diff = 0;
+		for (int j = 0; j < 6; j++)
+			diff |= (words[j] ^ w->prefix[j]) & w->mask[j];
+		if (!diff)
+			return 1;
+	}
+	return 0;
+}
+
 SEC("tp/sched/sched_process_exec")
 int process_exec(struct process_exec *ctx) {
 	count(COUNT_EXEC);
@@ -236,6 +282,10 @@ int process_exec(struct process_exec *ctx) {
 	e->how = 0;
 	current_comm(e->comm, COMM_LEN);
 	read_kernel_str(e->path, PATH_LEN, (char *)ctx + (ctx->filename_loc & 0xffff));
+	if (marked_path(e->path)) {
+		u32 pid = e->pid, why = WHY_MARKED;
+		map_update(&marked, &pid, &why, 0);
+	}
 	e->args_len = 0;
 	e->parent_comm[0] = 0;
 	e->args[0] = 0;
@@ -405,4 +455,123 @@ int enter_symlink(struct sys_enter *ctx) {
 SEC("tp/syscalls/sys_enter_linkat")
 int enter_linkat(struct sys_enter *ctx) {
 	return written((const char *)ctx->args[3], HOW_LINK);
+}
+
+// sched_process_fork, in the parent: the new process inherits the parent's
+// mark. The record's layout changed between kernels, so the agent reads it
+// from tracefs and says where the new process's ID is.
+struct process_fork {
+	u64 common;
+	u32 words[10];
+};
+
+SEC("tp/sched/sched_process_fork")
+int process_fork(struct process_fork *ctx) {
+	u32 tgid = current_pid_tgid() >> 32;
+	u32 *why = map_lookup(&marked, &tgid);
+	if (!why)
+		return 0;
+	u32 zero = 0;
+	u32 *offset = map_lookup(&settings, &zero);
+	if (!offset)
+		return 0;
+	// The two layouts the agent knows: child_pid at 44 before Linux 6.x
+	// moved the names out of the record, at 20 after. The record is copied
+	// first: the checker refuses reads at an offset chosen at run time.
+	struct process_fork copy = {};
+	read_kernel(&copy, sizeof(copy), ctx);
+	s32 child = 0;
+	if (*offset == 44)
+		child = (s32)copy.words[9];
+	else if (*offset == 20)
+		child = (s32)copy.words[3];
+	if (child <= 0)
+		return 0;
+	u32 key = (u32)child, value = *why;
+	map_update(&marked, &key, &value, 0);
+	return 0;
+}
+
+// sched_process_exit: a process that ends takes its mark with it, so its
+// ID, once reused, starts unmarked.
+SEC("tp/sched/sched_process_exit")
+int process_exit(void *ctx) {
+	u64 id = current_pid_tgid();
+	u32 pid = (u32)id;
+	if (pid == (u32)(id >> 32))
+		map_delete(&marked, &pid);
+	return 0;
+}
+
+// Whether the current process's name is one in connect_comms.
+INLINE int comm_watched(void) {
+	u64 comm[4] = {0, 0, 0, 0};
+	current_comm(comm, COMM_LEN);
+	for (u32 i = 0; i < NAMES_MAX; i++) {
+		u32 key = i;
+		struct name *w = map_lookup(&connect_comms, &key);
+		if (!w || w->mask[0] == 0)
+			break;
+		u64 diff = 0;
+		for (int j = 0; j < 4; j++)
+			diff |= (comm[j] ^ w->word[j]) & w->mask[j];
+		if (!diff)
+			return 1;
+	}
+	return 0;
+}
+
+// connect(fd, address, length): reports IPv4 and IPv6 connections from
+// marked processes and shells, and to watched ports. Local sockets, which
+// most connections on a server are, are dropped first.
+SEC("tp/syscalls/sys_enter_connect")
+int enter_connect(struct sys_enter *ctx) {
+	count(COUNT_CONNECT);
+	const char *address = (const char *)ctx->args[1];
+	u16 family = 0;
+	if (!address || read_user(&family, sizeof(family), address) < 0)
+		return 0;
+	if (family != AF_INET && family != AF_INET6)
+		return 0;
+	if (is_self())
+		return 0;
+	u16 network_port = 0;
+	read_user(&network_port, sizeof(network_port), address + 2);
+	u32 port = ((network_port & 0xff) << 8) | (network_port >> 8);
+	u64 id = current_pid_tgid();
+	u32 tgid = id >> 32;
+	u32 why = 0;
+	if (map_lookup(&marked, &tgid))
+		why |= WHY_MARKED;
+	if (map_lookup(&watched_ports, &port))
+		why |= WHY_PORT;
+	if (comm_watched())
+		why |= WHY_COMM;
+	if (!why)
+		return 0;
+	struct event *e = ring_reserve(&events, sizeof(struct event), 0);
+	if (!e) {
+		count(COUNT_LOST);
+		return 0;
+	}
+	e->kind = KIND_CONNECT;
+	e->pid = tgid;
+	e->tid = (u32)id;
+	e->uid = (u32)current_uid_gid();
+	e->time_ns = ktime_ns();
+	e->cgroup = current_cgroup();
+	e->how = port;
+	e->args_len = family;
+	current_comm(e->comm, COMM_LEN);
+	e->parent_comm[0] = 0;
+	__builtin_memset(e->path, 0, 16);
+	// sockaddr_in keeps the address at 4, sockaddr_in6 at 8.
+	if (family == AF_INET)
+		read_user(e->path, 4, address + 4);
+	else
+		read_user(e->path, 16, address + 8);
+	e->args[0] = why;
+	e->args[1] = 0;
+	ring_submit(e, 0);
+	return 0;
 }

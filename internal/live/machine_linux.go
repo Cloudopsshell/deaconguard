@@ -4,6 +4,8 @@ package live
 
 import (
 	"bufio"
+	"encoding/hex"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -70,6 +72,86 @@ func (m *procMachine) Ancestors(pid uint32) []string {
 func (m *procMachine) WorkingDirectory(pid uint32) string {
 	directory, _ := os.Readlink(proc(pid, "cwd"))
 	return directory
+}
+
+func (m *procMachine) Parent(pid uint32) uint32 {
+	fields := procStat(int(pid))
+	if len(fields) < 2 {
+		return 0
+	}
+	parent, _ := strconv.ParseUint(fields[1], 10, 32)
+	return uint32(parent)
+}
+
+// socketInode is the inode of the socket open as the process's file
+// descriptor fd, or "".
+func socketInode(pid uint32, fd int) string {
+	target, err := os.Readlink(proc(pid, "fd/"+strconv.Itoa(fd)))
+	if err != nil {
+		return ""
+	}
+	inode, ok := strings.CutPrefix(target, "socket:[")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSuffix(inode, "]")
+}
+
+// NetworkStdio reads the process's standard input and output, and when
+// both are sockets, finds them among the TCP connections of the process's
+// network namespace. Most processes' input isn't a socket, so the common
+// case is one readlink.
+func (m *procMachine) NetworkStdio(pid uint32) string {
+	input := socketInode(pid, 0)
+	if input == "" {
+		return ""
+	}
+	output := socketInode(pid, 1)
+	if output == "" {
+		return ""
+	}
+	peers := map[string]string{}
+	for _, table := range []string{"net/tcp", "net/tcp6"} {
+		file, err := os.Open(proc(pid, table))
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			// sl local_address rem_address st tx:rx tr:when retrnsmt uid timeout inode
+			fields := strings.Fields(scanner.Text())
+			if len(fields) < 10 || (fields[9] != input && fields[9] != output) {
+				continue
+			}
+			peers[fields[9]] = tcpAddress(fields[2])
+		}
+		file.Close()
+	}
+	if peers[input] == "" || peers[output] == "" {
+		return ""
+	}
+	return peers[input]
+}
+
+// tcpAddress reads an address as /proc/net/tcp writes it: the address in
+// hex, as the kernel holds it in 32-bit words, a colon, and the port.
+func tcpAddress(text string) string {
+	hexAddress, hexPort, ok := strings.Cut(text, ":")
+	raw, err := hex.DecodeString(hexAddress)
+	if !ok || err != nil || (len(raw) != 4 && len(raw) != 16) {
+		return ""
+	}
+	port, err := strconv.ParseUint(hexPort, 16, 16)
+	if err != nil {
+		return ""
+	}
+	// Each 32-bit word is written in the machine's byte order: little
+	// endian on the machines the agent supports.
+	for i := 0; i < len(raw); i += 4 {
+		raw[i], raw[i+1], raw[i+2], raw[i+3] = raw[i+3], raw[i+2], raw[i+1], raw[i]
+	}
+	address, _ := netip.AddrFromSlice(raw)
+	return netip.AddrPortFrom(address.Unmap(), uint16(port)).String()
 }
 
 // User names uid from the machine's /etc/passwd, read again every five

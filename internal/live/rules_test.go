@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -15,12 +16,16 @@ type fakeMachine struct {
 	terminal   bool
 	ancestors  []string
 	directory  string
+	stdio      map[uint32]string
+	parent     uint32
 }
 
 func (m fakeMachine) Executable(uint32) string       { return m.executable }
 func (m fakeMachine) HasTerminal(uint32) bool        { return m.terminal }
 func (m fakeMachine) Ancestors(uint32) []string      { return m.ancestors }
 func (m fakeMachine) WorkingDirectory(uint32) string { return m.directory }
+func (m fakeMachine) Parent(uint32) uint32           { return m.parent }
+func (m fakeMachine) NetworkStdio(pid uint32) string { return m.stdio[pid] }
 func (m fakeMachine) User(uid uint32) string {
 	if uid == 0 {
 		return "root"
@@ -73,6 +78,45 @@ func TestExecRules(t *testing.T) {
 	test := Evaluate(Event{Kind: KindExec, Path: "/tmp/deaconguard-test-ab12", Parent: agentName}, fakeMachine{})
 	if !test[0].Test {
 		t.Errorf("test alert not marked: %+v", test)
+	}
+}
+
+func TestConnectRules(t *testing.T) {
+	pool := netip.MustParseAddr("203.0.113.9")
+	cases := []struct {
+		name    string
+		event   Event
+		machine fakeMachine
+		want    string
+	}{
+		{"program from /tmp", Event{Kind: KindConnect, PID: 7, Comm: "kworker", Address: pool, Port: 443, Why: WhyMarked}, fakeMachine{executable: "/tmp/.x/kworker"}, "DG-RT-021 HIGH"},
+		{"its name lookup", Event{Kind: KindConnect, PID: 7, Comm: "kworker", Address: netip.MustParseAddr("10.0.0.2"), Port: 53, Why: WhyMarked}, fakeMachine{}, ""},
+		{"to this machine", Event{Kind: KindConnect, PID: 7, Comm: "kworker", Address: netip.MustParseAddr("127.0.0.1"), Port: 8080, Why: WhyMarked}, fakeMachine{}, ""},
+		{"to a private network", Event{Kind: KindConnect, PID: 7, Comm: "kworker", Address: netip.MustParseAddr("10.1.2.3"), Port: 22, Why: WhyMarked}, fakeMachine{}, "DG-RT-021 HIGH"},
+		{"go test's program", Event{Kind: KindConnect, PID: 7, Comm: "x.test", Address: pool, Port: 443, Why: WhyMarked}, fakeMachine{executable: "/tmp/go-build1/b001/x.test", ancestors: []string{"go", "bash"}}, ""},
+		{"pool port", Event{Kind: KindConnect, PID: 7, Comm: "systemd-helper", Address: pool, Port: 3333, Why: WhyPort}, fakeMachine{executable: "/usr/sbin/systemd-helper"}, "DG-RT-022 MEDIUM"},
+		{"pool port inside", Event{Kind: KindConnect, PID: 7, Comm: "grafana", Address: netip.MustParseAddr("192.168.1.4"), Port: 3333, Why: WhyPort}, fakeMachine{}, ""},
+		{"both", Event{Kind: KindConnect, PID: 7, Comm: "x", Address: pool, Port: 4444, Why: WhyMarked | WhyPort}, fakeMachine{executable: "/dev/shm/x"}, "DG-RT-021 HIGH, DG-RT-022 MEDIUM"},
+		{"shell port check", Event{Kind: KindConnect, PID: 7, Comm: "bash", Address: pool, Port: 5432, Why: WhyComm}, fakeMachine{}, ""},
+		{"shell controlled", Event{Kind: KindConnect, PID: 7, Comm: "bash", Address: pool, Port: 9001, Why: WhyComm}, fakeMachine{stdio: map[uint32]string{7: "203.0.113.9:9001"}}, "DG-RT-020 CRITICAL"},
+		{"shell started with a connection", Event{Kind: KindExec, PID: 8, Path: "/bin/sh", Parent: "nc"}, fakeMachine{stdio: map[uint32]string{8: "203.0.113.9:9001"}}, "DG-RT-020 CRITICAL"},
+		{"shell under a connected script", Event{Kind: KindExec, PID: 8, Path: "/bin/bash", Parent: "python3"}, fakeMachine{parent: 5, stdio: map[uint32]string{5: "203.0.113.9:9001"}}, "DG-RT-020 CRITICAL"},
+		{"ordinary shell", Event{Kind: KindExec, PID: 8, Path: "/bin/bash", Parent: "sshd"}, fakeMachine{parent: 5}, ""},
+	}
+	for _, c := range cases {
+		if got := rules(Evaluate(c.event, c.machine)); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+	shell := Event{Kind: KindConnect, PID: 7, Comm: "bash", Address: pool, Port: 9001, Why: WhyComm}
+	if !needsRecheck(shell, nil) || needsRecheck(Event{Kind: KindConnect, Comm: "curl", Why: WhyPort}, nil) {
+		t.Error("needsRecheck")
+	}
+	if got := rules(Recheck(shell, fakeMachine{stdio: map[uint32]string{7: "203.0.113.9:9001"}})); got != "DG-RT-020 CRITICAL" {
+		t.Errorf("recheck: %q", got)
+	}
+	if alert := Evaluate(shell, fakeMachine{stdio: map[uint32]string{7: "203.0.113.9:9001"}})[0]; alert.Remote != "203.0.113.9:9001" {
+		t.Errorf("remote: %+v", alert)
 	}
 }
 
@@ -160,7 +204,7 @@ func TestObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if object.License != "Dual MIT/GPL" || len(object.Programs) != 13 || len(object.Maps) != 8 {
+	if object.License != "Dual MIT/GPL" || len(object.Programs) != 16 || len(object.Maps) != 13 {
 		t.Fatalf("object: %s, %d programs, %d maps", object.License, len(object.Programs), len(object.Maps))
 	}
 	linked, err := object.Programs[0].Linked(map[string]int{"scratch": 7, "pending_execs": 8})
@@ -196,6 +240,13 @@ func TestDetectorLimits(t *testing.T) {
 	if len(alerts) != maxAlertsPerMinute || status.Suppressed != 10 {
 		t.Fatalf("rate limit: %d alerts, %d suppressed", len(alerts), status.Suppressed)
 	}
+	// One reverse shell, held by the shell and what started it, is one alert.
+	shell := Alert{Rule: RuleReverseShell, Program: "/usr/bin/bash", Remote: "203.0.113.9:9001"}
+	starter := Alert{Rule: RuleReverseShell, Program: "/usr/bin/timeout", Remote: "203.0.113.9:9001"}
+	d.add([]Alert{shell, starter}, later.Add(time.Minute))
+	if _, alerts := d.Take(); len(alerts) != 1 {
+		t.Fatalf("reverse shell alerts: %d", len(alerts))
+	}
 	d.count(100, later)
 	d.count(150, later)
 	if status, _ := d.Take(); status.EventsLastHour != 150 {
@@ -215,6 +266,23 @@ func TestParseEvent(t *testing.T) {
 	event, err := ParseEvent(raw)
 	if err != nil || event.PID != 42 || event.Comm != "sh" || event.Parent != "nginx" || event.Path != "/bin/sh" || event.Args != "sh -c id" {
 		t.Fatalf("%+v %v", event, err)
+	}
+	connect := make([]byte, eventSize)
+	connect[0] = KindConnect
+	connect[4] = 42
+	connect[32], connect[33] = 0x05, 0x0d // 3333
+	connect[36] = familyIPv4
+	copy(connect[40:], "w")
+	copy(connect[72:], []byte{203, 0, 113, 9})
+	connect[328] = WhyPort
+	event, err = ParseEvent(connect)
+	if err != nil || event.Kind != KindConnect || event.Port != 3333 || event.Address.String() != "203.0.113.9" || event.Why != WhyPort || event.Comm != "w" {
+		t.Fatalf("connect: %+v %v", event, err)
+	}
+	connect[36] = familyIPv6
+	copy(connect[72:], netip.MustParseAddr("2001:db8::1").AsSlice())
+	if event, _ := ParseEvent(connect); event.Address.String() != "2001:db8::1" {
+		t.Fatalf("IPv6: %v", event.Address)
 	}
 	if _, err := ParseEvent(raw[:100]); err == nil {
 		t.Fatal("short event accepted")

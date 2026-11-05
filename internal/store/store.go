@@ -345,6 +345,11 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if version < 34 {
+		if err := execInTx(db, schemaV34); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -876,6 +881,11 @@ const schemaV30 = `
 ALTER TABLE network_targets ADD COLUMN web INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE network_targets ADD COLUMN web_paths INTEGER NOT NULL DEFAULT 1;
 PRAGMA user_version = 30;`
+
+// schemaV34 keeps where a live detection alert's connection went (1.30.0).
+const schemaV34 = `
+ALTER TABLE live_alerts ADD COLUMN remote TEXT NOT NULL DEFAULT '';
+PRAGMA user_version = 34;`
 
 // schemaV33 manages a Kubernetes cluster as one (1.28.0): its nodes follow
 // its live detection, its scanning when it changes and its tags, and can be
