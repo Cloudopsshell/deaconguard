@@ -560,7 +560,9 @@ func createFirstAccount(account *user.User, options serverSetup, output, diagnos
 	if username == "" || password == nil {
 		terminal, closeTerminal, err := openTerminal()
 		if err != nil {
-			return fmt.Errorf("create the first dashboard account: %w; or pass --admin-user NAME --admin-password-file FILE", err)
+			return fmt.Errorf("create the first dashboard account: %w; with no terminal, pass the account: "+
+				"sudo deaconguard setup server --admin-user NAME --admin-password-file FILE, "+
+				"or with the install script: curl -fsSL https://get.deaconguard.io | sudo sh -s -- --admin-user NAME --admin-password-file FILE", err)
 		}
 		defer closeTerminal()
 		fmt.Fprintln(diagnostics, "Create the first dashboard account. It can sign in from any browser that reaches this server.")

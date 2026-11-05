@@ -9,7 +9,7 @@ Each scan runs the checks you choose, in the dashboard's scan dialog or with:
 deaconguard scan HOST_ID --checks packages,libraries,containers,integrity,malware,config,changes,paths,hardening,antivirus
 ```
 
-**Package vulnerabilities** is the default. A [server audit](./usage/audits.md) runs every check at once and grades the result. The antivirus scan is **Basic** (ClamAV) unless you choose **Advanced** in the scan dialog, or add `yara` to `--checks`, which runs YARA rules as well.
+The dashboard ticks the [recommended checks](#recommended-checks) at first; `deaconguard scan` without `--checks`, and the API without `checks`, run **Package vulnerabilities** only. A [server audit](./usage/audits.md) runs every check at once and grades the result. The antivirus scan is **Basic** (ClamAV) unless you choose **Advanced** in the scan dialog, or add `yara` to `--checks`, which runs YARA rules as well.
 
 | Check | ID | What it does | Reads or runs |
 | --- | --- | --- | --- |
@@ -26,6 +26,12 @@ deaconguard scan HOST_ID --checks packages,libraries,containers,integrity,malwar
 | Antivirus scan, Advanced | `yara` | Everything Basic does, plus [YARA-X](https://virustotal.github.io/yara-x/) with the [YARA Forge](https://github.com/YARAHQ/yara-forge) **core** rules on the same directories and containers, for webshells, crypto miners, backdoors and attacker tools that signature scanners often miss. See [the advanced antivirus scan](#the-advanced-antivirus-scan). Needs agent 0.5.0 or later. | `yr scan` |
 
 Every command is a **fixed string** in DeaconGuard's source; nothing from the user or the host is inserted into it, and every command only reads. Folders found on the host, such as a container's writable layer, reach the antivirus scans on standard input, never in the command. The files a scan writes are the antivirus scans' private, temporary lists of folders and the advanced scan's copy of the YARA rules, compiled once, all deleted when it finishes.
+
+## Recommended checks
+
+From 1.31.0, the scan dialog ticks five checks at first, marked **recommended**: **Package vulnerabilities**, **Malware & compromise indicators**, **Security configuration**, **Host changes** and **Attack paths**. Together they find what a person can act on (a vulnerable package with an update, SSH accepting passwords, an account that can become root, a new port open to the network) and they take seconds and little memory: none of them reads every file, as **System file integrity** and the antivirus scans do. **Use the recommended checks** in the dialog ticks them again; the dialog otherwise remembers what you chose last.
+
+The server scans the first machine that enrolls with them, once, right after the install: with the install script, that's the server's own machine. A server that has already scanned anything never does.
 
 ## The advanced antivirus scan
 
@@ -57,7 +63,7 @@ The RPM distributions' feeds list only issues that have a fix, so findings there
 
 ## Running checks with sudo
 
-Agents run as root and see everything. In [local mode](./usage/local-mode.md) and on the server's own host, checks run as the user running DeaconGuard. That user can't see other users' processes, protected files or firewall rules, so those results say they have **partial coverage**.
+Agents run as root and see everything, so the scan dialog marks checks **better with sudo** only for a machine the server scans itself. In [local mode](./usage/local-mode.md) and on the server's own host, checks run as the user running DeaconGuard. That user can't see other users' processes, protected files or firewall rules, so those results say they have **partial coverage**.
 
 Allow sudo to run the same read-only commands through `sudo`:
 

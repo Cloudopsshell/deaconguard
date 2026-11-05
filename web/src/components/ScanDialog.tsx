@@ -40,7 +40,13 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
   const nodeChecks = checksFor(cluster ? machine : host, selected ?? definitions.data?.filter((check) => check.default).map((check) => check.id) ?? []);
   const chosen: CheckId[] = cluster ? ["kubernetes", ...nodeChecks] : nodeChecks;
   const chosenDefinitions = definitions.data?.filter((check) => chosen.includes(check.id)) ?? [];
-  const wantsSudo = !cluster && chosenDefinitions.some((check) => check.sudo === "recommended");
+  // Agents run as root, so sudo only matters for this machine scanned by
+  // the server itself.
+  const local = host.transport === "local";
+  const wantsSudo = local && chosenDefinitions.some((check) => check.sudo === "recommended");
+  const recommended = definitions.data?.filter((check) => check.default).map((check) => check.id) ?? [];
+  const isRecommended =
+    recommended.length > 0 && nodeChecks.length === recommended.filter((id) => id !== "kubernetes").length && recommended.every((id) => id === "kubernetes" || nodeChecks.includes(id));
 
   // The advanced scan is a level of the antivirus check, not a check of its own:
   // it always runs with ClamAV, and goes when the antivirus check is unticked.
@@ -79,7 +85,17 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
       ) : (
         <div className="space-y-4">
           <fieldset className="space-y-2">
-            <legend className="mb-2 text-sm font-medium">Choose what to check</legend>
+            <legend className="mb-2 flex w-full items-center justify-between gap-2 text-sm font-medium">
+              Choose what to check
+              <button
+                type="button"
+                disabled={isRecommended}
+                onClick={() => setSelected(recommended)}
+                className="text-xs font-semibold text-indigo-600 hover:underline disabled:text-slate-400 disabled:no-underline dark:text-indigo-400"
+              >
+                {isRecommended ? "The recommended checks" : "Use the recommended checks"}
+              </button>
+            </legend>
             {listed.map((check, index) => {
               const Icon = checkMeta[check.id].icon;
               const checked = chosen.includes(check.id);
@@ -111,7 +127,12 @@ function ScanDialogBody({ host, onClose, initial }: { host: Host; onClose: () =>
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold">
                       <Icon className="size-4 text-slate-500 dark:text-slate-400" />
                       {check.name}
-                      {check.sudo === "recommended" && (
+                      {check.default && check.id !== "kubernetes" && (
+                        <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">
+                          recommended
+                        </span>
+                      )}
+                      {local && check.sudo === "recommended" && (
                         <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                           better with sudo
                         </span>

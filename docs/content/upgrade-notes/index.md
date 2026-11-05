@@ -7,10 +7,11 @@ One page per release, newest first: what's new, what to do before you upgrade, a
 
 **Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.20.0 to 1.21.0, the pages for 1.20.1, 1.20.2, 1.20.3 and 1.21.0. You can upgrade straight to the newest release; you don't need to install each one in turn.
 
-Releases with nothing to do say so. The last 10 minor lines (now 1.21 to 1.30) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
+Releases with nothing to do say so. The last 10 minor lines (now 1.22 to 1.31) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
 
 | Release | Released | What to do |
 | --- | --- | --- |
+| [1.31.0](./v1-31/v1-31-0.md) | 2026-11-05 | Nothing to do. A new server scans itself once; the scan dialog ticks the recommended checks |
 | [1.30.0](./v1-30/v1-30-0.md) | 2026-11-05 | Back up: database schema 34. Upgrade the agents for live detection's network rules |
 | [1.29.0](./v1-29/v1-29-0.md) | 2026-11-02 | Nothing to do. A cluster's nodes' vulnerabilities count once, so the dashboard's numbers go down for clusters |
 | [1.28.0](./v1-28/v1-28-0.md) | 2026-11-02 | Back up: database schema 33. A Kubernetes cluster is managed as one: node settings move to the cluster, which turns on for all its nodes what was on for any; schedules naming a node now name its cluster |
@@ -20,4 +21,3 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.21 to 1.30) a
 | [1.24.0](./v1-24/v1-24-0.md) | 2026-11-01 | Nothing |
 | [1.23.0](./v1-23/v1-23-0.md) | 2026-11-01 | Nothing; the Agents page then shows which agents to upgrade |
 | [1.22.0](./v1-22/v1-22-0.md) | 2026-11-01 | Nothing; upgrade the agents and schedule the new Host changes check to use it |
-| [1.21.0](./v1-21/v1-21-0.md) | 2026-10-31 | Back up: database schema 29; upgrade the cluster agent for the cluster's page |

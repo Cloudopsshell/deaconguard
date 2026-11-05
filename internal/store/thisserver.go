@@ -94,3 +94,32 @@ func decodeUnique(encoded string) []string {
 	}
 	return values
 }
+
+// metaFirstScan, when "1", says the first scan after install was started.
+const metaFirstScan = "first_scan"
+
+// TakeFirstScan reports whether this is the server's first chance to scan
+// a machine on its own, and records that it was taken: true once, while no
+// scan has ever been started.
+func TakeFirstScan() (bool, error) {
+	db, err := database()
+	if err != nil {
+		return false, err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var taken, scans int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM meta WHERE key = ? AND value = '1'", metaFirstScan).Scan(&taken); err != nil {
+		return false, err
+	}
+	if err := tx.QueryRow("SELECT COUNT(*) FROM scans").Scan(&scans); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec("INSERT OR REPLACE INTO meta (key, value) VALUES (?, '1')", metaFirstScan); err != nil {
+		return false, err
+	}
+	return taken == 0 && scans == 0, tx.Commit()
+}

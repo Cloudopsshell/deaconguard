@@ -1,12 +1,14 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Bug, Flame, Plus, Server, ShieldAlert, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Bug, Flame, Play, Plus, Server, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ScanDialog } from "../components/ScanDialog";
 import { useCan } from "../lib/role";
 import { api, type HostSummary, type SeverityCounts, type Summary } from "../api";
 import { checkMeta, checkOrder } from "../lib/checks";
 import { LiveCard } from "../components/LiveDetection";
 import {
+  Button,
   Card,
   CardHeader,
   EmptyState,
@@ -25,6 +27,54 @@ import { countFor, isActive, severityOrder, severityStyle, timeAgo } from "../li
 import { PackageCountsInline, packageCounts } from "../lib/fixes";
 import { ExploitBadge } from "../lib/exploit";
 import { TrendChart } from "../components/TrendChart";
+
+/**
+ * Until anything has been scanned, the dashboard leads with one button that
+ * scans this server, or the first machine, with the recommended checks; the
+ * install's first scan shows here while it runs.
+ */
+function FirstScan({ hosts }: { hosts: HostSummary[] }) {
+  const canScan = useCan("operator");
+  const [open, setOpen] = useState(false);
+  const target = hosts.find((host) => host.this_server) ?? hosts.find((host) => host.kind !== "cluster" && !host.cluster_id) ?? hosts[0];
+  const running = hosts.find((host) => isActive(host.last_scan?.status));
+  if (running) {
+    return (
+      <Card className="mb-6 border-l-4 border-indigo-500">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-5">
+          <div>
+            <h2 className="font-semibold">Scanning {running.address}…</h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              The first results arrive here within a minute or two: vulnerable packages, risky settings, ways to become root and what changed.
+            </p>
+          </div>
+          <Link to={`/hosts/${running.id}`} className="text-sm font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+            Watch it run
+          </Link>
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card className="mb-6 border-l-4 border-indigo-500">
+      <div className="flex flex-wrap items-center justify-between gap-6 p-6">
+        <div className="max-w-2xl">
+          <h2 className="text-lg font-semibold">Nothing scanned yet</h2>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            Scan {target.this_server ? "this server" : target.address} with the recommended checks: vulnerable packages, security settings, ways
+            an account could become root, what changed and signs of compromise. It takes about a minute and only reads.
+          </p>
+        </div>
+        {canScan && (
+          <Button onClick={() => setOpen(true)} className="px-5 py-2.5 text-base">
+            <Play className="size-5" /> {target.this_server ? "Scan this server now" : `Scan ${target.address} now`}
+          </Button>
+        )}
+      </div>
+      <ScanDialog host={target} open={open} onClose={() => setOpen(false)} />
+    </Card>
+  );
+}
 
 // Known exploited vulnerabilities rank a host above any number of others.
 function riskScore(counts: SeverityCounts, exploited = 0) {
@@ -120,6 +170,9 @@ export function Dashboard() {
     (host) => host.last_scan?.status === "failed",
   );
   const neverScanned = data.host_summaries.filter((host) => !host.last_report && host.kind !== "cluster" && !attention.includes(host));
+  const nothingScanned = data.host_summaries.every((host) => !host.checks || Object.keys(host.checks).length === 0);
+  // Ubuntu Pro and old kernels only hold findings back on Ubuntu.
+  const ubuntu = data.host_summaries.some((host) => /ubuntu/i.test(host.last_report?.os || host.agent?.os || ""));
   // A cluster counts once, its nodes with it.
   const clusters = data.host_summaries.filter((host) => host.kind === "cluster");
   const clusterIds = new Set(clusters.map((host) => host.id));
@@ -140,6 +193,8 @@ export function Dashboard() {
         title="Dashboard"
         description={`Latest results from ${data.scanned_hosts} of ${data.hosts} registered host${data.hosts === 1 ? "" : "s"}.`}
       />
+
+      {nothingScanned && <FirstScan hosts={data.host_summaries} />}
 
       {(attention.length > 0 || data.stale_feeds > 0 || data.unsupported > 0 || (data.stale_hosts?.length ?? 0) > 0 || (data.release_hosts?.length ?? 0) > 0) && (
         <div className="mb-6 space-y-2">
@@ -305,7 +360,7 @@ export function Dashboard() {
             </ul>
             {waiting > 0 && (
               <p className="border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                {waiting.toLocaleString()} more have no fix from the distribution yet, or need Ubuntu Pro or removing old kernels. Each host's page
+                {waiting.toLocaleString()} more have no fix from the distribution yet{ubuntu ? ", or need Ubuntu Pro or removing old kernels" : ""}. Each host's page
                 lists them by what clears them.
               </p>
             )}
