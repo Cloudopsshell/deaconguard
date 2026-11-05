@@ -8,6 +8,14 @@
 
 **Find what's vulnerable, misconfigured or compromised.** Across your Linux servers, Kubernetes clusters and container images, from one dashboard you host.
 
+**Quick start** on a Linux server with systemd (Ubuntu, Debian, RHEL and friends):
+
+1. Install, as root: `curl -fsSL https://get.deaconguard.io | sudo sh -` (it asks for the first dashboard account).
+2. Open `https://THIS-SERVER:8443` and sign in.
+3. The server scans itself with the recommended checks right after the install; its first results are on the dashboard within a minute or two. Add more machines with **Enroll a machine**.
+
+Docker, Kubernetes and machines without systemd: see [Install](#install) below.
+
 DeaconGuard is a security scanner written in Go, for Linux servers, Kubernetes clusters and container images. On a Linux machine, it runs fixed, read-only commands and evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and an antivirus scan: Basic with ClamAV, or Advanced with ClamAV and YARA rules. The matching, checks, and scan orchestration are DeaconGuard code. Scans never install or change software; the only third-party engines they run are ClamAV and YARA-X, for the antivirus scan. The [install script](#install-script) installs them and the other tools the checks use, once, when it installs DeaconGuard.
 
 ## How it works
