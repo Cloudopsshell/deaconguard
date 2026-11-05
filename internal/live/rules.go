@@ -133,9 +133,26 @@ var services = []string{
 
 // execMarkedFolders are where a program that starts is marked by the
 // watchers, with the processes it starts, so their connections are
-// reported: the temporary folders, and /dev/fd and /proc/self/fd, where a
-// program run from memory starts.
-var execMarkedFolders = append(append([]string{}, temporaryFolders...), "/dev/fd/", "/proc/self/fd/")
+// reported: the temporary folders. Not /dev/fd or /proc/self/fd: container
+// runtimes start every container through them (runc runs itself from
+// /proc/self/fd), and a container's processes would all be marked. A
+// program run from memory is marked by the agent instead, once its
+// executable shows it's in memory (fromMemory).
+var execMarkedFolders = temporaryFolders
+
+// fromMemory reports whether a program that started was found running from
+// memory, without a file: the agent marks it for the watchers.
+func fromMemory(event Event, alerts []Alert) bool {
+	if event.Kind != KindExec {
+		return false
+	}
+	for _, alert := range alerts {
+		if alert.Rule == RuleTempProgram && !alert.Test && (strings.HasPrefix(alert.Program, "/memfd:") || strings.HasSuffix(alert.Program, " (deleted)")) {
+			return true
+		}
+	}
+	return false
+}
 
 // poolPorts are ports crypto-mining pools listen on, for miners that are
 // renamed or given their pool in a file rather than on the command line.

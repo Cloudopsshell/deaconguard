@@ -225,6 +225,15 @@ func (w *watcher) poll(timeoutMS int, handle func(Event)) error {
 	return nil
 }
 
+// mark marks a process as the watchers mark a program started from a
+// temporary folder.
+func (w *watcher) mark(pid uint32) {
+	key, value := make([]byte, 4), make([]byte, 4)
+	binary.LittleEndian.PutUint32(key, pid)
+	binary.LittleEndian.PutUint32(value, WhyMarked)
+	updateMap(w.maps["marked"], key, value)
+}
+
 // counters sums the watchers' per-CPU counters.
 func (w *watcher) counters() (Counters, error) {
 	key := make([]byte, 4)
