@@ -381,7 +381,10 @@ main() {
 		# packages' services need it, the container image doesn't.
 		printf '\nDeaconGuard'"'"'s packages run as systemd services, and systemd is not running on this machine.\n' >&2
 		printf 'Run DeaconGuard in a container instead, with Docker Compose:\n\n' >&2
+		# The commands are shown for the user to run, not expanded here.
+		# shellcheck disable=SC2016
 		printf '  VERSION=$(curl -fsSL https://get.deaconguard.io/stable.txt)\n' >&2
+		# shellcheck disable=SC2016
 		printf '  curl -fsSLO "https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v${VERSION}/deploy/compose/compose.yaml"\n' >&2
 		printf "  printf '%%s' 'a-long-password' > admin-password && chmod 600 admin-password && chown 65532 admin-password\n" >&2
 		printf '  docker compose up -d\n\n' >&2
