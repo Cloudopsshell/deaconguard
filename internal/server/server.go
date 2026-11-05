@@ -164,6 +164,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("POST /api/hosts", s.needs(store.RoleAdmin, s.addHost))
 	mux.HandleFunc("GET /api/hosts/{id}", s.getHost)
 	mux.HandleFunc("GET /api/hosts/{id}/cluster", s.clusterView)
+	mux.HandleFunc("GET /api/hosts/{id}/cluster/findings", s.clusterFindings)
 	mux.HandleFunc("PATCH /api/hosts/{id}", s.needs(store.RoleOperator, s.updateHost))
 	mux.HandleFunc("DELETE /api/hosts/{id}", s.needs(store.RoleAdmin, s.removeHost))
 	mux.HandleFunc("PUT /api/hosts/{id}/tags", s.needs(store.RoleOperator, s.setHostTags))
@@ -524,6 +525,62 @@ func buildSummary() (summary, error) {
 	}
 	result := summary{Hosts: len(hosts), UniqueCVEs: len(vulnerabilities), HostSummaries: hosts, Checks: make(map[string]*checkTotals),
 		Fixes: store.FixSummary{Counts: make(map[string]int)}, StaleHosts: make([]staleHost, 0), ReleaseHosts: make([]releaseHost, 0)}
+	// A cluster's nodes' vulnerabilities count once, as the cluster's: the
+	// same package on three nodes is one thing to fix.
+	clusters := map[string]bool{}
+	for _, host := range hosts {
+		if host.IsCluster() {
+			clusters[host.ID] = true
+		}
+	}
+	combined, err := store.ClusterCombinedCounts()
+	if err != nil {
+		return summary{}, err
+	}
+	addVulnerabilities := func(findings int, severity store.SeverityCounts, fixes *store.FixSummary, exploit store.ExploitCounts) {
+		if exploit.Data {
+			result.Exploit.Known += exploit.Known
+			result.Exploit.KnownFixable += exploit.KnownFixable
+			result.Exploit.Likely += exploit.Likely
+			if exploit.Known > 0 {
+				result.Exploit.HostsWithKnown++
+			}
+		} else {
+			result.Exploit.HostsWithoutData++
+		}
+		result.Findings += findings
+		result.Severity.Critical += severity.Critical
+		result.Severity.High += severity.High
+		result.Severity.Medium += severity.Medium
+		result.Severity.Low += severity.Low
+		result.Severity.Unknown += severity.Unknown
+		if fixes != nil {
+			for state, count := range fixes.Counts {
+				result.Fixes.Counts[state] += count
+			}
+			result.Fixes.Actionable.Critical += fixes.Actionable.Critical
+			result.Fixes.Actionable.High += fixes.Actionable.High
+			result.Fixes.Actionable.Medium += fixes.Actionable.Medium
+			result.Fixes.Actionable.Low += fixes.Actionable.Low
+			result.Fixes.Actionable.Unknown += fixes.Actionable.Unknown
+			if fixes.Counts["available"]+fixes.Counts["reboot"] > 0 {
+				result.HostsToUpdate++
+			}
+		}
+	}
+	exploitData := map[string]bool{}
+	for _, host := range hosts {
+		if host.ClusterID != "" && host.LastReport != nil && host.LastReport.Exploit.Data {
+			exploitData[host.ClusterID] = true
+		}
+	}
+	for id, counts := range combined {
+		if !clusters[id] {
+			continue
+		}
+		counts.Exploit.Data = exploitData[id]
+		addVulnerabilities(counts.Findings, counts.Severity, &counts.Fixes, counts.Exploit)
+	}
 	for _, host := range hosts {
 		for id, check := range host.Checks {
 			totals := result.Checks[id]
@@ -564,39 +621,14 @@ func buildSummary() (summary, error) {
 		if life := report.Lifecycle; life != nil && (life.State == lifecycle.Ended || life.State == lifecycle.Extended) {
 			result.ReleaseHosts = append(result.ReleaseHosts, releaseHost{ID: host.ID, Address: host.Address, OS: report.OS, State: life.State, Note: life.Note})
 		}
-		if report.Exploit.Data {
-			result.Exploit.Known += report.Exploit.Known
-			result.Exploit.KnownFixable += report.Exploit.KnownFixable
-			result.Exploit.Likely += report.Exploit.Likely
-			if report.Exploit.Known > 0 {
-				result.Exploit.HostsWithKnown++
-			}
-		} else {
-			result.Exploit.HostsWithoutData++
-		}
-		result.Findings += report.FindingCount
 		result.Unsupported += report.UnsupportedCount
-		result.Severity.Critical += report.Severity.Critical
-		result.Severity.High += report.Severity.High
-		result.Severity.Medium += report.Severity.Medium
-		result.Severity.Low += report.Severity.Low
-		result.Severity.Unknown += report.Severity.Unknown
 		if report.FeedStale {
 			result.StaleFeeds++
 		}
-		if fixes := report.Fixes; fixes != nil {
-			for state, count := range fixes.Counts {
-				result.Fixes.Counts[state] += count
-			}
-			result.Fixes.Actionable.Critical += fixes.Actionable.Critical
-			result.Fixes.Actionable.High += fixes.Actionable.High
-			result.Fixes.Actionable.Medium += fixes.Actionable.Medium
-			result.Fixes.Actionable.Low += fixes.Actionable.Low
-			result.Fixes.Actionable.Unknown += fixes.Actionable.Unknown
-			if fixes.Counts["available"]+fixes.Counts["reboot"] > 0 {
-				result.HostsToUpdate++
-			}
+		if host.ClusterID != "" && clusters[host.ClusterID] {
+			continue // counted with its cluster, above
 		}
+		addVulnerabilities(report.FindingCount, report.Severity, report.Fixes, report.Exploit)
 	}
 	// The most severe vulnerabilities an update fixes come first: they are the
 	// ones to act on.
@@ -617,8 +649,19 @@ func buildSummary() (summary, error) {
 		// packages of the same source.
 		hostsOverdue, counted := map[string]bool{}, map[string]bool{}
 		soon := time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339)
+		// A cluster's nodes count as the cluster.
+		owner := map[string]string{}
+		for _, host := range hosts {
+			if host.ClusterID != "" && clusters[host.ClusterID] {
+				owner[host.ID] = host.ClusterID
+			}
+		}
 		for _, finding := range findings {
-			key := finding.HostID + " " + finding.CVE
+			host := finding.HostID
+			if cluster := owner[host]; cluster != "" {
+				host = cluster
+			}
+			key := host + " " + finding.CVE
 			if counted[key] {
 				continue
 			}
@@ -626,7 +669,7 @@ func buildSummary() (summary, error) {
 			case finding.Overdue:
 				counted[key] = true
 				result.SLA.Overdue++
-				hostsOverdue[finding.HostID] = true
+				hostsOverdue[host] = true
 			case finding.DueAt != "" && finding.DueAt <= soon && (finding.Fix == "available" || finding.Fix == "reboot"):
 				counted[key] = true
 				result.SLA.DueSoon++
@@ -795,6 +838,35 @@ func (s *Server) setHostTags(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "host.tags", host.Address, "tags: "+strings.Join(tags, ", "))
 	writeJSON(w, http.StatusOK, tagsRequest{Tags: tags})
+}
+
+// clusterFindings serves a check's findings on a cluster's nodes, each once
+// with the nodes it's on: GET /api/hosts/{id}/cluster/findings?check=packages
+// (or malware, antivirus, integrity).
+func (s *Server) clusterFindings(w http.ResponseWriter, r *http.Request) {
+	host, err := store.GetHost(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if !host.IsCluster() {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("%s isn't a Kubernetes cluster", host.Address))
+		return
+	}
+	check := r.URL.Query().Get("check")
+	if check == "" {
+		check = checks.Packages
+	}
+	if check != checks.Packages && check != checks.Malware && check != checks.Antivirus && check != checks.Integrity {
+		writeError(w, http.StatusBadRequest, errors.New("check is packages, malware, antivirus or integrity"))
+		return
+	}
+	result, err := store.GetClusterFindings(host.ID, check)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 type excludedRequest struct {

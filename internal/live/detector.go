@@ -48,6 +48,9 @@ const (
 	maxAlertsPerMinute = 30
 	// maxPending bounds the alerts waiting for the server.
 	maxPending = 500
+	// unsupportedRetry is how long a machine that can't run it waits before
+	// trying again.
+	unsupportedRetry = 5 * time.Minute
 )
 
 // Detector runs live detection for the agent.
@@ -259,7 +262,9 @@ func (d *Detector) Run(ctx context.Context) {
 		case errors.As(err, &unsupported):
 			d.setState(StateUnsupported, unsupported.Reason)
 			d.logf("Live detection can't run on this machine: %s", unsupported.Reason)
-			if !d.wait(ctx, time.Hour) {
+			// Tried again every few minutes, so mounting tracefs or granting
+			// the capabilities takes effect without restarting the agent.
+			if !d.wait(ctx, unsupportedRetry) {
 				return
 			}
 			continue

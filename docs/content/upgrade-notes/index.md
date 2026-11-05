@@ -7,10 +7,11 @@ One page per release, newest first: what's new, what to do before you upgrade, a
 
 **Upgrading across several releases?** Read the page of every release between yours and the new one: from 1.20.0 to 1.21.0, the pages for 1.20.1, 1.20.2, 1.20.3 and 1.21.0. You can upgrade straight to the newest release; you don't need to install each one in turn.
 
-Releases with nothing to do say so. The last 10 minor lines (now 1.19 to 1.28) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
+Releases with nothing to do say so. The last 10 minor lines (now 1.20 to 1.29) are here; the [changelog](https://github.com/Cloudopsshell/deaconguard/blob/main/CHANGELOG.md) has every release, and its notes for older ones.
 
 | Release | Released | What to do |
 | --- | --- | --- |
+| [1.29.0](./v1-29/v1-29-0.md) | 2026-11-02 | Nothing to do. A cluster's nodes' vulnerabilities count once, so the dashboard's numbers go down for clusters |
 | [1.28.0](./v1-28/v1-28-0.md) | 2026-11-02 | Back up: database schema 33. A Kubernetes cluster is managed as one: node settings move to the cluster, which turns on for all its nodes what was on for any; schedules naming a node now name its cluster |
 | [1.27.0](./v1-27/v1-27-0.md) | 2026-11-01 | Back up: database schema 32. Live detection is off until you turn it on; upgrade the agents, and the Helm chart or Kustomize base for the node agent's new capabilities, to use it |
 | [1.26.0](./v1-26/v1-26-0.md) | 2026-11-01 | Back up: database schema 31; upgrade the agents and schedule the new Attack paths check to use it |
@@ -23,4 +24,3 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.19 to 1.28) a
 | [1.20.2](./v1-20/v1-20-2.md) | 2026-10-31 | Nothing; optionally move the chart's agents to one token |
 | [1.20.1](./v1-20/v1-20-1.md) | 2026-10-31 | Nothing; run the node agent to avoid downloads |
 | [1.20.0](./v1-20/v1-20-0.md) | 2026-10-31 | Upgrade the cluster agent too; the server reaches your images' registries |
-| [1.19.0](./v1-19/v1-19-0.md) | 2026-10-31 | Upgrade the agents to scan containers for malware |
