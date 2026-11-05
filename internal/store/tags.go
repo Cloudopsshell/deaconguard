@@ -189,6 +189,25 @@ func Trends(days int, filter TrendFilter, now time.Time) ([]TrendPoint, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	// A cluster's own rows count its nodes' vulnerabilities once (1.29.0
+	// and later): from a cluster's first row on, its nodes' rows are left
+	// out; before it, its nodes' count as they did.
+	clusterOf := map[string]string{}
+	if rows, err := db.Query("SELECT id, cluster_id FROM hosts WHERE cluster_id != ''"); err == nil {
+		for rows.Next() {
+			var id, cluster string
+			if rows.Scan(&id, &cluster) == nil {
+				clusterOf[id] = cluster
+			}
+		}
+		rows.Close()
+	}
+	clusterFrom := map[string]string{}
+	for _, item := range entries {
+		if first, ok := clusterFrom[item.hostID]; !ok || item.day < first {
+			clusterFrom[item.hostID] = item.day
+		}
+	}
 	// Walk the days, carrying each host's latest counts forward.
 	latest := make(map[string]TrendPoint)
 	points := make([]TrendPoint, 0, days)
@@ -196,8 +215,22 @@ func Trends(days int, filter TrendFilter, now time.Time) ([]TrendPoint, error) {
 	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
 		text := day.Format(time.DateOnly)
 		for next < len(entries) && entries[next].day <= text {
-			latest[entries[next].hostID] = entries[next].counts
+			item := entries[next]
 			next++
+			if cluster := clusterOf[item.hostID]; cluster != "" {
+				if from, ok := clusterFrom[cluster]; ok && item.day >= from {
+					continue
+				}
+			}
+			latest[item.hostID] = item.counts
+			// The cluster's row replaces its nodes'.
+			if from, ok := clusterFrom[item.hostID]; ok && item.day == from {
+				for node, cluster := range clusterOf {
+					if cluster == item.hostID {
+						delete(latest, node)
+					}
+				}
+			}
 		}
 		point := TrendPoint{Day: text, Hosts: len(latest)}
 		for _, counts := range latest {

@@ -251,4 +251,20 @@ func TestClusterManagedAsOne(t *testing.T) {
 	if scans, _ := store.ListScans(two, 5); len(scans) != 0 {
 		t.Errorf("excluded node-2 scanned: %+v", scans)
 	}
+
+	// The cluster's combined findings, per check.
+	for path, want := range map[string]int{
+		"/api/hosts/" + clusterID + "/cluster/findings?check=packages": http.StatusOK,
+		"/api/hosts/" + clusterID + "/cluster/findings?check=malware":  http.StatusOK,
+		"/api/hosts/" + clusterID + "/cluster/findings?check=config":   http.StatusBadRequest,
+		"/api/hosts/" + one + "/cluster/findings":                      http.StatusBadRequest,
+	} {
+		if response := do(t, s, call{method: http.MethodGet, path: path, cookie: cookie}); response.Code != want {
+			t.Errorf("%s: %d %s", path, response.Code, response.Body.String())
+		}
+	}
+	combined := decode[store.ClusterFindings](t, do(t, s, call{method: http.MethodGet, path: "/api/hosts/" + clusterID + "/cluster/findings", cookie: cookie}))
+	if combined.Nodes != 2 || combined.Excluded != 1 || combined.Check != "packages" {
+		t.Errorf("combined: %+v", combined)
+	}
 }
