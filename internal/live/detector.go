@@ -346,6 +346,9 @@ func (d *Detector) watch(ctx context.Context, w eventSource) error {
 			now := time.Now()
 			alerts := Evaluate(event, d.machine)
 			d.add(alerts, now)
+			if fromMemory(event, alerts) {
+				w.mark(event.PID)
+			}
 			if needsRecheck(event, alerts) && len(d.rechecks) < maxRechecks {
 				d.rechecks = append(d.rechecks, recheck{at: now.Add(recheckDelay), event: event})
 			}
@@ -392,4 +395,7 @@ func (d *Detector) watch(ctx context.Context, w eventSource) error {
 type eventSource interface {
 	poll(timeoutMS int, handle func(Event)) error
 	counters() (Counters, error)
+	// mark marks a process for the watchers, which then report its
+	// connections and mark the processes it starts.
+	mark(pid uint32)
 }
