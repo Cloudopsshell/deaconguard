@@ -18,9 +18,39 @@ type fakeMachine struct {
 	directory  string
 	stdio      map[uint32]string
 	parent     uint32
+	// For the privilege, module and ptrace rules.
+	effective   int // -1: the process ended
+	privileged  bool
+	names       map[uint32]string
+	executables map[uint32]string
+	file        string
+	cmdline     []string
+	hostPID     map[uint32]uint32
 }
 
-func (m fakeMachine) Executable(uint32) string       { return m.executable }
+func (m fakeMachine) EffectiveUID(uint32) (uint32, bool) {
+	if m.effective < 0 {
+		return 0, false
+	}
+	return uint32(m.effective), true
+}
+func (m fakeMachine) Privileged(uint32) bool      { return m.privileged }
+func (m fakeMachine) Name(pid uint32) string      { return m.names[pid] }
+func (m fakeMachine) FilePath(uint32, int) string { return m.file }
+func (m fakeMachine) Cmdline(uint32) []string     { return m.cmdline }
+func (m fakeMachine) HostPID(_, nsPID uint32) uint32 {
+	if pid, ok := m.hostPID[nsPID]; ok {
+		return pid
+	}
+	return nsPID
+}
+
+func (m fakeMachine) Executable(pid uint32) string {
+	if program, ok := m.executables[pid]; ok {
+		return program
+	}
+	return m.executable
+}
 func (m fakeMachine) HasTerminal(uint32) bool        { return m.terminal }
 func (m fakeMachine) Ancestors(uint32) []string      { return m.ancestors }
 func (m fakeMachine) WorkingDirectory(uint32) string { return m.directory }
@@ -222,7 +252,7 @@ func TestObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if object.License != "Dual MIT/GPL" || len(object.Programs) != 16 || len(object.Maps) != 13 {
+	if object.License != "Dual MIT/GPL" || len(object.Programs) != 30 || len(object.Maps) != 15 {
 		t.Fatalf("object: %s, %d programs, %d maps", object.License, len(object.Programs), len(object.Maps))
 	}
 	linked, err := object.Programs[0].Linked(map[string]int{"scratch": 7, "pending_execs": 8})

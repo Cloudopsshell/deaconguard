@@ -23,8 +23,9 @@ type Status struct {
 	Reason string    `json:"reason,omitempty"`
 	Since  time.Time `json:"since"`
 	Kernel string    `json:"kernel,omitempty"`
-	// EventsLastHour counts the programs started, files written and
-	// connections made that the watchers looked at in the last hour.
+	// EventsLastHour counts the programs started, files written,
+	// connections made and user ID, module and ptrace calls that the
+	// watchers looked at in the last hour.
 	EventsLastHour uint64 `json:"events_last_hour"`
 	// Lost counts events the kernel dropped because the agent fell behind.
 	Lost uint64 `json:"lost"`
@@ -366,7 +367,7 @@ func (d *Detector) watch(ctx context.Context, w eventSource) error {
 			if err != nil {
 				return err
 			}
-			d.count(counters.Execs+counters.Writes+counters.Connects, now)
+			d.count(counters.Execs+counters.Writes+counters.Connects+counters.Calls, now)
 			d.mu.Lock()
 			d.status.Lost = counters.Lost
 			d.mu.Unlock()
