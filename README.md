@@ -431,7 +431,7 @@ By default checks run as the user running DeaconGuard, which cannot see other us
 
 ## Live detection
 
-Between scans, the agent watches its machine, the machine's containers, and Kubernetes nodes with the node agent, as attacks happen. Its own small watchers, loaded into the Linux kernel, see every program that starts, every write to a few sensitive files, and the connections that matter; its rules raise an alert within seconds:
+Between scans, the agent watches its machine, the machine's containers, and Kubernetes nodes with the node agent, as attacks happen. Its own small watchers, loaded into the Linux kernel, see every program that starts, every write to a few sensitive files, the connections that matter, processes becoming root, kernel modules loaded and processes taking control of others; its rules raise an alert within seconds:
 
 | Rule | Alert |
 | --- | --- |
@@ -443,6 +443,10 @@ Between scans, the agent watches its machine, the machine's containers, and Kube
 | `DG-RT-021` | a program from `/tmp`, `/var/tmp`, `/dev/shm` or memory, or one it started, connects out |
 | `DG-RT-022` | a connection to a port crypto-mining pools use, on the internet |
 | `DG-RT-010` to `DG-RT-013` | accounts, sudo rules, SSH keys and the SSH server's settings, scheduled jobs, services and `/etc/ld.so.preload` are written, but not by the package manager |
+| `DG-RT-030` | a process becomes root without sudo or another setuid program |
+| `DG-RT-031` | a kernel module is loaded, other than the system's drivers by modprobe or udev |
+| `DG-RT-032` | a process takes control of another with ptrace, outside a debugger at a terminal |
+| `DG-RT-033` | a process writes into another process's memory |
 
 It's off until you turn it on, for a server on its **Runtime** tab, for a Kubernetes cluster and all its nodes with the switch on the cluster's page, or for everything (and new servers) under **Settings → Live detection**; scans, schedules and notifications work the same either way. It needs Linux 5.8 or later and the agent 1.27.0 or later. Each host's **Runtime** tab shows whether it runs, its alerts, and **Send a test alert**; the Hosts list and the dashboard show which hosts are watched. Only alerts leave the machine. At rest the agent uses about 20 ms of CPU a minute for it. See [Live detection](https://docs.deaconguard.io/usage/live-detection) for what it watches, what it doesn't yet, and where it can't run (serverless and sandboxed containers, Macs).
 

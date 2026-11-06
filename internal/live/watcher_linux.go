@@ -24,7 +24,7 @@ type watcher struct {
 
 // Counters are the watchers' running totals since they started.
 type Counters struct {
-	Execs, Writes, Connects, Lost uint64
+	Execs, Writes, Connects, Calls, Lost uint64
 }
 
 // minimumKernel is the first kernel with everything the watchers use,
@@ -80,7 +80,9 @@ func startWatcher(hostRoot string) (*watcher, error) {
 	w := &watcher{maps: map[string]int{}, cpus: cpus}
 	fail := func(err error) (*watcher, error) {
 		w.close()
-		if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) {
+		// The kernel's checker refuses a watcher with EACCES too, with its
+		// log ("processed N insns"): that's not a question of rights.
+		if (errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES)) && !strings.Contains(err.Error(), " insns ") {
 			return nil, ErrUnsupported{"the agent isn't allowed to load programs into the kernel: it needs root, or the BPF and PERFMON capabilities (" + err.Error() + ")"}
 		}
 		return nil, err
@@ -258,6 +260,9 @@ func (w *watcher) counters() (Counters, error) {
 		return counters, err
 	}
 	if counters.Connects, err = read(3); err != nil {
+		return counters, err
+	}
+	if counters.Calls, err = read(4); err != nil {
 		return counters, err
 	}
 	counters.Lost, err = read(2)

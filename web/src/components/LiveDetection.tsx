@@ -129,7 +129,7 @@ function stateSentence(status: LiveStatus): { title: string; text: string } {
     case "off":
       return {
         title: "Live detection is off",
-        text: "An administrator turned it off for this host. Programs that start and files that change aren't watched.",
+        text: "An administrator turned it off for this host. Programs, files, connections and privilege changes aren't watched.",
       };
     case "unsupported":
       return {
@@ -247,8 +247,9 @@ export function RuntimeTab({
                 <strong>between scans</strong>, as attacks happen: programs
                 started from temporary folders, shells started by web servers,
                 crypto miners, reverse shells and suspicious connections out,
-                and changes to accounts, sudo rules, SSH keys and scheduled
-                jobs. Alerts arrive within seconds.
+                changes to accounts, sudo rules, SSH keys and scheduled jobs,
+                processes becoming root outside sudo, kernel modules loaded and
+                processes taking over others. Alerts arrive within seconds.
               </p>
               <ul className="mt-3 space-y-1 text-sm text-slate-500 dark:text-slate-400">
                 {status.kernel && (
