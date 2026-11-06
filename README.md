@@ -460,6 +460,8 @@ Between scans, the agent watches its machine, the machine's containers, and Kube
 | `DG-RT-032` | a process takes control of another with ptrace, outside a debugger at a terminal |
 | `DG-RT-033` | a process writes into another process's memory |
 
+Alerts from containers name the container and image, and in Kubernetes the namespace and pod; the Runtime tab filters by them. **Don't alert on this again** on an alert, or **Settings → Live detection allowlist**, skips what's expected on a host, a cluster or everywhere, such as a backup tool's kernel module: matching alerts are counted, never hidden without a trace, and every rule names one alert and at least one program, file, image, container or namespace.
+
 It's off until you turn it on, for a server on its **Runtime** tab, for a Kubernetes cluster and all its nodes with the switch on the cluster's page, or for everything (and new servers) under **Settings → Live detection**; scans, schedules and notifications work the same either way. It needs Linux 5.8 or later and the agent 1.27.0 or later. Each host's **Runtime** tab shows whether it runs, its alerts, and **Send a test alert**; the Hosts list and the dashboard show which hosts are watched. Only alerts leave the machine. At rest the agent uses about 20 ms of CPU a minute for it. See [Live detection](https://docs.deaconguard.io/usage/live-detection) for what it watches, what it doesn't yet, and where it can't run (serverless and sandboxed containers, Macs).
 
 ## Server audits

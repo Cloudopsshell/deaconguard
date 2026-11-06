@@ -6,6 +6,7 @@ import { api } from "../api";
 import { Button, Card, CardHeader, ErrorMessage, Field, Loading, PageHeader } from "../components/ui";
 import { FixDeadlines } from "../components/FixDeadlines";
 import { SingleSignOn } from "../components/SingleSignOn";
+import { LiveAllowlist } from "../components/LiveAllowlist";
 import { LiveSettings } from "../components/LiveDetection";
 
 /** Admin settings: how reports are branded. */
@@ -44,6 +45,7 @@ export function Settings() {
     <>
       <PageHeader title="Settings" description="Settings for everyone using this server." />
       <LiveSettings />
+      <LiveAllowlist />
       <FixDeadlines />
       {session.data?.login_required && <SingleSignOn />}
       <Card className="mb-6">

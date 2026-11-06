@@ -72,6 +72,23 @@ func (m *procMachine) Ancestors(pid uint32) []string {
 	return names
 }
 
+// dirInode is a directory's inode number, or 0.
+func dirInode(path string) uint64 {
+	var stat unix.Stat_t
+	if err := unix.Stat(path, &stat); err != nil {
+		return 0
+	}
+	return stat.Ino
+}
+
+func (m *procMachine) Cgroup(pid uint32) string {
+	contents, err := os.ReadFile(proc(pid, "cgroup"))
+	if err != nil || len(contents) > 64<<10 {
+		return ""
+	}
+	return string(contents)
+}
+
 func (m *procMachine) WorkingDirectory(pid uint32) string {
 	directory, _ := os.Readlink(proc(pid, "cwd"))
 	return directory

@@ -291,4 +291,10 @@ type LiveReport struct {
 type LiveReply struct {
 	Enabled bool `json:"enabled"`
 	Test    bool `json:"test,omitempty"`
+	// Allow is the allowlist rules that apply to the machine (1.33.0 and
+	// later), at most MaxLiveAllow of them.
+	Allow []live.Allow `json:"allow,omitempty"`
 }
+
+// MaxLiveAllow bounds the allowlist rules sent to one machine.
+const MaxLiveAllow = 500
