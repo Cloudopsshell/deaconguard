@@ -1245,7 +1245,7 @@ export interface Schedule {
   last_run_at: string;
   created_at: string;
   created_by: string;
-  /** Such as "Every day at 02:30 (Europe/Stockholm)". */
+  /** Such as "Every day at 02:30 (UTC)". */
   description: string;
 }
 

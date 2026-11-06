@@ -19,7 +19,7 @@ type When struct {
 	Days []int
 	// Time is the time of day, such as 02:30.
 	Time string
-	// Timezone is an IANA time zone, such as Europe/Stockholm or UTC.
+	// Timezone is an IANA time zone, such as UTC or America/New_York.
 	Timezone string
 }
 
@@ -61,6 +61,14 @@ func (when When) Next(after time.Time) (time.Time, error) {
 		day := local.AddDate(0, 0, offset)
 		// A time skipped by a daylight saving change runs an hour later.
 		candidate := time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, zone)
+		// Go may place a skipped time an hour early instead (in zones west
+		// of UTC); move it forward to the same clock time after the change.
+		shown := candidate.In(zone)
+		wanted := time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, time.UTC)
+		got := time.Date(shown.Year(), shown.Month(), shown.Day(), shown.Hour(), shown.Minute(), 0, 0, time.UTC)
+		if got.Before(wanted) {
+			candidate = candidate.Add(wanted.Sub(got))
+		}
 		if !days[candidate.Weekday()] || !candidate.After(after) {
 			continue
 		}
@@ -74,7 +82,7 @@ func (when When) Next(after time.Time) (time.Time, error) {
 	return time.Time{}, errors.New("no next run found")
 }
 
-// Describe says when a schedule runs, such as "Every day at 02:30 (Europe/Stockholm)".
+// Describe says when a schedule runs, such as "Every day at 02:30 (UTC)".
 func (when When) Describe() string {
 	names := []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
 	var days string
@@ -114,7 +122,7 @@ func clock(value string) (int, int, error) {
 
 func location(name string) (*time.Location, error) {
 	if name == "" || name == "Local" {
-		return nil, errors.New("choose a time zone, such as UTC or Europe/Stockholm")
+		return nil, errors.New("choose a time zone, such as UTC or America/New_York")
 	}
 	zone, err := time.LoadLocation(name)
 	if err != nil {
