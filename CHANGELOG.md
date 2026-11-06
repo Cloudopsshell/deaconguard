@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.32.0] - 2026-11-06
+
+### Added
+
+- **Live detection watches privilege, kernel modules and other processes**, with agents 1.32.0 and later: a process that isn't root becoming root without sudo or another setuid program, as an exploit does (`DG-RT-030`, high; critical from a temporary folder or memory); a kernel module loaded, or a load tried, other than the system's drivers by modprobe or udev from `/lib/modules` (`DG-RT-031`, high); a process taking control of another with `ptrace`, other than a debugger at a terminal, and always when the other is `sshd`, `sudo` or another process holding credentials (`DG-RT-032`, high); and a process writing into another's memory with `process_vm_writev` (`DG-RT-033`, high). Root inside a user namespace isn't root on the machine and isn't reported. Alerts name the module's file and parameters, or the process taken over, found by its container's own process number in a container. The watchers look only at these rare calls, so they cost nothing measurable. It's part of live detection, so it's off until live detection is turned on.
+
 ## [1.31.0] - 2026-11-05
 
 ### Added

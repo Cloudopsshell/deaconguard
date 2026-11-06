@@ -12,6 +12,25 @@ const (
 	KindExec    = 1
 	KindWrite   = 2
 	KindConnect = 3
+	// KindPrivilege: a process that isn't root switched to root.
+	KindPrivilege = 4
+	// KindModule: a kernel module was loaded, or a load was tried.
+	KindModule = 5
+	// KindTrace: a process took control of another with ptrace, or wrote
+	// into its memory.
+	KindTrace = 6
+)
+
+// Which call an event of the last three kinds reports, in Event.How.
+const (
+	CallSetUID     = 1
+	CallSetREUID   = 2
+	CallSetRESUID  = 3
+	CallFileModule = 1
+	CallMemModule  = 2
+	CallAttach     = 16
+	CallSeize      = 0x4206
+	CallVMWrite    = 0x10000
 )
 
 // Why the watchers reported a connection.
@@ -55,6 +74,18 @@ type Event struct {
 	Address netip.Addr
 	Port    uint16
 	Why     int
+	// Target is the process traced or written into, as the caller numbers
+	// it (in its own process namespace), or a module's file descriptor.
+	Target uint32
+	// Result is what the system call returned: 0 or more if it worked, an
+	// error number, negated, if it didn't.
+	Result int64
+	// IDs are the user IDs a privilege change asked for; 0xffffffff leaves
+	// one as it was.
+	IDs [3]uint32
+	// Marked: the process, or one that started it, started from a
+	// temporary folder or memory.
+	Marked bool
 }
 
 // eventSize and the offsets below follow struct event in bpf/watch.c.
@@ -80,6 +111,28 @@ func ParseEvent(raw []byte) (Event, error) {
 		args = args[:argsLen]
 	}
 	kind := int(little.Uint32(raw[0:]))
+	if kind == KindPrivilege || kind == KindModule || kind == KindTrace {
+		// The call's target is in args_len, and its outcome in path:
+		// result, the three IDs, and whether the process is marked.
+		event := Event{
+			Kind:   kind,
+			PID:    little.Uint32(raw[4:]),
+			TID:    little.Uint32(raw[8:]),
+			UID:    little.Uint32(raw[12:]),
+			TimeNS: little.Uint64(raw[16:]),
+			Cgroup: little.Uint64(raw[24:]),
+			How:    int(little.Uint32(raw[32:])),
+			Target: little.Uint32(raw[36:]),
+			Comm:   cString(raw[40:56]),
+			Result: int64(little.Uint64(raw[72:])),
+			IDs:    [3]uint32{little.Uint32(raw[80:]), little.Uint32(raw[84:]), little.Uint32(raw[88:])},
+			Marked: little.Uint32(raw[92:]) != 0,
+		}
+		if kind == KindModule {
+			event.Args = cString(raw[328:584])
+		}
+		return event, nil
+	}
 	if kind == KindConnect {
 		// The connection's port is in how, its address family in
 		// args_len, the address in path and why it was reported in args.

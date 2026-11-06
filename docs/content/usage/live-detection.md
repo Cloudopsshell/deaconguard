@@ -3,7 +3,7 @@ title: Live detection
 description: Find attacks on Linux machines, containers and Kubernetes nodes as they happen, with DeaconGuard's own watchers in the kernel. What it watches, what it doesn't, what it needs and what it costs.
 ---
 
-Scans tell you what a machine looks like when they run. **Live detection** watches it all the time: the agent loads small watchers into the Linux kernel that see every program that starts, every write to a few sensitive files and the network connections that matter, as it happens, and its rules raise an alert within seconds when something looks like an attack.
+Scans tell you what a machine looks like when they run. **Live detection** watches it all the time: the agent loads small watchers into the Linux kernel that see every program that starts, every write to a few sensitive files, the network connections that matter, a process becoming root, kernel modules loaded and one process taking control of another, as it happens, and its rules raise an alert within seconds when something looks like an attack.
 
 It's **off until you turn it on**, for each host or for all of them; scans, schedules and notifications work the same whether it's on or off. It needs the DeaconGuard agent 1.27.0 or later. A host with it off loads nothing into its kernel. The watchers, the code that loads them and the rules are all DeaconGuard's own; nothing else sits between the agent and the kernel.
 
@@ -102,9 +102,24 @@ The watchers look at every IPv4 and IPv6 connection a program starts, and drop i
 
 Alerts name the address and port the connection went to; the Runtime tab shows it after the program.
 
+### Privilege, kernel modules and other processes
+
+From 1.32.0, with agents 1.32.0 and later.
+
+| Rule | Alert | Severity |
+| --- | --- | --- |
+| `DG-RT-030` | A process that isn't root becomes root, and its program isn't one the system allows to: the setuid programs such as `sudo`, `su` and `passwd`, or programs given the capability with `setcap`, owned by root in the system's folders. A process that becomes root any other way has usually exploited a flaw in the kernel or a program | High; Critical when the program, or one that started it, ran from a temporary folder or memory |
+| `DG-RT-031` | A kernel module is loaded, or a load is tried, other than the system's own drivers loaded by `modprobe` or udev from `/lib/modules`. A module runs with the kernel's full power, which is how rootkits hide | High; Medium for a system module loaded by another program; Critical from a temporary folder or memory |
+| `DG-RT-032` | A process takes control of another with `ptrace` (attach or seize), as debuggers do and as attackers do to read passwords and keys out of `sshd`, `sudo` or an SSH agent | High; Medium for a debugger run without a terminal; Critical from a temporary folder or memory |
+| `DG-RT-033` | A process writes into another process's memory with `process_vm_writev`, which injects code that then runs under the other program's name | High; Medium for a debugger; Critical from a temporary folder or memory |
+
+A privilege change is reported only when it worked, and root on the machine: root inside a user namespace, as rootless containers and browser sandboxes use, isn't. Debuggers (`gdb`, `strace`, `ltrace`, `lldb`, `perf`, `dlv`, `rr`, `py-spy` and others) used by a person at a terminal aren't reported, unless they attach to a process that holds credentials (`sshd`, `sudo`, `su`, `login`, `ssh-agent`, `gpg-agent` and others). A module load the kernel refuses is reported too, saying why: someone trying to load a rootkit is worth knowing about. The alert names the module's file, its parameters, and for `ptrace` the process taken over; in a container, the agent finds that process by the container's own process numbers.
+
+The watchers look only at the user ID calls (`setuid`, `setreuid`, `setresuid`) of processes that aren't root and ask for root, at module loads, at `ptrace`'s attach requests and at `process_vm_writev`. Every one of them is rare, so they cost nothing measurable.
+
 ### What it doesn't detect yet
 
-Live detection starts with what most break-ins on servers do. It doesn't yet watch changes of user (a program becoming root outside sudo), kernel modules loaded at runtime, or one process attaching to another; these are planned, one release at a time, along with naming the container and pod of each alert and letting you allow what's expected on a host. Scans still cover what they always did, such as [host changes](./host-changes.md), malware on disk and [attack paths](./attack-paths.md).
+Live detection starts with what most break-ins on servers do. Naming the container and pod of each alert and letting you allow what's expected on a host are planned next, then a way to run on kernels older than 5.8. Scans still cover what they always did, such as [host changes](./host-changes.md), malware on disk and [attack paths](./attack-paths.md).
 
 An attacker who is already root on a machine can stop the agent, as they can any tool on it. Then the host's live detection shows **Stopped**, and **Live detection stopped** and **Agents offline** notifications are sent.
 
@@ -116,7 +131,7 @@ To be told about alerts, tick **Runtime alerts** on a [notification channel](./n
 
 ## What leaves the machine
 
-Only alerts, and the status above. An alert holds the rule, the program and its command line (with anything that looks like a password or token masked), the program that started it, the account, the process ID, for a file its path, and for a connection the address and port it went to. The watchers' events, and what programs read or write, stay on the machine.
+Only alerts, and the status above. An alert holds the rule, the program and its command line (with anything that looks like a password or token masked), the program that started it, the account, the process ID, for a file its path, for a connection the address and port it went to, for a kernel module its file and parameters, and for `ptrace` the program taken over. The watchers' events, and what programs read or write, stay on the machine.
 
 ## How light it is
 
@@ -125,7 +140,7 @@ Only alerts, and the status above. An alert holds the rule, the program and its 
 - **The agent** reads the watchers' events from a ring buffer of 256 KB, the kernel's own one, and runs the rules on them. It only reads `/proc` for an event a rule already suspects.
 - Measured on a test machine (Ubuntu 24.04, arm64): at rest, the agent used **20 ms of CPU a minute** (0.03% of one CPU) and **22 MB** of memory. Under a storm of 4,400 programs starting a second, with as many file writes, far busier than most servers, it used **about 3% of one CPU** and 26 MB, and the storm ran 2% slower than without it. The Runtime tab shows the agent's own numbers for each host.
 
-The watchers use only the kernel's stable tracepoints, for system calls and for programs starting, which is why one build runs on every kernel from 5.8 on. The kernel checks each watcher before running it, so a watcher can't crash or hang the machine.
+The watchers use only the kernel's stable tracepoints, for system calls and for programs starting and ending, which is why one build runs on every kernel from 5.8 on. The kernel checks each watcher before running it, so a watcher can't crash or hang the machine.
 
 ## What it needs
 

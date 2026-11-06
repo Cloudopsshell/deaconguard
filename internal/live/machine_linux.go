@@ -11,7 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // procMachine answers the rules' questions from /proc, which in Kubernetes
@@ -203,4 +206,109 @@ func selfUsage() (cpu time.Duration, memoryBytes uint64) {
 		}
 	}
 	return cpu, memoryBytes
+}
+
+func (m *procMachine) EffectiveUID(pid uint32) (uint32, bool) {
+	raw, err := os.ReadFile(proc(pid, "status"))
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if value, ok := strings.CutPrefix(line, "Uid:"); ok {
+			// Real, effective, saved and filesystem IDs, as seen from the
+			// agent's user namespace: the machine's.
+			fields := strings.Fields(value)
+			if len(fields) < 2 {
+				return 0, false
+			}
+			effective, err := strconv.ParseUint(fields[1], 10, 32)
+			return uint32(effective), err == nil
+		}
+	}
+	return 0, false
+}
+
+func (m *procMachine) Privileged(pid uint32) bool {
+	executable := proc(pid, "exe")
+	program, err := os.Readlink(executable)
+	if err != nil || !systemProgram(program) {
+		return false
+	}
+	// /proc/PID/exe opens the process's own program, whichever mount
+	// namespace it is in.
+	info, err := os.Stat(executable)
+	if err != nil {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != 0 || info.Mode().Perm()&0o022 != 0 {
+		return false
+	}
+	if info.Mode()&os.ModeSetuid != 0 {
+		return true
+	}
+	size, err := unix.Getxattr(executable, "security.capability", nil)
+	return err == nil && size > 0
+}
+
+// HostPID finds the process caller knows as nsPID. In the agent's own
+// process namespace that is nsPID itself; in a container's, the process
+// in the same namespace whose innermost ID is nsPID.
+func (m *procMachine) HostPID(caller, nsPID uint32) uint32 {
+	namespace, err := os.Readlink(proc(caller, "ns/pid"))
+	if err != nil {
+		return 0
+	}
+	if own, err := os.Readlink("/proc/self/ns/pid"); err == nil && own == namespace {
+		return nsPID
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0
+	}
+	want := strconv.FormatUint(uint64(nsPID), 10)
+	for _, entry := range entries {
+		pid, err := strconv.ParseUint(entry.Name(), 10, 32)
+		if err != nil {
+			continue
+		}
+		if other, err := os.Readlink(proc(uint32(pid), "ns/pid")); err != nil || other != namespace {
+			continue
+		}
+		raw, err := os.ReadFile(proc(uint32(pid), "status"))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if value, ok := strings.CutPrefix(line, "NSpid:"); ok {
+				fields := strings.Fields(value)
+				if len(fields) > 0 && fields[len(fields)-1] == want {
+					return uint32(pid)
+				}
+				break
+			}
+		}
+	}
+	return 0
+}
+
+func (m *procMachine) Name(pid uint32) string {
+	comm, err := os.ReadFile(proc(pid, "comm"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(comm))
+}
+
+func (m *procMachine) FilePath(pid uint32, fd int) string {
+	target, _ := os.Readlink(proc(pid, "fd/"+strconv.Itoa(fd)))
+	return target
+}
+
+func (m *procMachine) Cmdline(pid uint32) []string {
+	raw, err := os.ReadFile(proc(pid, "cmdline"))
+	if err != nil {
+		return nil
+	}
+	return strings.FieldsFunc(string(raw), func(r rune) bool { return r == 0 })
 }
