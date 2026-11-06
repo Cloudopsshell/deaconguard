@@ -44,7 +44,10 @@ type Definition struct {
 	Description string `json:"description"`
 	// Sudo is "none" when the check needs no privileges, or "recommended"
 	// when it can see more with sudo.
-	Sudo    string `json:"sudo"`
+	Sudo string `json:"sudo"`
+	// Default marks the recommended checks, ticked at first: the ones that
+	// find the most a person can act on, and take seconds (1.31.0 and
+	// later; only packages before).
 	Default bool   `json:"default"`
 	Warning string `json:"warning,omitempty"`
 }
@@ -68,11 +71,11 @@ var definitions = []Definition{
 		Warning:     "Reads every packaged file on the host, which can take several minutes.",
 	},
 	{
-		ID: Malware, Name: "Malware & compromise indicators", Sudo: "recommended",
+		ID: Malware, Name: "Malware & compromise indicators", Sudo: "recommended", Default: true,
 		Description: "Looks for crypto miners, processes running from temporary or deleted files, preloaded libraries, and suspicious cron or systemd persistence.",
 	},
 	{
-		ID: Config, Name: "Security configuration", Sudo: "recommended",
+		ID: Config, Name: "Security configuration", Sudo: "recommended", Default: true,
 		Description: "Checks SSH server settings, services listening on all interfaces, pending reboots, automatic updates, and the host firewall.",
 	},
 	{
@@ -80,11 +83,11 @@ var definitions = []Definition{
 		Description: "Checks about 60 security settings against the DeaconGuard Linux baseline: accounts and passwords, SSH, network and kernel settings, services and the firewall, logging, file permissions, updates and time. Also records the machine's inventory.",
 	},
 	{
-		ID: Changes, Name: "Host changes", Sudo: "recommended",
+		ID: Changes, Name: "Host changes", Sudo: "recommended", Default: true,
 		Description: "Records the ports open to the network, login accounts, administrators and sudoers rules, SSH keys, enabled services and scheduled jobs, and reports what changed since the previous scan. Takes under a second.",
 	},
 	{
-		ID: Paths, Name: "Attack paths", Sudo: "recommended",
+		ID: Paths, Name: "Attack paths", Sudo: "recommended", Default: true,
 		Description: "Looks for the ways an account could become root (sudo rules, the docker group, files root runs that others can change, setuid programs, root's PATH) and for private keys, cloud credentials and .env files other accounts can read. Reads permissions only, never a secret's contents. Takes a few seconds.",
 	},
 	{
@@ -101,6 +104,17 @@ var definitions = []Definition{
 		Description: "Adds YARA-X with the YARA Forge core rules to the antivirus scan, for webshells, crypto miners, backdoors, and attacker tools that signature scanners often miss. Always runs together with ClamAV.",
 		Warning:     "Reads the same directories as ClamAV again, which can take several more minutes.",
 	},
+}
+
+// Recommended lists the recommended checks, in display order.
+func Recommended() []string {
+	var ids []string
+	for _, definition := range definitions {
+		if definition.Default {
+			ids = append(ids, definition.ID)
+		}
+	}
+	return ids
 }
 
 // Definitions lists the available checks in display order.

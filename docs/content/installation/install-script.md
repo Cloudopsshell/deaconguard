@@ -24,6 +24,16 @@ curl -fsSL https://get.deaconguard.io | sudo sh -s -- --agent-listen off
 
 See [Give agents their own port](../security/securing-the-dashboard.md#give-agents-their-own-port). Allow 8443 only from your administrators' networks and 8444 from your machines' networks; for machines in another network or data centre, see [Reaching the agent port](../security/agent-network.md).
 
+The script asks for the first dashboard account at the terminal. Where there is none, as with cloud-init, Ansible or `docker exec`, pass the account instead; without it the script stops before installing anything and says so:
+
+```bash
+curl -fsSL https://get.deaconguard.io | sudo sh -s -- --admin-user admin --admin-password-file /root/deaconguard-password
+```
+
+The file holds the password, at least 12 characters, on one line. Once the install finishes, the server scans its own machine with the [recommended checks](../checks.md#recommended-checks), once.
+
+The packages run as systemd services. On a machine without systemd, such as Alpine, the script stops before installing anything and shows how to run DeaconGuard with [Docker Compose](./docker.md) instead.
+
 ## Agent
 
 Run the command from the dashboard's **Enroll a machine** dialog. It carries the machine's enrollment token:

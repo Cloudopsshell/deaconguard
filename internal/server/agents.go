@@ -278,6 +278,7 @@ func (h *agentHub) enroll(limiter *failureLimiter) http.HandlerFunc {
 		serverLog(host.ID, store.LogInfo, "Agent enrolled: %s (%s, DeaconGuard %s)", host.Address, limitText(request.OS, 128), limitText(request.Version, 32))
 		writeJSON(w, http.StatusCreated, agentapi.EnrollResponse{HostID: host.ID, Credential: credential})
 		h.auditNewMachine(host, request.Version)
+		h.firstScan(host, request.Version)
 	}
 }
 
@@ -302,6 +303,38 @@ func (h *agentHub) auditNewMachine(host store.Host, version string) {
 	}
 	store.Audit("server", "audit.start", host.Address, "new machine enrolled", "")
 	serverLog(host.ID, store.LogInfo, "Audit of %s queued because it just enrolled", host.Address)
+	h.wake(host.ID)
+}
+
+// firstScan scans the first machine that enrolls, once, with the
+// recommended checks, so a new server shows results without anyone having
+// to find Scan now. With the install script, that's the server's own
+// machine, seconds after the install.
+func (h *agentHub) firstScan(host store.Host, version string) {
+	if host.IsCluster() {
+		return
+	}
+	first, err := store.TakeFirstScan()
+	if err != nil || !first {
+		return
+	}
+	var selected []string
+	for _, check := range checks.ForHost(host.Kind, checks.Recommended()) {
+		if agentapi.SupportsCheck(version, check) {
+			selected = append(selected, check)
+		}
+	}
+	if len(selected) == 0 {
+		return
+	}
+	if _, err := h.runner.start(host, selected, true); err != nil {
+		if !errors.Is(err, errScanInProgress) {
+			serverLog(host.ID, store.LogError, "Could not start the first scan of %s: %v", host.Address, err)
+		}
+		return
+	}
+	store.Audit("server", "scan.start", host.Address, "first machine enrolled: "+strings.Join(selected, ", "), "")
+	serverLog(host.ID, store.LogInfo, "First scan of %s queued, with the recommended checks: %s", host.Address, strings.Join(selected, ", "))
 	h.wake(host.ID)
 }
 

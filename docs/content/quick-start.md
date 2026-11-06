@@ -37,7 +37,7 @@ What runs on this machine:
 
 Open one of the addresses and sign in. The server uses a self-signed certificate, so your browser warns about it once; check that the fingerprint matches before you continue.
 
-The server's own machine is already on the **Hosts** page, marked **This server**. Click **Scan now** to scan it, or **Run audit** for a full check graded A to F (see [Server audits](./usage/audits.md)).
+The server's own machine is already on the **Hosts** page, marked **This server**, and the server scans it once on its own, right after the install, with the [recommended checks](./checks.md#recommended-checks): its first results are on the dashboard within a minute or two. While nothing has been scanned yet, the dashboard leads with **Scan this server now**. **Run audit** on its page runs a full check graded A to F (see [Server audits](./usage/audits.md)).
 
 :::tip Firewall and two-step sign-in
 Don't expose ports 8443 and 8444 to the internet: allow 8443, the dashboard, only from your administrators' networks, and 8444, which agents use, only from your machines' networks ([machines in other networks](./security/agent-network.md)). After signing in, turn on two-step sign-in under **My account**, and add accounts for your team on **Accounts** with the [role](./usage/accounts.md#roles) each needs. See [Securing the dashboard](./security/securing-the-dashboard.md).
@@ -59,7 +59,7 @@ The machine appears on the **Agents** and **Hosts** pages within a few seconds. 
 
 ## 3. Scan it
 
-Open the machine on the **Hosts** page and click **Scan now**. Choose the checks you want; **Package vulnerabilities** is the default. The page shows a live console while the scan runs, and the full report when it finishes.
+Open the machine on the **Hosts** page and click **Scan now**. Choose the checks you want; the [recommended checks](./checks.md#recommended-checks) are ticked at first, and **Use the recommended checks** ticks them again. The page shows a live console while the scan runs, and the full report when it finishes.
 
 ## Next steps
 

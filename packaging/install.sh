@@ -376,7 +376,35 @@ main() {
 		fi
 	fi
 
-	[ -d /run/systemd/system ] || fail "DeaconGuard's services need systemd, which is not running on this machine"
+	if [ ! -d /run/systemd/system ]; then
+		# Alpine and other machines without systemd, and containers: the
+		# packages' services need it, the container image doesn't.
+		printf '\nDeaconGuard'"'"'s packages run as systemd services, and systemd is not running on this machine.\n' >&2
+		printf 'Run DeaconGuard in a container instead, with Docker Compose:\n\n' >&2
+		# The commands are shown for the user to run, not expanded here.
+		# shellcheck disable=SC2016
+		printf '  VERSION=$(curl -fsSL https://get.deaconguard.io/stable.txt)\n' >&2
+		# shellcheck disable=SC2016
+		printf '  curl -fsSLO "https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v${VERSION}/deploy/compose/compose.yaml"\n' >&2
+		printf "  printf '%%s' 'a-long-password' > admin-password && chmod 600 admin-password && chown 65532 admin-password\n" >&2
+		printf '  docker compose up -d\n\n' >&2
+		printf 'See https://docs.deaconguard.io/installation/docker for every option.\nNothing was installed.\n' >&2
+		exit 1
+	fi
+	# A new server asks for its first dashboard account at a terminal. With
+	# none (cloud-init, Ansible, docker exec), say how to pass it before
+	# installing anything, rather than failing at the end.
+	if [ "$mode" = "server" ] && [ ! -f /var/lib/deaconguard/deaconguard.db ] && ! (: </dev/tty) 2>/dev/null; then
+		case "$setup_options" in
+		*--admin-password-file*) ;;
+		*)
+			printf '\nThis install has no terminal to ask for the first dashboard account, so pass it:\n\n' >&2
+			printf '  curl -fsSL https://get.deaconguard.io | sudo sh -s -- --admin-user NAME --admin-password-file FILE\n\n' >&2
+			printf 'FILE holds the password, on one line, readable by root. Nothing was installed.\n' >&2
+			exit 1
+			;;
+		esac
+	fi
 	for tool in curl sha256sum; do
 		command -v "$tool" >/dev/null 2>&1 || fail "$tool is required; install it with your package manager and run the installer again"
 	done

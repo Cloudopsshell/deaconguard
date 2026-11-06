@@ -8,6 +8,20 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-11-05
+
+### Added
+
+- **The first scan runs on its own:** the server scans the first machine that enrolls, once, with the recommended checks. With the install script, that's the server's own machine, right after the install, so the dashboard shows results within a minute or two instead of staying empty until someone finds **Scan now**. While nothing has been scanned, the dashboard leads with **Scan this server now**, or shows the scan running.
+- **Recommended checks:** the scan dialog ticks **Package vulnerabilities**, **Malware & compromise indicators**, **Security configuration**, **Host changes** and **Attack paths** at first, marked **recommended**, with **Use the recommended checks** to tick them again. They find what a person can act on and take seconds. `deaconguard scan` and the API without `checks` still run packages only.
+- **README quick start:** install, open the dashboard, first results, right under the tagline.
+
+### Changed
+
+- The scan dialog says **better with sudo** only for a machine the server scans itself, not for agents, which run as root.
+- The dashboard mentions Ubuntu Pro and old kernels, among what holds fixes back, only when there are Ubuntu hosts.
+- **Install script:** with no terminal to ask for the first dashboard account (cloud-init, Ansible, `docker exec`), it stops before installing anything and shows how to pass the account through the pipe: `curl -fsSL https://get.deaconguard.io | sudo sh -s -- --admin-user NAME --admin-password-file FILE`. `deaconguard setup server` says the same. On a machine without systemd, such as Alpine, it shows how to run DeaconGuard with Docker Compose instead of only stopping.
+
 ## [1.30.0] - 2026-11-05
 
 ### Added
@@ -469,7 +483,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.30.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.31.0...HEAD
+[1.31.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.29.0...v1.30.0
 [1.29.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.27.0...v1.28.0

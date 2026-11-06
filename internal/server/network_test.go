@@ -29,6 +29,10 @@ func newNetworkTestServer(t *testing.T) *Server {
 	if _, err := store.AddUser("admin", []byte(testPassword), store.RoleAdmin, false); err != nil {
 		t.Fatal(err)
 	}
+	// Tests start their own scans: the automatic first scan is taken.
+	if _, err := store.TakeFirstScan(); err != nil {
+		t.Fatal(err)
+	}
 	s, err := NewNetwork(fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}, nil, testPin)
 	if err != nil {
 		t.Fatal(err)
