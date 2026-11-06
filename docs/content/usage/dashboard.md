@@ -43,7 +43,7 @@ Scan history keeps the 10 most recent scans per host, plus any older scan that s
 
 The **Schedules** page scans hosts automatically, so results stay current without anyone pressing **Scan now**. A schedule has:
 
-- **days and a time**: every day, weekdays, or any days of the week, at a time in a time zone of your choice. Daylight saving changes are handled, and a schedule runs once per day even when the clocks go back.
+- **days and a time**: every day, weekdays, or any days of the week, at a time in a time zone of your choice. Daylight saving changes are handled: a time skipped when the clocks go forward runs an hour later, and a schedule runs once per day even when the clocks go back.
 - **hosts**: all hosts, including hosts added later, or chosen hosts. Choosing a Kubernetes cluster scans its nodes too, those not excluded, nodes that join later included; the Kubernetes check runs on the cluster, the other checks on the nodes.
 - **checks**: any of the checks, including the advanced antivirus scan.
 

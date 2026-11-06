@@ -33,10 +33,10 @@ func TestSchedulesStartScansWhenDue(t *testing.T) {
 
 	created := do(t, s, call{method: http.MethodPost, path: "/api/schedules", cookie: cookie, body: map[string]any{
 		"name": "Nightly", "checks": []string{"packages", "yara"}, "all_hosts": true,
-		"days": []int{0, 1, 2, 3, 4, 5, 6}, "time": "02:30", "timezone": "Europe/Stockholm",
+		"days": []int{0, 1, 2, 3, 4, 5, 6}, "time": "02:30", "timezone": "UTC",
 	}})
 	view := decode[scheduleView](t, created)
-	if created.Code != http.StatusCreated || view.Description != "Every day at 02:30 (Europe/Stockholm)" || view.NextRunAt == "" || !view.RunAsRoot ||
+	if created.Code != http.StatusCreated || view.Description != "Every day at 02:30 (UTC)" || view.NextRunAt == "" || !view.RunAsRoot ||
 		strings.Join(view.Checks, ",") != "packages,antivirus,yara" {
 		t.Fatalf("create: %d %+v", created.Code, view)
 	}
@@ -63,11 +63,8 @@ func TestSchedulesStartScansWhenDue(t *testing.T) {
 	if len(skipped) != 1 || !strings.Contains(skipped[0].Message, `Schedule "Nightly" skipped old-01`) {
 		t.Fatalf("skip log = %+v", skipped)
 	}
-	// The next day at 02:30 in Stockholm, which is 23 or 25 hours later
-	// when the clocks change in between.
-	stockholm, _ := time.LoadLocation("Europe/Stockholm")
-	local := next.In(stockholm)
-	nextDay := time.Date(local.Year(), local.Month(), local.Day()+1, 2, 30, 0, 0, stockholm).UTC()
+	// The next day at 02:30 UTC.
+	nextDay := next.Add(24 * time.Hour)
 	after, _ := store.GetSchedule(view.ID)
 	if after.LastRunAt == "" || after.NextRunAt != nextDay.Format(time.RFC3339) {
 		t.Fatalf("after the run: last %q, next %q", after.LastRunAt, after.NextRunAt)

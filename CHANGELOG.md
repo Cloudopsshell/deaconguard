@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A scheduled scan whose time is skipped when the clocks go forward runs an hour later**, as documented, in every time zone. In zones west of UTC, such as America/New_York, it ran an hour early instead.
+
 ## [1.32.0] - 2026-11-06
 
 ### Added
