@@ -1,5 +1,6 @@
 // Package live is DeaconGuard's live detection: watchers in the Linux
-// kernel report programs that start and writes to sensitive files as they
+// kernel report programs that start, writes to sensitive files,
+// connections, privilege changes, kernel modules and ptrace as they
 // happen, and the agent's rules turn the suspicious ones into alerts.
 //
 // The watchers (bpf/watch.c) and their loader (kernel_linux.go) are
@@ -78,6 +79,22 @@ type Machine interface {
 	// NetworkStdio is the address and port at the other end, when the
 	// process's input and output are both TCP connections, or "".
 	NetworkStdio(pid uint32) string
+	// EffectiveUID is the process's effective user ID as the machine
+	// numbers it, outside any user namespace, if the process still runs.
+	EffectiveUID(pid uint32) (uint32, bool)
+	// Privileged reports whether the process's program may make itself
+	// root: one of the system's programs, owned by root and not writable
+	// by others, that is setuid or has file capabilities.
+	Privileged(pid uint32) bool
+	// HostPID is the machine's ID for the process caller calls nsPID in
+	// its own process namespace (a container's), or 0.
+	HostPID(caller, nsPID uint32) uint32
+	// Name is the process's name, or "".
+	Name(pid uint32) string
+	// FilePath is the file the process has open as fd, or "".
+	FilePath(pid uint32, fd int) string
+	// Cmdline is the process's arguments.
+	Cmdline(pid uint32) []string
 }
 
 // testProgramName starts the name of the program "Send a test alert" runs
@@ -201,6 +218,12 @@ func Evaluate(event Event, machine Machine) []Alert {
 		}
 	case KindConnect:
 		return evaluateConnect(event, machine)
+	case KindPrivilege:
+		return evaluatePrivilege(event, machine)
+	case KindModule:
+		return evaluateModule(event, machine)
+	case KindTrace:
+		return evaluateTrace(event, machine)
 	}
 	return nil
 }

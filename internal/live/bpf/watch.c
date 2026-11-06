@@ -5,13 +5,16 @@
 // stable, so one build works on every supported kernel without reading
 // the kernel's internal structures.
 //
-// They report three kinds of event to the agent through a ring buffer:
+// They report six kinds of event to the agent through a ring buffer:
 // programs that start (with the program that started them and their
 // arguments); files opened for writing, renamed or linked under a short
-// list of sensitive paths; and network connections made by shells, by
+// list of sensitive paths; network connections made by shells, by
 // programs started from a temporary folder (and the processes they start),
-// or to a short list of ports. Everything else is dropped here, in the
-// kernel, so the agent only sees the few events its rules look at.
+// or to a short list of ports; a process that isn't root switching to
+// root; kernel modules loaded; and one process taking control of another
+// (ptrace attach) or writing into its memory. Everything else is dropped
+// here, in the kernel, so the agent only sees the few events its rules
+// look at.
 //
 // Build with scripts/build-bpf.sh. Every function is inlined and no string
 // constants are used, so the object needs no relocations but its maps'.
@@ -21,6 +24,7 @@ typedef unsigned short u16;
 typedef unsigned int u32;
 typedef int s32;
 typedef unsigned long long u64;
+typedef long long s64;
 
 #define SEC(name) __attribute__((section(name), used))
 #define INLINE static inline __attribute__((always_inline))
@@ -66,6 +70,9 @@ static void (*ring_submit)(void *data, u64 flags) = (void *)132;
 #define KIND_EXEC 1
 #define KIND_WRITE 2
 #define KIND_CONNECT 3
+#define KIND_PRIVILEGE 4
+#define KIND_MODULE 5
+#define KIND_TRACE 6
 
 // How a file was written: the agent says so in its alert.
 #define HOW_OPEN 1
@@ -76,6 +83,12 @@ static void (*ring_submit)(void *data, u64 flags) = (void *)132;
 // offsets: keep the two in step. For KIND_CONNECT, how is the port
 // connected to, args_len the address family, path the address's 4 or 16
 // bytes, and args[0] why the connection was reported (the WHY_ bits).
+//
+// For KIND_PRIVILEGE, KIND_MODULE and KIND_TRACE, the system call's result
+// is what the event says happened: how is which call (the CALL_ values),
+// args_len its target (the process traced, or the module's file
+// descriptor), path holds a struct outcome, and args, for a module, its
+// parameters.
 struct event {
 	u32 kind;
 	u32 pid;
@@ -90,6 +103,36 @@ struct event {
 	char path[PATH_LEN];
 	char args[ARGS_LEN];
 };
+
+// What a watched system call was asked to do, from its entry until it
+// returns: whether it worked decides whether it is reported.
+struct call {
+	u32 kind;
+	u32 how;
+	u32 uid;
+	u32 target;
+	u32 ids[3];
+	u32 pad;
+	u64 pointer;
+};
+
+// The start of path, for the events made from a struct call.
+struct outcome {
+	s64 result;
+	u32 ids[3];
+	u32 marked;
+};
+
+// Which call: the user ID calls, the module calls, and ptrace's attach
+// requests, by their numbers, or a write into another process's memory.
+#define CALL_SETUID 1
+#define CALL_SETREUID 2
+#define CALL_SETRESUID 3
+#define CALL_FINIT_MODULE 1
+#define CALL_INIT_MODULE 2
+#define PTRACE_ATTACH 16
+#define PTRACE_SEIZE 0x4206
+#define CALL_VM_WRITE 0x10000
 
 // What sys_enter_execve saw, until the program has started.
 struct pending {
@@ -137,12 +180,14 @@ struct name {
 #define AF_INET6 10
 
 // Counters: programs started, writes looked at, events lost because the
-// ring buffer was full, connections looked at.
+// ring buffer was full, connections looked at, and user ID, module and
+// ptrace calls looked at.
 #define COUNT_EXEC 0
 #define COUNT_WRITE 1
 #define COUNT_LOST 2
 #define COUNT_CONNECT 3
-#define COUNTERS 4
+#define COUNT_CALL 4
+#define COUNTERS 5
 
 struct dg_map events SEC("maps") = {MAP_RINGBUF, 0, 0, 1 << 18, 0};
 struct dg_map pending_execs SEC("maps") = {MAP_LRU_HASH, sizeof(u32), sizeof(struct pending), 4096, 0};
@@ -165,6 +210,13 @@ struct dg_map watched_ports SEC("maps") = {MAP_HASH, sizeof(u32), sizeof(u32), P
 // Settings from the agent: [0] where sched_process_fork keeps the new
 // process's ID, which changed between kernels (0: don't follow forks).
 struct dg_map settings SEC("maps") = {MAP_ARRAY, sizeof(u32), sizeof(u32), 1, 0};
+// Watched system calls in progress, by thread.
+struct dg_map calls SEC("maps") = {MAP_LRU_HASH, sizeof(u32), sizeof(struct call), 1024, 0};
+// Processes that were root when they changed their user IDs, and the
+// processes they start before a new program: a root process that lowers
+// its IDs for a while (PAM, runuser, cron, sshd do) may take root back.
+// A new program starts without it.
+struct dg_map was_root SEC("maps") = {MAP_LRU_HASH, sizeof(u32), sizeof(u32), 4096, 0};
 
 char dg_license[] SEC("license") = "Dual MIT/GPL";
 
@@ -285,6 +337,10 @@ int process_exec(struct process_exec *ctx) {
 	if (marked_path(e->path)) {
 		u32 pid = e->pid, why = WHY_MARKED;
 		map_update(&marked, &pid, &why, 0);
+	}
+	{
+		u32 pid = e->pid;
+		map_delete(&was_root, &pid);
 	}
 	e->args_len = 0;
 	e->parent_comm[0] = 0;
@@ -468,8 +524,15 @@ struct process_fork {
 SEC("tp/sched/sched_process_fork")
 int process_fork(struct process_fork *ctx) {
 	u32 tgid = current_pid_tgid() >> 32;
-	u32 *why = map_lookup(&marked, &tgid);
-	if (!why)
+	// Values, not the pointers: the checker refuses arithmetic on two
+	// pointers, which testing both at once compiles to.
+	u32 why = 0, root = 0;
+	u32 *marked_why = map_lookup(&marked, &tgid);
+	if (marked_why)
+		why = *marked_why;
+	if (map_lookup(&was_root, &tgid))
+		root = 1;
+	if (why == 0 && root == 0)
 		return 0;
 	u32 zero = 0;
 	u32 *offset = map_lookup(&settings, &zero);
@@ -487,8 +550,11 @@ int process_fork(struct process_fork *ctx) {
 		child = (s32)copy.words[3];
 	if (child <= 0)
 		return 0;
-	u32 key = (u32)child, value = *why;
-	map_update(&marked, &key, &value, 0);
+	u32 key = (u32)child, one = 1;
+	if (why)
+		map_update(&marked, &key, &why, 0);
+	if (root)
+		map_update(&was_root, &key, &one, 0);
 	return 0;
 }
 
@@ -498,8 +564,10 @@ SEC("tp/sched/sched_process_exit")
 int process_exit(void *ctx) {
 	u64 id = current_pid_tgid();
 	u32 pid = (u32)id;
-	if (pid == (u32)(id >> 32))
+	if (pid == (u32)(id >> 32)) {
 		map_delete(&marked, &pid);
+		map_delete(&was_root, &pid);
+	}
 	return 0;
 }
 
@@ -575,3 +643,169 @@ int enter_connect(struct sys_enter *ctx) {
 	ring_submit(e, 0);
 	return 0;
 }
+
+// The fixed part of every sys_exit tracepoint: the common header, the
+// system call's number, then what it returned.
+struct sys_exit {
+	u64 common;
+	long id;
+	long ret;
+};
+
+// Remembers a watched call until it returns.
+INLINE int called(u32 kind, u32 how, u32 target, u32 a, u32 b, u32 c, u64 pointer) {
+	if (is_self())
+		return 0;
+	struct call call = {};
+	call.kind = kind;
+	call.how = how;
+	call.uid = (u32)current_uid_gid();
+	call.target = target;
+	call.ids[0] = a;
+	call.ids[1] = b;
+	call.ids[2] = c;
+	call.pointer = pointer;
+	u32 tid = (u32)current_pid_tgid();
+	map_update(&calls, &tid, &call, 0);
+	return 0;
+}
+
+// A user ID call is remembered only when a process that isn't root, and
+// wasn't since its program started, asks for root (0) as one of its IDs:
+// nothing else is a gain in privilege. A root process's call marks it as
+// one that was root. (u32)-1 leaves an ID as it is.
+INLINE int asks_root(u32 a, u32 b, u32 c) {
+	count(COUNT_CALL);
+	u32 tgid = current_pid_tgid() >> 32;
+	if ((u32)current_uid_gid() == 0) {
+		u32 one = 1;
+		map_update(&was_root, &tgid, &one, 0);
+		return 0;
+	}
+	if (map_lookup(&was_root, &tgid))
+		return 0;
+	return a == 0 || b == 0 || c == 0;
+}
+
+SEC("tp/syscalls/sys_enter_setuid")
+int enter_setuid(struct sys_enter *ctx) {
+	u32 id = (u32)ctx->args[0];
+	if (!asks_root(id, -1, -1))
+		return 0;
+	return called(KIND_PRIVILEGE, CALL_SETUID, 0, id, -1, -1, 0);
+}
+
+SEC("tp/syscalls/sys_enter_setreuid")
+int enter_setreuid(struct sys_enter *ctx) {
+	u32 real = (u32)ctx->args[0], effective = (u32)ctx->args[1];
+	if (!asks_root(real, effective, -1))
+		return 0;
+	return called(KIND_PRIVILEGE, CALL_SETREUID, 0, real, effective, -1, 0);
+}
+
+SEC("tp/syscalls/sys_enter_setresuid")
+int enter_setresuid(struct sys_enter *ctx) {
+	u32 real = (u32)ctx->args[0], effective = (u32)ctx->args[1], saved = (u32)ctx->args[2];
+	if (!asks_root(real, effective, saved))
+		return 0;
+	return called(KIND_PRIVILEGE, CALL_SETRESUID, 0, real, effective, saved, 0);
+}
+
+// finit_module(fd, parameters, flags) and init_module(image, length,
+// parameters): every module load is remembered; they are rare.
+SEC("tp/syscalls/sys_enter_finit_module")
+int enter_finit_module(struct sys_enter *ctx) {
+	count(COUNT_CALL);
+	return called(KIND_MODULE, CALL_FINIT_MODULE, (u32)ctx->args[0], -1, -1, -1, ctx->args[1]);
+}
+
+SEC("tp/syscalls/sys_enter_init_module")
+int enter_init_module(struct sys_enter *ctx) {
+	count(COUNT_CALL);
+	return called(KIND_MODULE, CALL_INIT_MODULE, -1, -1, -1, -1, ctx->args[2]);
+}
+
+// ptrace(request, pid, ...): only the requests that take control of a
+// process, once per process traced; a debugger's reads and writes after
+// that aren't looked at.
+SEC("tp/syscalls/sys_enter_ptrace")
+int enter_ptrace(struct sys_enter *ctx) {
+	count(COUNT_CALL);
+	long request = (long)ctx->args[0];
+	if (request != PTRACE_ATTACH && request != PTRACE_SEIZE)
+		return 0;
+	return called(KIND_TRACE, (u32)request, (u32)ctx->args[1], -1, -1, -1, 0);
+}
+
+// process_vm_writev(pid, ...): writing straight into another process.
+SEC("tp/syscalls/sys_enter_process_vm_writev")
+int enter_process_vm_writev(struct sys_enter *ctx) {
+	count(COUNT_CALL);
+	return called(KIND_TRACE, CALL_VM_WRITE, (u32)ctx->args[0], -1, -1, -1, 0);
+}
+
+// Reports a remembered call once it returns: user ID changes and ptrace
+// that worked, and every module load, with its result.
+INLINE int returned(struct sys_exit *ctx) {
+	u64 id = current_pid_tgid();
+	u32 tid = (u32)id;
+	struct call *call = map_lookup(&calls, &tid);
+	if (!call)
+		return 0;
+	long result = ctx->ret;
+	int report = call->kind == KIND_MODULE || (call->how == CALL_VM_WRITE ? result > 0 : result == 0);
+	if (!report) {
+		map_delete(&calls, &tid);
+		return 0;
+	}
+	struct event *e = ring_reserve(&events, sizeof(struct event), 0);
+	if (!e) {
+		count(COUNT_LOST);
+		map_delete(&calls, &tid);
+		return 0;
+	}
+	u32 tgid = id >> 32;
+	e->kind = call->kind;
+	e->pid = tgid;
+	e->tid = tid;
+	e->uid = call->uid;
+	e->time_ns = ktime_ns();
+	e->cgroup = current_cgroup();
+	e->how = call->how;
+	e->args_len = call->target;
+	current_comm(e->comm, COMM_LEN);
+	e->parent_comm[0] = 0;
+	struct outcome *outcome = (struct outcome *)e->path;
+	outcome->result = result;
+	outcome->ids[0] = call->ids[0];
+	outcome->ids[1] = call->ids[1];
+	outcome->ids[2] = call->ids[2];
+	outcome->marked = map_lookup(&marked, &tgid) ? 1 : 0;
+	e->args[0] = 0;
+	if (call->kind == KIND_MODULE && call->pointer)
+		read_user_str(e->args, ARG_MAX, (const char *)call->pointer);
+	map_delete(&calls, &tid);
+	ring_submit(e, 0);
+	return 0;
+}
+
+SEC("tp/syscalls/sys_exit_setuid")
+int exit_setuid(struct sys_exit *ctx) { return returned(ctx); }
+
+SEC("tp/syscalls/sys_exit_setreuid")
+int exit_setreuid(struct sys_exit *ctx) { return returned(ctx); }
+
+SEC("tp/syscalls/sys_exit_setresuid")
+int exit_setresuid(struct sys_exit *ctx) { return returned(ctx); }
+
+SEC("tp/syscalls/sys_exit_finit_module")
+int exit_finit_module(struct sys_exit *ctx) { return returned(ctx); }
+
+SEC("tp/syscalls/sys_exit_init_module")
+int exit_init_module(struct sys_exit *ctx) { return returned(ctx); }
+
+SEC("tp/syscalls/sys_exit_ptrace")
+int exit_ptrace(struct sys_exit *ctx) { return returned(ctx); }
+
+SEC("tp/syscalls/sys_exit_process_vm_writev")
+int exit_process_vm_writev(struct sys_exit *ctx) { return returned(ctx); }
