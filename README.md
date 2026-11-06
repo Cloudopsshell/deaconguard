@@ -16,7 +16,19 @@
 
 Docker, Kubernetes and machines without systemd: see [Install](#install) below.
 
+<img src="assets/screenshots/demo.gif" alt="Signing in to DeaconGuard after a fresh install: the dashboard already has results, then a host's configuration findings and attack paths, and the scan dialog with the recommended checks ticked." width="100%">
+
 DeaconGuard is a security scanner written in Go, for Linux servers, Kubernetes clusters and container images. On a Linux machine, it runs fixed, read-only commands and evaluates the installed packages against the distribution's own security data. Optional checks add system file integrity, malware and compromise indicators, security configuration, and an antivirus scan: Basic with ClamAV, or Advanced with ClamAV and YARA rules. The matching, checks, and scan orchestration are DeaconGuard code. Scans never install or change software; the only third-party engines they run are ClamAV and YARA-X, for the antivirus scan. The [install script](#install-script) installs them and the other tools the checks use, once, when it installs DeaconGuard.
+
+## Screenshots
+
+The dashboard after the first scan, a host's attack paths, and its configuration findings, on a fresh Ubuntu 24.04 server:
+
+<img src="assets/screenshots/dashboard.png" alt="The dashboard: what to fix now by severity, the most exposed hosts, and vulnerabilities over time." width="100%">
+
+<img src="assets/screenshots/host-attack-paths.png" alt="A host's attack paths: the deploy account can become root through a sudo rule without a password." width="100%">
+
+<img src="assets/screenshots/host-configuration.png" alt="A host's configuration findings: SSH password login, X11 forwarding, automatic updates off and no host firewall, each with its evidence." width="100%">
 
 ## How it works
 
