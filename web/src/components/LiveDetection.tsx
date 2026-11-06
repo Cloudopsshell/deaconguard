@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ShieldCheck } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router";
+import { AllowDialog, alertWhere, type AllowScope } from "./LiveAllowlist";
 import {
   api,
   type HostSummary,
@@ -196,6 +198,24 @@ export function RuntimeTab({
   if (error) return <ErrorMessage error={error} />;
   const status = data.status;
   const cluster = data.nodes !== undefined;
+  // Where a rule made from an alert can apply: its machine, its cluster, or everywhere.
+  const scopesFor = (alert: LiveAlert): AllowScope[] => [
+    cluster ? { value: alert.host_id, label: `This node, ${alert.host ?? ""}` } : { value: hostId, label: "This host" },
+    ...(cluster ? [{ value: hostId, label: "This cluster" }] : follows ? [{ value: follows.id, label: `Its cluster, ${follows.name}` }] : []),
+    { value: "", label: "All hosts" },
+  ];
+  const allowNote = data.allow && data.allow.rules > 0 && (
+    <p className="text-xs text-slate-500 dark:text-slate-400">
+      {data.allow.rules === 1 ? "1 allowlist rule applies" : `${data.allow.rules} allowlist rules apply`} here
+      {data.allow.skipped > 0
+        ? `; ${cluster ? "on its nodes, " : ""}they skipped ${formatCount(data.allow.skipped)} expected ${data.allow.skipped === 1 ? "alert" : "alerts"}${data.allow.last_at ? `, the last ${timeAgo(data.allow.last_at)}` : ""}`
+        : "; none skipped an alert yet"}
+      .{" "}
+      <Link className="underline" to="/settings#live-allowlist">
+        Allowlist
+      </Link>
+    </p>
+  );
   const clusterLink = follows && (
     <Link className="text-indigo-600 hover:underline dark:text-indigo-300" to={`/hosts/${follows.id}?tab=runtime`}>
       {follows.name}
@@ -249,7 +269,8 @@ export function RuntimeTab({
                 crypto miners, reverse shells and suspicious connections out,
                 changes to accounts, sudo rules, SSH keys and scheduled jobs,
                 processes becoming root outside sudo, kernel modules loaded and
-                processes taking over others. Alerts arrive within seconds.
+                processes taking over others. Alerts arrive within seconds and
+                name the container or pod they came from.
               </p>
               <ul className="mt-3 space-y-1 text-sm text-slate-500 dark:text-slate-400">
                 {status.kernel && (
@@ -299,7 +320,8 @@ export function RuntimeTab({
             )}
           </div>
         </Card>
-        {data.alerts.length > 0 && <AlertsTable alerts={data.alerts} />}
+        {data.alerts.length > 0 && <AlertsTable alerts={data.alerts} scopesFor={scopesFor} />}
+        {allowNote}
       </div>
     );
   }
@@ -429,7 +451,8 @@ export function RuntimeTab({
           </dl>
         )}
       </Card>
-      <AlertsTable alerts={data.alerts} cluster={cluster} />
+      <AlertsTable alerts={data.alerts} cluster={cluster} scopesFor={scopesFor} />
+      {allowNote}
       <p className="text-xs text-slate-500 dark:text-slate-400">
         What live detection watches, and what it doesn't:{" "}
         <a
@@ -493,7 +516,31 @@ function NodeLiveTable({ nodes }: { nodes: NonNullable<LiveDetail["nodes"]> }) {
   );
 }
 
-function AlertsTable({ alerts, cluster = false }: { alerts: LiveAlert[]; cluster?: boolean }) {
+/** "" shows every alert, "host" those outside containers, else one container's. */
+type ContainerFilter = string;
+
+function AlertsTable({
+  alerts: all,
+  cluster = false,
+  scopesFor,
+}: {
+  alerts: LiveAlert[];
+  cluster?: boolean;
+  scopesFor: (alert: LiveAlert) => AllowScope[];
+}) {
+  const canAllow = useCan("admin");
+  const [allowing, setAllowing] = useState<LiveAlert | null>(null);
+  const [filter, setFilter] = useState<ContainerFilter>("");
+  // The containers alerts came from, by where they ran.
+  const places = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const alert of all) {
+      const where = alertWhere(alert);
+      if (where) seen.set(where, where);
+    }
+    return [...seen.keys()].sort();
+  }, [all]);
+  const alerts = filter === "" ? all : all.filter((alert) => (filter === "host" ? !alert.container_id : alertWhere(alert) === filter));
   return (
     <Card>
       <CardHeader
@@ -503,8 +550,32 @@ function AlertsTable({ alerts, cluster = false }: { alerts: LiveAlert[]; cluster
             ? "Newest first, from every node. Only alerts leave the nodes, never what programs read or write."
             : "Newest first. Only alerts leave the machine, never what programs read or write."
         }
+        action={
+          places.length > 0 && (
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-slate-500 dark:text-slate-400">Show</span>
+              <select
+                aria-label="Show alerts from"
+                className="rounded-lg border-0 bg-white py-1.5 pr-8 pl-3 text-sm shadow-sm ring-1 ring-slate-300 ring-inset dark:bg-slate-950 dark:ring-slate-700"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+              >
+                <option value="">All alerts</option>
+                <option value="host">Outside containers</option>
+                {places.map((place) => (
+                  <option key={place} value={place}>
+                    {place}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )
+        }
       />
-      {alerts.length === 0 ? (
+      {allowing && <AllowDialog alert={allowing} scopes={scopesFor(allowing)} onClose={() => setAllowing(null)} />}
+      {alerts.length === 0 && all.length > 0 ? (
+        <p className="px-5 pb-5 text-sm text-slate-500 dark:text-slate-400">No alerts from there.</p>
+      ) : alerts.length === 0 ? (
         <EmptyState
           icon={<ShieldCheck className="size-6" />}
           title="No alerts"
@@ -549,6 +620,15 @@ function AlertsTable({ alerts, cluster = false }: { alerts: LiveAlert[]; cluster
                       ? ` Repeated ${alert.repeats} more times before this.`
                       : ""}
                   </p>
+                  {canAllow && !alert.test && (
+                    <button
+                      type="button"
+                      className="mt-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-300"
+                      onClick={() => setAllowing(alert)}
+                    >
+                      Don't alert on this again
+                    </button>
+                  )}
                 </Td>
                 {cluster && (
                   <Td className="whitespace-nowrap">
@@ -566,6 +646,12 @@ function AlertsTable({ alerts, cluster = false }: { alerts: LiveAlert[]; cluster
                     pid {alert.pid}
                     {alert.user && ` · ${alert.user}`}
                   </span>
+                  {alert.container_id && (
+                    <span className="mt-1 block font-sans text-slate-600 dark:text-slate-300" title={alert.container_id}>
+                      In {alertWhere(alert)}
+                      {alert.image && <span className="block font-mono text-slate-500 dark:text-slate-400">{alert.image}</span>}
+                    </span>
+                  )}
                 </Td>
               </tr>
             ))}

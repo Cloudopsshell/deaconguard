@@ -87,11 +87,13 @@ func SaveLiveReport(hostID string, status live.Status, alerts []live.Alert, now 
 		}
 	}
 	for _, alert := range alerts {
-		if _, err := tx.Exec(`INSERT INTO live_alerts (host_id, at, rule, severity, title, detail, pid, user, program, parent, command, path, test, repeats, remote)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		if _, err := tx.Exec(`INSERT INTO live_alerts (host_id, at, rule, severity, title, detail, pid, user, program, parent, command, path, test, repeats, remote,
+				container_id, container, image, namespace, pod)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			hostID, now.UTC().Format(time.RFC3339Nano), limit(alert.Rule, 20), limit(strings.ToUpper(alert.Severity), 10), limit(alert.Title, 300),
 			limit(alert.Detail, 2000), alert.PID, limit(alert.User, 100), limit(alert.Program, 512), limit(alert.Parent, 100),
-			limit(alert.Command, 600), limit(alert.Path, 512), alert.Test, alert.Repeats, limit(alert.Remote, 100)); err != nil {
+			limit(alert.Command, 600), limit(alert.Path, 512), alert.Test, alert.Repeats, limit(alert.Remote, 100),
+			limit(alert.ContainerID, 64), limit(alert.Container, 300), limit(alert.Image, 300), limit(alert.Namespace, 100), limit(alert.Pod, 300)); err != nil {
 			return "", err
 		}
 	}
@@ -173,7 +175,8 @@ func queryLiveAlerts(where, value string, count int) ([]LiveAlert, error) {
 		return nil, err
 	}
 	rows, err := db.Query(`SELECT a.id, a.host_id, CASE WHEN h.display_name != '' THEN h.display_name ELSE h.address END, a.at, a.rule, a.severity,
-		a.title, a.detail, a.pid, a.user, a.program, a.parent, a.command, a.path, a.test, a.repeats, a.remote
+		a.title, a.detail, a.pid, a.user, a.program, a.parent, a.command, a.path, a.test, a.repeats, a.remote,
+		a.container_id, a.container, a.image, a.namespace, a.pod
 		FROM live_alerts a JOIN hosts h ON h.id = a.host_id WHERE `+where+` ORDER BY a.id DESC LIMIT ?`, value, count)
 	if err != nil {
 		return nil, err
@@ -184,7 +187,8 @@ func queryLiveAlerts(where, value string, count int) ([]LiveAlert, error) {
 		var alert LiveAlert
 		var at string
 		if err := rows.Scan(&alert.ID, &alert.HostID, &alert.Host, &at, &alert.Rule, &alert.Severity, &alert.Title, &alert.Detail, &alert.PID, &alert.User,
-			&alert.Program, &alert.Parent, &alert.Command, &alert.Path, &alert.Test, &alert.Repeats, &alert.Remote); err != nil {
+			&alert.Program, &alert.Parent, &alert.Command, &alert.Path, &alert.Test, &alert.Repeats, &alert.Remote,
+			&alert.ContainerID, &alert.Container, &alert.Image, &alert.Namespace, &alert.Pod); err != nil {
 			return nil, err
 		}
 		alert.At, _ = time.Parse(time.RFC3339Nano, at)

@@ -32,7 +32,10 @@ func selfUsage() (time.Duration, uint64) { return 0, 0 }
 
 type noMachine struct{}
 
-func (noMachine) Executable(uint32) string           { return "" }
+func (noMachine) Executable(uint32) string { return "" }
+func (noMachine) Cgroup(uint32) string     { return "" }
+
+func dirInode(string) uint64                         { return 0 }
 func (noMachine) HasTerminal(uint32) bool            { return false }
 func (noMachine) Ancestors(uint32) []string          { return nil }
 func (noMachine) WorkingDirectory(uint32) string     { return "" }

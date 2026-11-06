@@ -119,19 +119,37 @@ The watchers look only at the user ID calls (`setuid`, `setreuid`, `setresuid`) 
 
 ### What it doesn't detect yet
 
-Live detection starts with what most break-ins on servers do. Naming the container and pod of each alert and letting you allow what's expected on a host are planned next, then a way to run on kernels older than 5.8. Scans still cover what they always did, such as [host changes](./host-changes.md), malware on disk and [attack paths](./attack-paths.md).
+Live detection starts with what most break-ins on servers do. A way to run on kernels older than 5.8 is planned next. Scans still cover what they always did, such as [host changes](./host-changes.md), malware on disk and [attack paths](./attack-paths.md).
 
 An attacker who is already root on a machine can stop the agent, as they can any tool on it. Then the host's live detection shows **Stopped**, and **Live detection stopped** and **Agents offline** notifications are sent.
 
 ## Alerts
 
-The same alert, by the same program for the same file, is sent once every 10 minutes; repeats in between are counted, and the next one says how many. At most 30 alerts a minute leave a machine. Alerts are kept 30 days, at most 5,000 per host.
+The same alert, by the same program for the same file in the same container, is sent once every 10 minutes; repeats in between are counted, and the next one says how many. At most 30 alerts a minute leave a machine. Alerts are kept 30 days, at most 5,000 per host.
+
+### Which container
+
+From 1.33.0, with agents 1.33.0 and later, an alert from a process in a container names the container: its name and image, and in Kubernetes its namespace and pod, such as **In pod shop/api-7d9f · api**, with `ghcr.io/acme/api:2.1` under it. The Runtime tab's **Show** menu lists every container its alerts came from, and **Outside containers** for the machine's own processes.
+
+The kernel's watchers record the cgroup of every event, which names the container even after a short-lived program has exited and whatever process namespace the agent runs in. The agent then asks the container runtime about that container once, with `docker inspect`, `podman inspect` or `crictl inspect` (run on the node through its mounted root in Kubernetes), and remembers the answer for an hour. Docker, Podman, containerd and CRI-O are supported. When no runtime knows the container, the alert shows its short ID.
+
+### Allowlist
+
+Some alerts are normal for a machine: a backup tool loading its kernel module, a monitoring agent using `ptrace`, build jobs running programs from `/tmp`. From 1.33.0, an admin can allow them, so they're skipped and only counted, and the alerts that matter stay visible:
+
+- **Don't alert on this again**, on an alert in the Runtime tab, opens a rule filled in from it: the alert's rule, its program, its file or process, and its container's image (without the tag, so every tag), container name and namespace. Clear a field to match anything there; every field left filled in must match.
+- **Applies to:** the host, its cluster, or all hosts.
+- **Settings → Live detection allowlist** lists every rule with what it matches, where it applies, who added it and why, and how many alerts it skipped, and when it last did; **Edit** and **Remove** are there too.
+
+A rule always names one alert rule and at least one program, file, image, container or namespace, so no rule turns off a whole kind of alert. Test alerts are never skipped. Adding, changing and removing rules is recorded in the audit log, and the host's Runtime tab says how many rules apply and how many alerts they skipped.
+
+Agents 1.33.0 and later get their rules with each report, every 15 seconds, and skip matching alerts before the 30-a-minute limit, so an expected alert can't crowd out others. The server skips them too, for older agents and for the seconds before an agent has a new rule; a rule you remove stops skipping within 15 seconds.
 
 To be told about alerts, tick **Runtime alerts** on a [notification channel](./notifications.md#events): critical alerts are sent as critical, the others as warnings, a report's alerts together in one message.
 
 ## What leaves the machine
 
-Only alerts, and the status above. An alert holds the rule, the program and its command line (with anything that looks like a password or token masked), the program that started it, the account, the process ID, for a file its path, for a connection the address and port it went to, for a kernel module its file and parameters, and for `ptrace` the program taken over. The watchers' events, and what programs read or write, stay on the machine.
+Only alerts, and the status above. An alert holds the rule, the program and its command line (with anything that looks like a password or token masked), the program that started it, the account, the process ID, for a file its path, for a connection the address and port it went to, for a kernel module its file and parameters, for `ptrace` the program taken over, and for a process in a container the container's ID, name and image, and its namespace and pod. Each report's reply brings the host's allowlist rules back to the agent. The watchers' events, and what programs read or write, stay on the machine.
 
 ## How light it is
 

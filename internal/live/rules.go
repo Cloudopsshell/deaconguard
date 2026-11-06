@@ -52,6 +52,13 @@ type Alert struct {
 	Path string `json:"path,omitempty"`
 	// Remote is the address and port a connection went to.
 	Remote string `json:"remote,omitempty"`
+	// ContainerID is the container the program runs in, if any, from its
+	// cgroup; the other fields are what the container runtime says of it.
+	ContainerID string `json:"container_id,omitempty"`
+	Container   string `json:"container,omitempty"`
+	Image       string `json:"image,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	Pod         string `json:"pod,omitempty"`
 	// Test marks the alert "Send a test alert" asked for.
 	Test bool `json:"test,omitempty"`
 	// Repeats counts the same alerts left out since this one was last sent.
@@ -95,6 +102,8 @@ type Machine interface {
 	FilePath(pid uint32, fd int) string
 	// Cmdline is the process's arguments.
 	Cmdline(pid uint32) []string
+	// Cgroup is /proc/PID/cgroup, or "".
+	Cgroup(pid uint32) string
 }
 
 // testProgramName starts the name of the program "Send a test alert" runs

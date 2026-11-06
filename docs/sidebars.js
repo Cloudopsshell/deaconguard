@@ -22,6 +22,7 @@ module.exports = {
       label: 'Upgrade notes',
       link: { type: 'doc', id: 'upgrade-notes/index' },
       items: [
+        { type: 'category', label: '1.33', collapsed: true, items: ['upgrade-notes/v1-33/v1-33-0'] },
         { type: 'category', label: '1.32', collapsed: true, items: ['upgrade-notes/v1-32/v1-32-0'] },
         { type: 'category', label: '1.31', collapsed: true, items: ['upgrade-notes/v1-31/v1-31-0'] },
         { type: 'category', label: '1.30', collapsed: true, items: ['upgrade-notes/v1-30/v1-30-0'] },
@@ -31,7 +32,6 @@ module.exports = {
         { type: 'category', label: '1.26', collapsed: true, items: ['upgrade-notes/v1-26/v1-26-0'] },
         { type: 'category', label: '1.25', collapsed: true, items: ['upgrade-notes/v1-25/v1-25-0'] },
         { type: 'category', label: '1.24', collapsed: true, items: ['upgrade-notes/v1-24/v1-24-0'] },
-        { type: 'category', label: '1.23', collapsed: true, items: ['upgrade-notes/v1-23/v1-23-0'] },
       ],
     },
     {

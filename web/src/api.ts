@@ -131,6 +131,44 @@ export interface LiveAlert {
   host?: string;
   /** Where a connection went: address and port (1.30.0 and later). */
   remote?: string;
+  /** The container the process ran in, and what its runtime says of it (1.33.0 and later). */
+  container_id?: string;
+  container?: string;
+  image?: string;
+  /** The Kubernetes namespace and pod, for a pod's container. */
+  namespace?: string;
+  pod?: string;
+}
+
+/** What an allowlist rule matches; empty fields match anything. */
+export interface LiveAllowMatch {
+  rule: string;
+  program?: string;
+  path?: string;
+  /** Without a tag or digest, every tag of the image. */
+  image?: string;
+  container?: string;
+  namespace?: string;
+}
+
+/** A live detection allowlist rule (1.33.0 and later). */
+export interface LiveAllow extends LiveAllowMatch {
+  id: number;
+  /** The host or cluster it applies to; empty for every host. */
+  host_id: string;
+  scope: string;
+  note: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  /** The alerts it skipped, on every host, and when it last skipped one. */
+  skipped: number;
+  last_at?: string;
+}
+
+export interface LiveAllowInput extends LiveAllowMatch {
+  host_id: string;
+  note: string;
 }
 
 /** Settings → Live detection: whether new machines start with it on, and how many machines have it. */
@@ -147,6 +185,8 @@ export interface LiveDetail {
   alerts: LiveAlert[];
   /** For a cluster: each node's live detection. */
   nodes?: { host_id: string; host: string; excluded?: boolean; status: LiveStatus | null }[];
+  /** The allowlist rules that apply here, and what they skipped here (1.33.0 and later). */
+  allow?: { rules: number; skipped: number; last_at?: string };
 }
 
 /** A started scan; for a cluster, also how many of its nodes' scans started. */
@@ -1602,6 +1642,10 @@ export const api = {
   liveSettings: () => request<LiveOverview>("GET", "/api/settings/live"),
   setLiveNewHosts: (on: boolean) => request<LiveOverview>("PUT", "/api/settings/live", { new_hosts: on }),
   setLiveAll: (enabled: boolean) => request<LiveOverview>("POST", "/api/settings/live/hosts", { enabled }),
+  liveAllowlist: () => request<LiveAllow[]>("GET", "/api/live/allowlist"),
+  addLiveAllow: (rule: LiveAllowInput) => request<LiveAllow>("POST", "/api/live/allowlist", rule),
+  updateLiveAllow: (id: number, rule: LiveAllowInput) => request<LiveAllow>("PUT", `/api/live/allowlist/${id}`, rule),
+  removeLiveAllow: (id: number) => request<void>("DELETE", `/api/live/allowlist/${id}`),
   renameHost: (hostId: string, name: string) => request<Host>("PATCH", `/api/hosts/${hostId}`, { name }),
   startScan: (hostId: string, checks: CheckId[]) => request<StartedScan>("POST", `/api/hosts/${hostId}/scans`, { checks }),
   setExcluded: (hostId: string, excluded: boolean) => request<Host>("PUT", `/api/hosts/${hostId}/excluded`, { excluded }),

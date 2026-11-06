@@ -28,7 +28,32 @@ func (h *agentHub) agentLive(w http.ResponseWriter, r *http.Request, host store.
 		writeError(w, http.StatusRequestEntityTooLarge, fmt.Errorf("send at most %d alerts at a time", agentapi.MaxLiveAlerts))
 		return
 	}
-	previous, err := store.SaveLiveReport(host.ID, report.Status, report.Alerts, time.Now())
+	now := time.Now()
+	// Agents before 1.33.0 don't know the allowlist, and a new rule reaches
+	// an agent with its next report: skip here what it expects too.
+	allow, err := store.LiveAllowFor(host.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	skipped := map[int64]uint64{}
+	for id, count := range report.Status.Allowed {
+		skipped[id] += count
+	}
+	kept := make([]live.Alert, 0, len(report.Alerts))
+	for _, alert := range report.Alerts {
+		if rule, ok := live.Allowed(allow, alert); ok {
+			skipped[rule.ID]++
+			continue
+		}
+		kept = append(kept, alert)
+	}
+	report.Alerts = kept
+	if err := store.CountLiveAllowed(host.ID, skipped, now); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	previous, err := store.SaveLiveReport(host.ID, report.Status, report.Alerts, now)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -44,7 +69,7 @@ func (h *agentHub) agentLive(w http.ResponseWriter, r *http.Request, host store.
 	if h.onLive != nil {
 		h.onLive(host, previous, report.Status, report.Alerts)
 	}
-	writeJSON(w, http.StatusOK, agentapi.LiveReply{Enabled: enabled, Test: test && enabled})
+	writeJSON(w, http.StatusOK, agentapi.LiveReply{Enabled: enabled, Test: test && enabled, Allow: allow})
 }
 
 // liveReported logs and notifies what an agent's report brought: alerts,
@@ -92,7 +117,8 @@ func (s *Server) liveReported(host store.Host, previous string, status live.Stat
 			lines = append(lines, line)
 		}
 		data = append(data, map[string]any{"rule": alert.Rule, "severity": alert.Severity, "title": alert.Title, "program": alert.Program,
-			"parent": alert.Parent, "user": alert.User, "path": alert.Path, "command": alert.Command, "remote": alert.Remote})
+			"parent": alert.Parent, "user": alert.User, "path": alert.Path, "command": alert.Command, "remote": alert.Remote,
+			"container": alert.Container, "image": alert.Image, "namespace": alert.Namespace, "pod": alert.Pod})
 	}
 	if len(real) > 10 {
 		lines = append(lines, fmt.Sprintf("And %d more on the host's Runtime tab.", len(real)-10))
@@ -105,7 +131,7 @@ func (s *Server) liveReported(host store.Host, previous string, status live.Stat
 		Link: link("/hosts/" + host.ID + "?tab=runtime"), HostID: host.ID, Host: host.Address, Data: map[string]any{"alerts": data}})
 }
 
-// alertWho says which program did it, as whom.
+// alertWho says which program did it, as whom, and where.
 func alertWho(alert live.Alert) string {
 	var parts []string
 	if alert.Program != "" {
@@ -114,7 +140,24 @@ func alertWho(alert live.Alert) string {
 	if alert.User != "" {
 		parts = append(parts, "as "+alert.User)
 	}
+	if where := alertWhere(alert); where != "" {
+		parts = append(parts, "in "+where)
+	}
 	return strings.Join(parts, " ")
+}
+
+// alertWhere names the container an alert came from: its pod in
+// Kubernetes, or its name, or its short ID when the runtime didn't say.
+func alertWhere(alert live.Alert) string {
+	switch {
+	case alert.Pod != "":
+		return "pod " + alert.Namespace + "/" + alert.Pod + " (" + alert.Container + ")"
+	case alert.Container != "":
+		return "container " + alert.Container
+	case len(alert.ContainerID) >= 12:
+		return "container " + alert.ContainerID[:12]
+	}
+	return ""
 }
 
 // liveStopped notifies that live detection stopped on a host where it was
@@ -130,6 +173,8 @@ func (s *Server) liveStopped(host store.Host, reason string) {
 type liveResponse struct {
 	Status *store.LiveStatus `json:"status"`
 	Alerts []store.LiveAlert `json:"alerts"`
+	// Allow is what the allowlist does here.
+	Allow store.LiveAllowSummary `json:"allow"`
 	// Nodes is each node's live detection, for a cluster.
 	Nodes []nodeLive `json:"nodes,omitempty"`
 }
@@ -154,6 +199,10 @@ func (s *Server) getLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := liveResponse{Status: status}
+	if response.Allow, err = store.HostLiveAllow(host); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	if host.IsCluster() {
 		// A cluster's live detection runs on its nodes: one stream for all.
 		if response.Alerts, err = store.ClusterLiveAlerts(host.ID, liveAlertsShown); err != nil {

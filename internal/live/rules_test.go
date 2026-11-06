@@ -15,6 +15,7 @@ type fakeMachine struct {
 	executable string
 	terminal   bool
 	ancestors  []string
+	cgroup     string
 	directory  string
 	stdio      map[uint32]string
 	parent     uint32
@@ -53,6 +54,7 @@ func (m fakeMachine) Executable(pid uint32) string {
 }
 func (m fakeMachine) HasTerminal(uint32) bool        { return m.terminal }
 func (m fakeMachine) Ancestors(uint32) []string      { return m.ancestors }
+func (m fakeMachine) Cgroup(uint32) string           { return m.cgroup }
 func (m fakeMachine) WorkingDirectory(uint32) string { return m.directory }
 func (m fakeMachine) Parent(uint32) uint32           { return m.parent }
 func (m fakeMachine) NetworkStdio(pid uint32) string { return m.stdio[pid] }

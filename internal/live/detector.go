@@ -37,6 +37,9 @@ type Status struct {
 	MemoryBytes uint64  `json:"memory_bytes"`
 	// TestError says why the last "Send a test alert" couldn't run.
 	TestError string `json:"test_error,omitempty"`
+	// Allowed counts, by allowlist rule ID, the alerts skipped since the
+	// last report because a rule expected them.
+	Allowed map[int64]uint64 `json:"allowed,omitempty"`
 }
 
 // Limits on what the agent sends.
@@ -85,6 +88,11 @@ type Detector struct {
 	lastUsage time.Time
 	testAsked bool
 	rechecks  []recheck
+	allow     []Allow
+	allowed   map[int64]uint64
+
+	containers containerNames
+	cgroups    *cgroupIndex
 }
 
 type seenAlert struct {
@@ -103,6 +111,7 @@ func NewDetector(hostRoot string, logf func(format string, arguments ...any)) *D
 		changed: make(chan struct{}, 1),
 		ready:   make(chan struct{}, 1),
 		seen:    map[string]*seenAlert{},
+		cgroups: newCgroupIndex(hostRoot, dirInode),
 		status:  Status{State: StateStarting, Since: time.Now().UTC(), Kernel: KernelRelease()},
 	}
 }
@@ -123,6 +132,32 @@ func (d *Detector) SetEnabled(enabled bool) {
 	}
 }
 
+// SetContainerLookup sets how the detector learns a container's name and
+// image, which alerts from containers carry.
+func (d *Detector) SetContainerLookup(lookup ContainerLookup) { d.containers.setLookup(lookup) }
+
+// SetAllowlist sets the allowlist rules for this machine, as the server
+// sends them.
+func (d *Detector) SetAllowlist(rules []Allow) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.allow = rules
+}
+
+// skip reports whether an allowlist rule expects the alert, and counts it.
+// The caller holds d.mu.
+func (d *Detector) skip(alert Alert) bool {
+	rule, ok := Allowed(d.allow, alert)
+	if !ok {
+		return false
+	}
+	if d.allowed == nil {
+		d.allowed = map[int64]uint64{}
+	}
+	d.allowed[rule.ID]++
+	return true
+}
+
 // AskTest has the detector start the test program when it is active.
 func (d *Detector) AskTest() {
 	d.mu.Lock()
@@ -131,19 +166,43 @@ func (d *Detector) AskTest() {
 }
 
 // Take returns the status and the alerts waiting to be sent, and forgets
-// the alerts. Put them back with Return if sending fails.
+// the alerts. Put them back with Return if sending fails. Alerts from
+// containers get the container's name here, off the watchers' path, and
+// those an allowlist rule then expects are skipped.
 func (d *Detector) Take() (Status, []Alert) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.refreshUsage()
 	alerts := d.pending
 	d.pending = nil
+	d.mu.Unlock()
+	d.containers.describe(alerts, time.Now())
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	kept := alerts[:0]
+	for _, alert := range alerts {
+		if !d.skip(alert) {
+			kept = append(kept, alert)
+		}
+	}
+	d.refreshUsage()
 	status := d.status
 	status.EventsLastHour = 0
 	for _, count := range d.minutes {
 		status.EventsLastHour += count
 	}
-	return status, alerts
+	status.Allowed, d.allowed = d.allowed, nil
+	return status, kept
+}
+
+// Unsent puts back allowlist counts that couldn't be sent.
+func (d *Detector) Unsent(status Status) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for id, count := range status.Allowed {
+		if d.allowed == nil {
+			d.allowed = map[int64]uint64{}
+		}
+		d.allowed[id] += count
+	}
 }
 
 // Return puts back alerts that couldn't be sent.
@@ -193,7 +252,15 @@ func (d *Detector) add(alerts []Alert, now time.Time) {
 	}
 	queued := false
 	for _, alert := range alerts {
-		key := alert.Rule + "\x00" + alert.Program + "\x00" + alert.Parent + "\x00" + alert.Path
+		// Rules that need a container's name match here only once it's known;
+		// Take checks again after naming it.
+		if !alert.Test {
+			d.containers.cached(&alert, now)
+			if d.skip(alert) {
+				continue
+			}
+		}
+		key := alert.Rule + "\x00" + alert.Program + "\x00" + alert.Parent + "\x00" + alert.Path + "\x00" + alert.ContainerID
 		// A reverse shell is one connection, whichever of its processes
 		// (the shell, what started it, what it became) holds it.
 		if alert.Rule == RuleReverseShell {
@@ -346,6 +413,7 @@ func (d *Detector) watch(ctx context.Context, w eventSource) error {
 		if err := w.poll(timeout, func(event Event) {
 			now := time.Now()
 			alerts := Evaluate(event, d.machine)
+			inContainers(event, alerts, d.machine, d.cgroups, now)
 			d.add(alerts, now)
 			if fromMemory(event, alerts) {
 				w.mark(event.PID)
@@ -358,7 +426,9 @@ func (d *Detector) watch(ctx context.Context, w eventSource) error {
 		}
 		now := time.Now()
 		for len(d.rechecks) > 0 && !now.Before(d.rechecks[0].at) {
-			d.add(Recheck(d.rechecks[0].event, d.machine), now)
+			alerts := Recheck(d.rechecks[0].event, d.machine)
+			inContainers(d.rechecks[0].event, alerts, d.machine, d.cgroups, now)
+			d.add(alerts, now)
 			d.rechecks = d.rechecks[1:]
 		}
 		if now.Sub(lastCount) >= 5*time.Second {

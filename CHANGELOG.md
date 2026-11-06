@@ -8,6 +8,13 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.33.0] - 2026-11-06
+
+### Added
+
+- **Live detection names the container**, with agents 1.33.0 and later: an alert from a process in a container has the container's name and image, and in Kubernetes its namespace and pod, shown on the Runtime tab, in notifications and in the API. The Runtime tab's **Show** menu filters alerts by container, or to the machine's own processes. The agent finds the container from the cgroup the kernel recorded with the event, so short-lived programs and agents in their own process namespace are covered, and asks Docker, Podman, containerd or CRI-O about each container once.
+- **Live detection allowlist:** **Don't alert on this again** on an alert, or **Settings → Live detection allowlist**, adds a rule that skips expected alerts on a host, a cluster or all hosts, such as a backup tool loading its kernel module or build jobs running programs from `/tmp`. A rule names one alert rule and at least one program, file, image (every tag, or one), container or namespace. Skipped alerts are counted per rule and host, shown in Settings and on the Runtime tab; rules are audited. Agents 1.33.0 and later skip matches before the alert rate limit; the server skips them for older agents. Database schema 35.
+
 ### Fixed
 
 - **A scheduled scan whose time is skipped when the clocks go forward runs an hour later**, as documented, in every time zone. In zones west of UTC, such as America/New_York, it ran an hour early instead.
