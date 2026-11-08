@@ -11,7 +11,7 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.24 to 1.33) a
 
 | Release | Released | What to do |
 | --- | --- | --- |
-| [1.33.0](./v1-33/v1-33-0.md) | 2026-11-06 | Back up: database schema 35. Upgrade the agents for container names and allowlist rules skipped before the rate limit |
+| [1.33.0](./v1-33/v1-33-0.md) | 2026-11-08 | Back up: database schema 35. Upgrade the agents for container names and allowlist rules skipped before the rate limit |
 | [1.32.0](./v1-32/v1-32-0.md) | 2026-11-06 | Nothing to do. Upgrade the agents for live detection's privilege, kernel module and ptrace rules |
 | [1.31.0](./v1-31/v1-31-0.md) | 2026-11-05 | Nothing to do. A new server scans itself once; the scan dialog ticks the recommended checks |
 | [1.30.0](./v1-30/v1-30-0.md) | 2026-11-05 | Back up: database schema 34. Upgrade the agents for live detection's network rules |
