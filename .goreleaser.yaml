@@ -86,7 +86,7 @@ nfpms:
       - deaconguard
     vendor: CloudOpsShell
     homepage: https://github.com/Cloudopsshell/deaconguard
-    maintainer: CloudOpsShell <opensource@cloudopsshell.com>
+    maintainer: DeaconGuard <hello@deaconguard.io>
     description: >-
       Find what's vulnerable, misconfigured or compromised across Linux
       servers, Kubernetes clusters and container images: package

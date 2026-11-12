@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **New contact addresses.** Security reports go to security@deaconguard.io, and the packages and Helm chart name hello@deaconguard.io as maintainer. The README has a Contact section.
+
 ## [1.33.0] - 2026-11-08
 
 ### Added

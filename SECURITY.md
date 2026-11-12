@@ -9,7 +9,7 @@ Security fixes are released for the **latest minor version** of DeaconGuard, as 
 Please report security problems privately, not in a public issue:
 
 1. Go to the repository's **Security** tab and choose **Report a vulnerability**. This opens a private advisory that only the maintainers can see.
-2. If that option is unavailable, email **opensource@cloudopsshell.com** with "DeaconGuard security" in the subject.
+2. If that option is unavailable, email **security@deaconguard.io** with "DeaconGuard security" in the subject.
 
 Include the DeaconGuard version, how to reproduce the problem, and what an attacker could achieve. You should receive an acknowledgement within a few working days. We will agree a disclosure date with you, publish a fixed release, and credit you in the advisory unless you prefer otherwise.
 
