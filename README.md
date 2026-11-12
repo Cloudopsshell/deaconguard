@@ -598,6 +598,10 @@ make ui-dev       # web UI with hot reload on http://localhost:5173; run ./deaco
 
 A plain `go build ./cmd/deaconguard` works without Node.js; the binary then explains that the web UI was not built. The UI source is in [web/](web/) and uses React, TypeScript, Vite, Tailwind CSS, TanStack Query, and React Router. Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request process. Contributors sign the [Contributor License Agreement](CLA.md) once, on their first pull request. Maintainers publish releases as described in [RELEASING.md](RELEASING.md).
 
+## Contact
+
+Questions and ideas: [GitHub Discussions](https://github.com/Cloudopsshell/deaconguard/discussions) or **hello@deaconguard.io**. Security reports: see [SECURITY.md](SECURITY.md).
+
 ## Security
 
 Please report vulnerabilities in DeaconGuard privately, as described in [SECURITY.md](SECURITY.md), not in public issues.

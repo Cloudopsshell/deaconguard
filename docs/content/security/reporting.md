@@ -6,7 +6,7 @@ description: How to report a security problem in DeaconGuard.
 Please report security problems **privately**, not in a public issue:
 
 1. Open [a private security advisory](https://github.com/Cloudopsshell/deaconguard/security/advisories/new) on GitHub. Only the maintainers can see it.
-2. If you can't use GitHub, email **opensource@cloudopsshell.com** with "DeaconGuard security" in the subject.
+2. If you can't use GitHub, email **security@deaconguard.io** with "DeaconGuard security" in the subject.
 
 Include the DeaconGuard version (`deaconguard version`), how to reproduce the problem, and what an attacker could achieve. You'll receive an acknowledgement within a few working days. We agree a disclosure date with you, publish a fixed release, and credit you in the advisory unless you prefer otherwise.
 
