@@ -42,6 +42,7 @@ The server also runs in a container, with [Docker or Compose](./docker.md) or in
 | Server | The registries of the images you add or watch, and of the images your clusters run that no node agent read (1.20.0 and later); `hub.docker.com` for Docker Hub, `api.github.com` for GHCR and `gitlab.com` for registry.gitlab.com (or a self-hosted GitLab's own host), to list repositories and tags; the ECR API (`api.ecr.REGION.amazonaws.com`) for Amazon ECR | 443/tcp, or the registry's port | [Images in registries](../usage/images.md), [Running images](../usage/kubernetes.md#running-images) |
 | Server | `api.osv.dev` | 443/tcp | [Application libraries](../usage/libraries-and-sbom.md), when that check runs: only library names and versions are sent |
 | Server | Your mail server, Slack, Teams or webhook addresses | Their ports, such as 587/tcp or 443/tcp | [Notifications](../usage/notifications.md), when you set them up |
+| Server | `get.deaconguard.io` | 443/tcp | [The newest release's number](./upgrade.md#knowing-when-theres-a-new-release), once a day (1.34.0 and later). Nothing about the server is sent; off under **Settings → New versions** |
 | Machines being installed | GitHub, `get.deaconguard.io` | 443/tcp | Downloading the package (install time only) |
 
 Agents need **no inbound ports** and no internet access after installation.

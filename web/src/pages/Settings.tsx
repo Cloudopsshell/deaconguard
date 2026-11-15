@@ -1,3 +1,4 @@
+import { UpdateSettings } from "../components/Updates";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,6 +49,7 @@ export function Settings() {
       <LiveAllowlist />
       <FixDeadlines />
       {session.data?.login_required && <SingleSignOn />}
+      <UpdateSettings />
       <Card className="mb-6">
         <CardHeader
           title="Notifications"

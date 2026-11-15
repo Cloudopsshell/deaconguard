@@ -1548,6 +1548,24 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return payload as T;
 }
 
+/** Whether a newer DeaconGuard release is out, as the server last learned. Admins only. */
+export interface UpdateStatus {
+  /** The Settings switch; managed when the server's environment turned the check off. */
+  enabled: boolean;
+  managed?: boolean;
+  /** This server's version; release is false for a local build, which is never compared. */
+  current: string;
+  release: boolean;
+  /** The newest release last heard of, and whether it is newer than this server. */
+  latest?: string;
+  available: boolean;
+  /** The newest release's upgrade notes. */
+  notes_url?: string;
+  checked_at?: string;
+  /** Why the last check failed. */
+  error?: string;
+}
+
 export const api = {
   session: () => request<Session>("GET", "/api/session"),
   login: (username: string, password: string) => request<Session>("POST", "/api/login", { username, password }),
@@ -1639,6 +1657,8 @@ export const api = {
   live: (hostId: string) => request<LiveDetail>("GET", `/api/hosts/${hostId}/live`),
   setLive: (hostId: string, enabled: boolean) => request<LiveDetail>("PUT", `/api/hosts/${hostId}/live`, { enabled }),
   testLive: (hostId: string) => request<void>("POST", `/api/hosts/${hostId}/live/test`),
+  update: () => request<UpdateStatus>("GET", "/api/update"),
+  setUpdateCheck: (on: boolean) => request<UpdateStatus>("PUT", "/api/settings/updates", { enabled: on }),
   liveSettings: () => request<LiveOverview>("GET", "/api/settings/live"),
   setLiveNewHosts: (on: boolean) => request<LiveOverview>("PUT", "/api/settings/live", { new_hosts: on }),
   setLiveAll: (enabled: boolean) => request<LiveOverview>("POST", "/api/settings/live/hosts", { enabled }),

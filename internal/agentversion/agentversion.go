@@ -156,3 +156,18 @@ func comparePrerelease(left, right string) int {
 	}
 	return 0
 }
+
+// Compare orders two release versions, such as "1.33.1" and "1.34.0-rc.1":
+// -1, 0 or 1. It reports false when either isn't a release version, such as
+// "dev".
+func Compare(left, right string) (int, bool) {
+	leftRelease, ok := parseRelease(left)
+	if !ok {
+		return 0, false
+	}
+	rightRelease, ok := parseRelease(right)
+	if !ok {
+		return 0, false
+	}
+	return compareReleases(leftRelease, rightRelease), true
+}

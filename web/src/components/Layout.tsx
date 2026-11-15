@@ -12,6 +12,7 @@ import { MFASetup } from "./account/MFASetup";
 import { PasskeyInstead } from "./account/Passkeys";
 import { AppearancePicker, ModeSwitch } from "./AppearancePicker";
 import { Card, Dialog, Loading, cx } from "./ui";
+import { UpdateHint } from "./Updates";
 
 const navigation = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -190,11 +191,11 @@ function VersionLabel() {
   if (!data) return null;
   const release = data.version !== "dev";
   return (
-    <p
-      className="hidden px-5 pt-3 font-mono text-[11px] text-slate-400 lg:block"
-      title={[data.commit && `commit ${data.commit}`, data.date && `built ${data.date}`].filter(Boolean).join(" · ")}
-    >
-      {release ? `v${data.version}` : `dev build${data.commit ? ` · ${data.commit.slice(0, 7)}` : ""}`}
+    <p className="hidden flex-wrap items-center gap-x-2.5 gap-y-1 px-5 pt-3 font-mono text-[11px] text-slate-400 lg:flex">
+      <span title={[data.commit && `commit ${data.commit}`, data.date && `built ${data.date}`].filter(Boolean).join(" · ")}>
+        {release ? `v${data.version}` : `dev build${data.commit ? ` · ${data.commit.slice(0, 7)}` : ""}`}
+      </span>
+      <UpdateHint />
     </p>
   );
 }

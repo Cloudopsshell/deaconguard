@@ -8,6 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.34.0] - 2026-11-16
+
+### Added
+
+- **The dashboard says when a newer DeaconGuard is out.** Beside the version at the bottom of the sidebar, admins see the newest release, such as **1.34.0 available**, linked to its upgrade notes; **Settings → New versions** shows the same, when the server last checked, and links to how to upgrade. Once a day the server reads the newest release's number from `get.deaconguard.io/stable.txt`, the file the install script reads. The request says nothing about the server: no version, no identifier, no numbers. Nothing is installed by itself. It's on by default; turn it off under **Settings → New versions**, or for good with `DEACONGUARD_UPDATE_CHECK=off` in the server's environment. `DEACONGUARD_UPDATE_URL` names a mirror of that file for networks without internet access. A server that can't reach the address just shows nothing. New in the API: `GET /api/update` and `PUT /api/settings/updates`, for admins.
+
 ## [1.33.1] - 2026-11-15
 
 ### Changed

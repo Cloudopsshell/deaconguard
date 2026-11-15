@@ -66,6 +66,10 @@ server:
   # containers scans; the server reads the others from their registries.
   # false reads none: images no node agent scanned are left unchecked.
   clusterImageRegistry: true
+  # Once a day the server reads the newest release's number from
+  # get.deaconguard.io, to tell admins when it is behind. It sends nothing
+  # about itself. false stops it, whatever Settings says.
+  updateCheck: true
   # A kubernetes.io/tls secret to serve instead of the self-signed
   # certificate. Agents trust a certificate that the system trusts for the
   # server's name, or its key's fingerprint from their token.
