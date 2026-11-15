@@ -8,9 +8,12 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.33.1] - 2026-11-15
+
 ### Changed
 
 - **New contact addresses.** Security reports go to security@deaconguard.io, and the packages and Helm chart name hello@deaconguard.io as maintainer. The README has a Contact section.
+- **Updated libraries:** the SQLite driver (1.62.0), compression and system libraries, and the dashboard's build tools. No change in behaviour.
 
 ## [1.33.0] - 2026-11-08
 

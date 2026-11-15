@@ -22,7 +22,7 @@ module.exports = {
       label: 'Upgrade notes',
       link: { type: 'doc', id: 'upgrade-notes/index' },
       items: [
-        { type: 'category', label: '1.33', collapsed: true, items: ['upgrade-notes/v1-33/v1-33-0'] },
+        { type: 'category', label: '1.33', collapsed: true, items: ['upgrade-notes/v1-33/v1-33-1', 'upgrade-notes/v1-33/v1-33-0'] },
         { type: 'category', label: '1.32', collapsed: true, items: ['upgrade-notes/v1-32/v1-32-0'] },
         { type: 'category', label: '1.31', collapsed: true, items: ['upgrade-notes/v1-31/v1-31-0'] },
         { type: 'category', label: '1.30', collapsed: true, items: ['upgrade-notes/v1-30/v1-30-0'] },
