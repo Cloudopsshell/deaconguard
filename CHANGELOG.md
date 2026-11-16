@@ -8,6 +8,10 @@ upgrade notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The install script works with `sudo` on Red Hat's family and Fedora.** On RHEL, AlmaLinux, Rocky Linux, Oracle Linux, Amazon Linux and Fedora, `sudo` leaves `/usr/local/bin` out of the `PATH`, so the script couldn't find the cosign it had just installed there and stopped with "the signature of checksums.txt is NOT valid", although the signature was never checked. It now runs cosign by its full path, and says so when cosign can't be run instead of calling the signature invalid. The fix is in the script at get.deaconguard.io, so it needs no new release.
+
 ## [1.33.1] - 2026-11-15
 
 ### Changed
