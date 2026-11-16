@@ -134,7 +134,9 @@ runs:
         [ -n "$FAIL_ON" ] && args+=(--fail-on "$FAIL_ON")
         args+=(--format "$FORMAT" --output "$OUTPUT")
         # The run's Summary page; releases before 1.35.0 have no --summary.
-        if [ "$SUMMARY" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ] && deaconguard "${args[0]}" scan 2>&1 | grep -q -- '--summary'; then
+        # The usage line names the options; asking for it fails, which is expected.
+        usage="$(deaconguard "${args[0]}" scan 2>&1 || true)"
+        if [ "$SUMMARY" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [[ "$usage" == *--summary* ]]; then
           args+=(--summary "$GITHUB_STEP_SUMMARY")
         fi
         status=0
