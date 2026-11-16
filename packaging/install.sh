@@ -164,10 +164,16 @@ start_signature_updates() {
 }
 
 # install_cosign installs cosign to /usr/local/bin unless it is already on the
-# PATH, checking the download against the pinned checksum.
+# PATH, checking the download against the pinned checksum. It sets cosign to
+# the program's full path: under sudo on Red Hat's family and Fedora, the PATH
+# leaves out /usr/local/bin, so the name alone isn't found there.
 install_cosign() {
-	if command -v cosign >/dev/null 2>&1; then
-		ok "cosign $(cosign version 2>/dev/null | awk '/GitVersion/{print $2}') found"
+	cosign="$(command -v cosign 2>/dev/null || true)"
+	if [ -z "$cosign" ] && [ -x /usr/local/bin/cosign ]; then
+		cosign=/usr/local/bin/cosign
+	fi
+	if [ -n "$cosign" ]; then
+		ok "cosign $("$cosign" version 2>/dev/null | awk '/GitVersion/{print $2}') found"
 		return
 	fi
 	case "$system-$arch" in
@@ -180,7 +186,9 @@ install_cosign() {
 	curl -fsSL --proto '=https' --tlsv1.2 -o "$work/cosign" "$url" || fail "could not download cosign from $url"
 	[ "$(sha256 "$work/cosign")" = "$expected_cosign" ] ||
 		fail "the cosign download does NOT match its pinned checksum. Nothing was installed"
+	mkdir -p /usr/local/bin
 	install -m 0755 "$work/cosign" /usr/local/bin/cosign
+	cosign=/usr/local/bin/cosign
 	ok "Installed cosign $COSIGN_VERSION to /usr/local/bin (verifies release signatures)"
 }
 
@@ -244,7 +252,9 @@ download_verified() {
 	chmod 0644 "$work/$1"
 	ok "Downloaded $1"
 
-	cosign verify-blob "$work/checksums.txt" --bundle "$work/checksums.txt.sigstore.json" \
+	"$cosign" version >/dev/null 2>&1 ||
+		fail "cosign could not be run at $cosign, so the release's signature was not checked. DeaconGuard was not installed"
+	"$cosign" verify-blob "$work/checksums.txt" --bundle "$work/checksums.txt.sigstore.json" \
 		--certificate-identity "$SIGNER@refs/tags/v$version" \
 		--certificate-oidc-issuer "$SIGNER_ISSUER" >"$work/cosign.log" 2>&1 ||
 		{ cat "$work/cosign.log" >&2; fail "the signature of checksums.txt for v$version is NOT valid. DeaconGuard was not installed. Report this: $REPOSITORY/security"; }
