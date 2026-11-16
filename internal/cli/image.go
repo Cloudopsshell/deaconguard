@@ -24,7 +24,7 @@ import (
 var errFindings = errors.New("findings at or above the --fail-on severity")
 
 const imageUsage = "usage: deaconguard image scan IMAGE|PATH [--platform linux/amd64] [--fail-on critical|high|medium|low] [--ignore-unfixed] " +
-	"[--format table|json|sarif|junit|cyclonedx|spdx] [--output FILE]"
+	"[--format table|json|sarif|junit|cyclonedx|spdx] [--output FILE] [--summary FILE]"
 
 // Output formats of `image scan`.
 var imageFormats = []string{"table", "json", "sarif", "junit", sbom.CycloneDX, sbom.SPDX}
@@ -41,7 +41,7 @@ func runImage(arguments []string, input io.Reader, output, diagnostics io.Writer
 	if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
 		platform = "linux/amd64"
 	}
-	reference, failOn, format, outputFile, ignoreUnfixed := "", "", "table", "", false
+	reference, failOn, format, outputFile, summaryFile, ignoreUnfixed := "", "", "table", "", "", false
 	rest := arguments[1:]
 	for index := 0; index < len(rest); index++ {
 		argument := rest[index]
@@ -75,6 +75,12 @@ func runImage(arguments []string, input io.Reader, output, diagnostics io.Writer
 				return err
 			}
 			outputFile = v
+		case strings.HasPrefix(argument, "--summary"):
+			v, err := value()
+			if err != nil {
+				return err
+			}
+			summaryFile = v
 		case strings.HasPrefix(argument, "--platform"):
 			v, err := value()
 			if err != nil {
@@ -171,7 +177,39 @@ func runImage(arguments []string, input io.Reader, output, diagnostics io.Writer
 		showImage(result, resolved, platform, output)
 		fmt.Fprintf(output, "Wrote the %s report to %s\n", format, outputFile)
 	}
-	if failOn != "" && atOrAbove(counted, failOn) {
+	failed := failOn != "" && atOrAbove(counted, failOn)
+	if summaryFile != "" {
+		facts := []string{}
+		if result.OS != "" {
+			facts = append(facts, fmt.Sprintf("%s, %d packages, %d libraries", result.OS, result.Packages, result.Libraries))
+		} else {
+			facts = append(facts, fmt.Sprintf("%d libraries", result.Libraries))
+		}
+		if result.Lifecycle != nil {
+			facts = append(facts, "Release support: "+result.Lifecycle.Note)
+		}
+		if resolved.Digest != "" {
+			facts = append(facts, fmt.Sprintf("Digest %s (%s)", resolved.Digest, platform))
+		}
+		facts = append(facts, fmt.Sprintf("%d fixed by a newer image, %d known to be exploited", result.Fixable, result.Exploited))
+		if ignoreUnfixed {
+			facts = append(facts, "Counting only what an update fixes or attackers are known to use (--ignore-unfixed)")
+		}
+		items := ciout.ImageItems(result.Image, listed)
+		for index := range items {
+			// The heading names the image; the rows needn't.
+			items[index].Title = strings.TrimSuffix(items[index].Title, " in "+result.Image)
+		}
+		report := ""
+		if outputFile != "" && format != "table" {
+			report = outputFile
+		}
+		if err := ciout.AppendSummary(summaryFile, ciout.Summary{Heading: "image " + result.Image, Facts: facts, FailOn: failOn, Failed: failed,
+			Items: items, Notes: result.Notes, Report: report}); err != nil {
+			return fmt.Errorf("--summary: %w", err)
+		}
+	}
+	if failed {
 		return errFindings
 	}
 	return nil
