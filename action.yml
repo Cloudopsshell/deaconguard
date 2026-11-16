@@ -140,6 +140,9 @@ runs:
         status=0
         deaconguard "${args[@]}" || status=$?
         echo "status=$status" >> "$GITHUB_OUTPUT"
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -s "$GITHUB_STEP_SUMMARY" ]; then
+          echo "What was found is on this run's Summary page ($(wc -c < "$GITHUB_STEP_SUMMARY") bytes)."
+        fi
         if [ "$status" -ne 0 ] && [ "$status" -ne 4 ]; then
           exit "$status"
         fi
