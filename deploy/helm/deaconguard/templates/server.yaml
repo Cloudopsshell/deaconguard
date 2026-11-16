@@ -144,6 +144,10 @@ spec:
             - name: DEACONGUARD_CLUSTER_IMAGE_REGISTRY
               value: "off"
             {{- end }}
+            {{- if eq (toString .Values.server.updateCheck) "false" }}
+            - name: DEACONGUARD_UPDATE_CHECK
+              value: "off"
+            {{- end }}
             - name: DEACONGUARD_CLUSTER_AGENT_URL
               value: "https://{{ include "deaconguard.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.server.service.agentPort }}"
           ports:

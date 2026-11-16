@@ -8,9 +8,15 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.34.0] - 2026-11-16
+
+### Added
+
+- **The dashboard says when a newer DeaconGuard is out.** Beside the version at the bottom of the sidebar, admins see the newest release, such as **1.34.0 available**, linked to its upgrade notes; **Settings → New versions** shows the same, when the server last checked, and links to how to upgrade. Once a day the server reads the newest release's number from `get.deaconguard.io/stable.txt`, the file the install script reads. The request says nothing about the server: no version, no identifier, no numbers. Nothing is installed by itself. It's on by default; turn it off under **Settings → New versions**, or for good with `DEACONGUARD_UPDATE_CHECK=off` in the server's environment. `DEACONGUARD_UPDATE_URL` names a mirror of that file for networks without internet access. A server that can't reach the address just shows nothing. New in the API: `GET /api/update` and `PUT /api/settings/updates`, for admins.
+
 ### Fixed
 
-- **The install script works with `sudo` on Red Hat's family and Fedora.** On RHEL, AlmaLinux, Rocky Linux, Oracle Linux, Amazon Linux and Fedora, `sudo` leaves `/usr/local/bin` out of the `PATH`, so the script couldn't find the cosign it had just installed there and stopped with "the signature of checksums.txt is NOT valid", although the signature was never checked. It now runs cosign by its full path, and says so when cosign can't be run instead of calling the signature invalid. The fix is in the script at get.deaconguard.io, so it needs no new release.
+- **The install script works with `sudo` on Red Hat's family and Fedora.** On RHEL, AlmaLinux, Rocky Linux, Oracle Linux, Amazon Linux and Fedora, `sudo` leaves `/usr/local/bin` out of the `PATH`, so the script couldn't find the cosign it had just installed there and stopped with "the signature of checksums.txt is NOT valid", although the signature was never checked. It now runs cosign by its full path, and says so when cosign can't be run instead of calling the signature invalid. The fix has been in the script at get.deaconguard.io since 2026-11-16, for every release.
 
 ## [1.33.1] - 2026-11-15
 

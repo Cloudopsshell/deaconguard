@@ -43,7 +43,9 @@ const (
 type Server struct {
 	runner *runner
 	// diagnostics logs slow requests and what keeps the CPU busy.
-	diagnostics     *diagnostics
+	diagnostics *diagnostics
+	// updates learns, once a day, whether a newer release is out.
+	updates         *updateChecker
 	stopDiagnostics context.CancelFunc
 	agents          *agentHub
 	// localAvailable reports why this machine cannot be scanned, if it cannot.
@@ -103,7 +105,7 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	if err := store.PruneAllScans(store.KeepScansPerHost); err != nil {
 		return nil, err
 	}
-	s := &Server{diagnostics: newDiagnostics(),
+	s := &Server{diagnostics: newDiagnostics(), updates: newUpdateChecker(),
 		runner: newRunner(scan), ui: ui, network: network, pin: pin, limiter: newFailureLimiter(), scheduler: &scheduler{},
 		notifier:       &notifier{wake: make(chan struct{}, 1)},
 		images:         newImageScanner(),
@@ -172,6 +174,8 @@ func newServer(ui fs.FS, scan scanFunc, network bool, pin string) (*Server, erro
 	mux.HandleFunc("GET /api/hosts/{id}/live", s.getLive)
 	mux.HandleFunc("PUT /api/hosts/{id}/live", s.needs(store.RoleAdmin, s.setLive))
 	mux.HandleFunc("POST /api/hosts/{id}/live/test", s.needs(store.RoleOperator, s.testLive))
+	mux.HandleFunc("GET /api/update", s.needs(store.RoleAdmin, s.getUpdate))
+	mux.HandleFunc("PUT /api/settings/updates", s.needs(store.RoleAdmin, s.setUpdateSettings))
 	mux.HandleFunc("GET /api/settings/live", s.liveSettings)
 	mux.HandleFunc("PUT /api/settings/live", s.needs(store.RoleAdmin, s.setLiveSettings))
 	mux.HandleFunc("POST /api/settings/live/hosts", s.needs(store.RoleAdmin, s.setLiveAll))
@@ -339,6 +343,7 @@ func (s *Server) StartScheduler() {
 	s.startNotifier()
 	s.startImageScanner()
 	s.startNetworkScanner()
+	s.startUpdateCheck()
 }
 
 // Close cancels questions waiting for an answer and blocks until background
@@ -351,6 +356,7 @@ func (s *Server) Close() {
 	s.stopNotifier()
 	s.stopImageScanner()
 	s.stopNetworkScanner()
+	s.stopUpdateCheck()
 	s.agents.stop()
 	s.runner.close()
 }

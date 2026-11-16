@@ -332,6 +332,8 @@ The agent runs the checks and sends back the package list. The server evaluates 
 
 ## Update
 
+From 1.34.0 the dashboard tells admins when a newer release is out, beside the version in the sidebar and under **Settings → New versions**. Once a day the server reads the newest release's number from `get.deaconguard.io`; the request says nothing about the server, nothing is installed by itself, and the switch in Settings or `DEACONGUARD_UPDATE_CHECK=off` turns it off. See [Knowing when there's a new release](https://docs.deaconguard.io/installation/upgrade#knowing-when-theres-a-new-release).
+
 Check your version with `deaconguard version`, and read the [upgrade notes](https://docs.deaconguard.io/upgrade-notes) of every release since yours: what each changed and anything to do first, for each way of installing ([CHANGELOG.md](CHANGELOG.md) has everything). [Back up](#back-up-and-restore) your data before updating. The steps below are the same for every release.
 
 | Installed with | Update |

@@ -89,6 +89,10 @@ func UserAgent() string {
 // 0.2.0-rc.1, and not local builds such as 0.1.1-3-gabc1234-dirty or dev.
 var releaseVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)(\.[0-9]+)?)?$`)
 
+// IsRelease reports whether version is a published release's, such as 1.34.0
+// or 1.34.0-rc.1, and not a local build's.
+func IsRelease(version string) bool { return releaseVersion.MatchString(version) }
+
 // InstallURL serves the install script: install.sh from the repository's
 // main branch, as plain text.
 const InstallURL = "https://get.deaconguard.io"

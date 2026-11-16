@@ -7,11 +7,24 @@ These steps are the same for every release. What a particular release changes, a
 
 ## Before you upgrade
 
-1. **Check what you run:** `deaconguard version` on the server, or the version at the bottom of the dashboard's sidebar.
+1. **Check what you run:** `deaconguard version` on the server, or the version at the bottom of the dashboard's sidebar, which also says when [a newer release is out](#knowing-when-theres-a-new-release).
 2. **Read the [upgrade notes](../upgrade-notes/index.md)** of every release between yours and the new one. Most need nothing; some ask you to open a port or upgrade agents.
 3. **[Back up](../usage/backup-and-restore.md#back-up) the server's data.** A release can upgrade the database on its first start, and an earlier release can't open it afterwards (see [Going back to an earlier release](#going-back-to-an-earlier-release)).
 
 **Upgrade the server first, then its agents.** An agent from an earlier release keeps working with a newer server while you upgrade, but a newer agent may send what an older server doesn't understand. You can go straight to the newest release; there's no need to install each one in between.
+
+## Knowing when there's a new release
+
+From 1.34.0 the dashboard tells admins: beside the version at the bottom of the sidebar it shows the newest release when the server is behind, such as **1.34.0 available**, linked to that release's upgrade notes. **Settings → New versions** shows the same, with when the server last checked.
+
+- **What it asks:** about a minute after it starts, and then once a day, the server reads the newest release's number from `https://get.deaconguard.io/stable.txt`, the file the install script reads. A failed request is tried again after an hour.
+- **What it sends:** nothing about your server. The request carries no version, no identifier and no numbers, and is the same from every server.
+- **What it does:** it only tells you. Nothing is downloaded or installed by itself.
+- **Who sees it:** admins. Operators and viewers can't upgrade the server, so they aren't shown it.
+- **Turning it off:** the switch under **Settings → New versions**, which also forgets what was learned; or `DEACONGUARD_UPDATE_CHECK=off` in the server's [environment](../reference/environment.md), which stops it whatever the switch says.
+- **Without internet access:** nothing to do; the dashboard just shows no hint. To keep the hint, serve a copy of `stable.txt` inside your network and set `DEACONGUARD_UPDATE_URL` to its address.
+
+Release candidates and local builds are never offered; a server on a release candidate is offered its final release.
 
 ## Which agents to upgrade
 
