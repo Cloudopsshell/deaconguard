@@ -104,6 +104,10 @@ for (const path of all) {
     }
     if (anchor && !anchorsOf(linked).has(anchor)) problems.push(`${where}: link "${target}": no heading #${anchor} on that page`);
   }
+  // The light and dark images of a ThemedImage: sources={{ light: '/img/…', dark: '/img/…' }}.
+  for (const [, src] of text.matchAll(/(?:light|dark):\s*'(\/img\/[^'\s]+)'/g)) {
+    if (!existsSync(join(root, 'static', src))) problems.push(`${where}: image ${src} is not in docs/static/img`);
+  }
   for (const [, src] of text.matchAll(/(?:src|srcSet)="(\/img\/[^"\s]+)"/g)) {
     if (!existsSync(join(root, 'static', src))) problems.push(`${where}: image ${src} is not in docs/static/img`);
   }

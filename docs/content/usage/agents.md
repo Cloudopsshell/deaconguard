@@ -3,12 +3,21 @@ title: Agents
 description: Enroll machines, automate enrollment and manage agents.
 ---
 
+import ThemedImage from '@theme/ThemedImage';
+
 The agent runs on each machine you want to scan. It connects **out** to the server, so the machine needs no open ports and, once installed, no internet access.
 
 ## Enroll a machine
 
 1. As an admin, open **Agents → Enroll a machine** in the dashboard, keep **One machine**, check the address agents will use to reach the server (it uses the [agent port](../security/securing-the-dashboard.md#give-agents-their-own-port) if the server has one), and click **Create token**. On the server's command line, `deaconguard token create --server-url https://SERVER:8443` does the same.
 2. Run the command the dialog shows on the machine to scan, a Linux machine or a Mac, as a user with sudo rights (as root, leave out `sudo -E`):
+
+<div className="screenshot">
+  <ThemedImage
+    alt="The Agents page: five enrolled machines, each online with its operating system and agent version, and the enrollment tokens below."
+    sources={{ light: '/img/screens/agents-light.png', dark: '/img/screens/agents-dark.png' }}
+  />
+</div>
 
    ```bash
    curl -fsSL https://get.deaconguard.io | DEACONGUARD_TOKEN=deaconguard1.… sudo -E sh -

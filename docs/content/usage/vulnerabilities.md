@@ -3,6 +3,8 @@ title: Vulnerabilities and what to fix first
 description: Known exploited (CISA KEV) and likely exploited (EPSS) vulnerabilities, CVSS scores, trends and host tags.
 ---
 
+import ThemedImage from '@theme/ThemedImage';
+
 A busy server can have hundreds of package vulnerabilities. Most will never be used against it. DeaconGuard marks each one with what is known about attackers using it, so you fix those first.
 
 ## Where the data comes from
@@ -36,6 +38,13 @@ Within each, those an update or a restart fixes come first where a list mixes bo
 - **Most exposed hosts** puts hosts with known exploited vulnerabilities first.
 - **Top vulnerabilities** and the **Vulnerabilities** page show each CVE's CVSS score and exploitation. A CVE's page shows its KEV entry and due date, its EPSS and its CVSS score.
 - On a scan's page, a red notice says how many vulnerabilities are known to be exploited and whether updating fixes them, and **Exploited** filters the findings.
+
+<div className="screenshot">
+  <ThemedImage
+    alt="A host's Vulnerabilities tab: 346 to fix now, where the advisory data comes from, the release's support, and a notice that one vulnerability is known to be exploited."
+    sources={{ light: '/img/screens/host-vulnerabilities-light.png', dark: '/img/screens/host-vulnerabilities-dark.png' }}
+  />
+</div>
 
 ## Trends
 
