@@ -30,8 +30,11 @@ inputs:
   output:
     description: The report's file.
     default: deaconguard.sarif
+  summary:
+    description: "true shows what was found on the workflow run's Summary page, on any plan and in private repositories."
+    default: "true"
   upload-sarif:
-    description: "Upload a SARIF report to GitHub code scanning. The job needs permissions: security-events: write."
+    description: "Also upload a SARIF report to GitHub code scanning: free for public repositories, GitHub Code Security for private ones. The job needs permissions security-events: write and, in a private repository, actions: read. A refused upload is a warning."
     default: "false"
   category:
     description: The code scanning category, to tell several scans of one repository apart.
@@ -56,6 +59,9 @@ outputs:
   status:
     description: "0: nothing at or above fail-on; 4: findings at or above it."
     value: ${{ steps.scan.outputs.status }}
+  summary:
+    description: "true when what was found was written to the run's Summary page."
+    value: ${{ steps.scan.outputs.summary }}
   report:
     description: The report's file.
     value: ${{ inputs.output }}
@@ -105,6 +111,7 @@ runs:
         SKIP: ${{ inputs.skip }}
         FORMAT: ${{ inputs.format }}
         OUTPUT: ${{ inputs.output }}
+        SUMMARY: ${{ inputs.summary }}
         DEACONGUARD_REGISTRY: ${{ inputs.registry }}
         DEACONGUARD_REGISTRY_USERNAME: ${{ inputs.registry-username }}
         DEACONGUARD_REGISTRY_PASSWORD: ${{ inputs.registry-password }}
@@ -129,19 +136,44 @@ runs:
         esac
         [ -n "$FAIL_ON" ] && args+=(--fail-on "$FAIL_ON")
         args+=(--format "$FORMAT" --output "$OUTPUT")
+        # The run's Summary page; releases before 1.35.0 have no --summary.
+        # The usage line names the options; asking for it fails, which is expected.
+        usage="$(deaconguard "${args[0]}" scan 2>&1 || true)"
+        if [ "$SUMMARY" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [[ "$usage" == *--summary* ]]; then
+          args+=(--summary "$GITHUB_STEP_SUMMARY")
+        fi
         status=0
         deaconguard "${args[@]}" || status=$?
         echo "status=$status" >> "$GITHUB_OUTPUT"
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -s "$GITHUB_STEP_SUMMARY" ]; then
+          echo "What was found is on this run's Summary page."
+          echo "summary=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "summary=false" >> "$GITHUB_OUTPUT"
+        fi
         if [ "$status" -ne 0 ] && [ "$status" -ne 4 ]; then
           exit "$status"
         fi
 
+    # Code scanning is free for public repositories; a private one needs
+    # GitHub Code Security. A refused upload is a warning: whether the job
+    # passes depends on what the check found, not on where its report went.
     - name: Upload to code scanning
+      id: upload
       if: always() && inputs.upload-sarif == 'true' && inputs.format == 'sarif' && steps.scan.outputs.status != ''
+      continue-on-error: true
       uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
       with:
         sarif_file: ${{ inputs.output }}
         category: ${{ inputs.category != '' && inputs.category || format('deaconguard-{0}', inputs.scan) }}
+
+    - name: The upload was refused
+      if: always() && steps.upload.outcome == 'failure'
+      shell: bash
+      run: |
+        message="DeaconGuard's report was not uploaded to code scanning; the check itself ran, and its result stands. Code scanning needs a public repository, or GitHub Code Security on a private one, and the job needs the permissions security-events: write and, in a private repository, actions: read. Set upload-sarif to false to skip the upload."
+        echo "::warning title=Not uploaded to code scanning::$message"
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '> **Not uploaded to code scanning.** %s\n\n' "${message#*; }" >> "$GITHUB_STEP_SUMMARY"; fi
 
     - name: Result
       shell: bash

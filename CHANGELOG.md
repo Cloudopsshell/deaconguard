@@ -8,6 +8,20 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.35.0] - 2026-11-17
+
+### Added
+
+- **The GitHub action shows what it found on the run's Summary page**, in public and private repositories on every GitHub plan: whether each check passed, the counts by severity, and the 20 worst findings with what to do about each, the exploited ones first. It's on by default; `summary: "false"` turns it off, and the new `summary` output says whether it was written. `deaconguard image scan` and `deaconguard config scan` get `--summary FILE`, which adds the same Markdown summary to any file, for other pipelines.
+
+### Changed
+
+- **A refused upload to GitHub code scanning no longer fails the job.** With `upload-sarif: "true"` in a private repository without GitHub Code Security, or without the `actions: read` permission, GitHub refuses the report, and the action failed the job even when the image was clean. It's now a warning that says why, on the run and on its Summary page; whether the job passes depends only on what the check found.
+
+### Fixed
+
+- **The CI/CD examples work as written.** The GitHub Actions example no longer turns on the code scanning upload, which most private repositories can't use; the docs say who can, and which permissions it needs. The examples for GitHub Actions, GitLab CI, Jenkins, Bitbucket and Azure DevOps name the current release instead of 1.4.0.
+
 ## [1.34.0] - 2026-11-16
 
 ### Added

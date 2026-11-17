@@ -150,6 +150,7 @@ jobs:
           output: config.sarif
 
       - name: Check an image in a registry
+        id: image
         uses: ./
         with:
           target: alpine:3.22
@@ -163,7 +164,11 @@ jobs:
       - name: The reports were written
         env:
           CONFIG_STATUS: ${{ steps.config.outputs.status }}
+          CONFIG_SUMMARY: ${{ steps.config.outputs.summary }}
+          IMAGE_SUMMARY: ${{ steps.image.outputs.summary }}
         run: |
+          # Both checks put what they found on the run's Summary page.
+          [ "$CONFIG_SUMMARY" = "true" ] && [ "$IMAGE_SUMMARY" = "true" ]
           grep -q '"version": "2.1.0"' config.sarif
           grep -q 'DG-K8S-' config.sarif
           grep -q '<testsuites' image.xml

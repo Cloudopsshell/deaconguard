@@ -13,7 +13,7 @@ import (
 	"deaconguard/internal/iac"
 )
 
-const configUsage = "usage: deaconguard config scan PATH... [--fail-on critical|high|medium|low] [--skip RULE,...] [--format table|json|sarif|junit] [--output FILE]\n" +
+const configUsage = "usage: deaconguard config scan PATH... [--fail-on critical|high|medium|low] [--skip RULE,...] [--format table|json|sarif|junit] [--output FILE] [--summary FILE]\n" +
 	"       deaconguard config rules"
 
 var configFormats = []string{"table", "json", "sarif", "junit"}
@@ -31,7 +31,7 @@ func runConfig(arguments []string, input io.Reader, output, diagnostics io.Write
 		return errors.New(configUsage)
 	}
 	var paths []string
-	failOn, format, outputFile := "", "table", ""
+	failOn, format, outputFile, summaryFile := "", "table", "", ""
 	skip := map[string]bool{}
 	rest := arguments[1:]
 	for index := 0; index < len(rest); index++ {
@@ -73,6 +73,12 @@ func runConfig(arguments []string, input io.Reader, output, diagnostics io.Write
 			outputFile = v
 		case argument == "--json":
 			format = "json"
+		case strings.HasPrefix(argument, "--summary"):
+			v, err := value()
+			if err != nil {
+				return err
+			}
+			summaryFile = v
 		case strings.HasPrefix(argument, "--skip"):
 			v, err := value()
 			if err != nil {
@@ -100,7 +106,7 @@ func runConfig(arguments []string, input io.Reader, output, diagnostics io.Write
 	return writeFindings(findingsReport{
 		findings: result.Findings, notes: result.Notes, document: result, suite: strings.Join(paths, " "),
 		summary:  fmt.Sprintf("Checked %d %s", len(result.Files), pluralWord(len(result.Files), "file", "files")),
-		withLine: true,
+		withLine: true, summaryFile: summaryFile, heading: "Dockerfiles and manifests in " + strings.Join(paths, " "),
 	}, format, outputFile, failOn, output, diagnostics)
 }
 
@@ -126,6 +132,8 @@ type findingsReport struct {
 	summary  string
 	// withLine shows file:line; cluster objects have no lines.
 	withLine bool
+	// summaryFile, when set, gets a Markdown summary headed by heading.
+	summaryFile, heading string
 }
 
 // writeFindings writes findings as a table or a report, and returns
@@ -177,12 +185,35 @@ func writeFindings(r findingsReport, format, outputFile, failOn string, output, 
 	for _, note := range r.notes {
 		fmt.Fprintf(diagnostics, "Note: %s\n", note)
 	}
+	failed := false
 	if failOn != "" {
 		for _, f := range r.findings {
 			if severityAtOrAbove(f.Severity, failOn) {
-				return errFindings
+				failed = true
+				break
 			}
 		}
+	}
+	if r.summaryFile != "" {
+		listed := make([]ciout.Item, len(items))
+		for index, item := range items {
+			// The row says where: the file and line the SARIF report has apart.
+			if r.withLine && item.URI != "" {
+				item.Title = fmt.Sprintf("%s:%d %s", item.URI, item.Line, item.Title)
+			}
+			listed[index] = item
+		}
+		report := ""
+		if outputFile != "" && format != "table" {
+			report = outputFile
+		}
+		if err := ciout.AppendSummary(r.summaryFile, ciout.Summary{Heading: r.heading, Facts: []string{r.summary}, FailOn: failOn, Failed: failed,
+			Items: listed, Notes: r.notes, Report: report}); err != nil {
+			return fmt.Errorf("--summary: %w", err)
+		}
+	}
+	if failed {
+		return errFindings
 	}
 	return nil
 }
