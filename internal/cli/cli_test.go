@@ -102,6 +102,13 @@ func TestImageScanOfAFolder(t *testing.T) {
 	if data, err := os.ReadFile(report); err != nil || !strings.Contains(string(data), `"vulnerabilities": []`) {
 		t.Fatalf("report file: %s %v", data, err)
 	}
+	summary := filepath.Join(t.TempDir(), "summary.md")
+	if out, code := run("dir:"+dir, "--fail-on", "high", "--summary", summary); code != 0 {
+		t.Fatalf("--summary: %d %s", code, out)
+	}
+	if data, err := os.ReadFile(summary); err != nil || !strings.Contains(string(data), "### DeaconGuard: image ") || !strings.Contains(string(data), "**Passed:** nothing at or above high.") {
+		t.Fatalf("summary file: %s %v", data, err)
+	}
 	if out, code := run("dir:"+dir, "--format", "cyclonedx"); code == 0 || !strings.Contains(out, "no package list") {
 		t.Fatalf("an SBOM of nothing: %d %s", code, out)
 	}
@@ -122,6 +129,24 @@ func TestConfigScan(t *testing.T) {
 		t.Fatalf("a clean Dockerfile: %d %s", code, out)
 	}
 	pod := "apiVersion: v1\nkind: Pod\nmetadata: {name: p}\nspec:\n  containers:\n    - name: c\n      image: x:1\n      securityContext: {privileged: true}\n"
+	// The summary says where each finding is, and whether the check failed;
+	// a second check in the same job adds to the same file.
+	summary := filepath.Join(t.TempDir(), "summary.md")
+	if out, code := run(pod, "scan", "-", "--fail-on", "critical", "--summary", summary); code != 4 {
+		t.Fatalf("--summary: %d %s", code, out)
+	}
+	if out, code := run("", "scan", dir, "--summary="+summary); code != 0 {
+		t.Fatalf("--summary=: %d %s", code, out)
+	}
+	written, err := os.ReadFile(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"**Failed:** findings at or above critical.", "| critical | -:8 Pod p: container c is privileged (DG-K8S-001) |", "**Nothing found.**"} {
+		if !strings.Contains(string(written), want) {
+			t.Errorf("the summary lacks %q:\n%s", want, written)
+		}
+	}
 	if out, code := run(pod, "scan", "-", "--fail-on", "critical"); code != 4 || !strings.Contains(out, "-:8 Pod p: container c is privileged [DG-K8S-001]") {
 		t.Fatalf("a privileged pod: %d %s", code, out)
 	}

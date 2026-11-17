@@ -34,7 +34,7 @@ inputs:
     description: "true shows what was found on the workflow run's Summary page, on any plan and in private repositories."
     default: "true"
   upload-sarif:
-    description: "Upload a SARIF report to GitHub code scanning. The job needs permissions: security-events: write."
+    description: "Also upload a SARIF report to GitHub code scanning: free for public repositories, GitHub Code Security for private ones. The job needs permissions security-events: write and, in a private repository, actions: read. A refused upload is a warning."
     default: "false"
   category:
     description: The code scanning category, to tell several scans of one repository apart.
@@ -59,6 +59,9 @@ outputs:
   status:
     description: "0: nothing at or above fail-on; 4: findings at or above it."
     value: ${{ steps.scan.outputs.status }}
+  summary:
+    description: "true when what was found was written to the run's Summary page."
+    value: ${{ steps.scan.outputs.summary }}
   report:
     description: The report's file.
     value: ${{ inputs.output }}
@@ -143,7 +146,10 @@ runs:
         deaconguard "${args[@]}" || status=$?
         echo "status=$status" >> "$GITHUB_OUTPUT"
         if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -s "$GITHUB_STEP_SUMMARY" ]; then
-          echo "What was found is on this run's Summary page ($(wc -c < "$GITHUB_STEP_SUMMARY") bytes)."
+          echo "What was found is on this run's Summary page."
+          echo "summary=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "summary=false" >> "$GITHUB_OUTPUT"
         fi
         if [ "$status" -ne 0 ] && [ "$status" -ne 4 ]; then
           exit "$status"
