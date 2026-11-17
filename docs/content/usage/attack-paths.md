@@ -3,6 +3,8 @@ title: Attack paths
 description: Find the ways an account on a Linux machine could become root, the private keys and credentials other accounts can read, and SSH keys trusted on many machines.
 ---
 
+import ThemedImage from '@theme/ThemedImage';
+
 The **Attack paths** check (`paths`) answers two questions about a Linux machine: if someone gets into any account on it, how could they become root, and which secrets could they read? It also finds SSH keys that many of your machines trust, where one stolen key opens all of them.
 
 The check only reads. It never runs an exploit, tries a password or logs in anywhere. It reads permissions and file names; the contents of a secret are never read and never leave the machine.
@@ -20,6 +22,13 @@ deaconguard scan HOST_ID --checks packages,paths
 ## What is reported
 
 Each finding is on the scan's **Attack paths** tab. The **Paths** card lists each one as a chain, such as `deploy > docker group > root` or `every account > reads /home/deploy/.ssh/id_rsa > logs in where deploy's key is trusted`, and the findings table below it says what to do.
+
+<div className="screenshot">
+  <ThemedImage
+    alt="A host's attack paths: the deploy account can become root through a sudo rule for vim without a password, with the rule as evidence and how to fix it."
+    sources={{ light: '/img/screens/host-attack-paths-light.png', dark: '/img/screens/host-attack-paths-dark.png' }}
+  />
+</div>
 
 ### Ways to root
 

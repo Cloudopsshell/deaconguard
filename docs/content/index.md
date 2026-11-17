@@ -21,6 +21,13 @@ import Link from '@docusaurus/Link';
   <Link className="dg-card" to="/reference/cli"><span className="dg-card-icon">04</span><div><strong>CLI and API</strong><span>Scans, tokens and exports from scripts.</span></div></Link>
 </div>
 
+<div className="screenshot">
+  <ThemedImage
+    alt="The dashboard: five hosts, what to fix now by severity, how many vulnerabilities are known to be exploited, and the most exposed hosts."
+    sources={{ light: '/img/screens/dashboard-light.png', dark: '/img/screens/dashboard-dark.png' }}
+  />
+</div>
+
 ## How it works
 
 One binary does two jobs, and they are kept apart on purpose:

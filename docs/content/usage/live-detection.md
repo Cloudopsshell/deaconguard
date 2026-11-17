@@ -3,6 +3,8 @@ title: Live detection
 description: Find attacks on Linux machines, containers and Kubernetes nodes as they happen, with DeaconGuard's own watchers in the kernel. What it watches, what it doesn't, what it needs and what it costs.
 ---
 
+import ThemedImage from '@theme/ThemedImage';
+
 Scans tell you what a machine looks like when they run. **Live detection** watches it all the time: the agent loads small watchers into the Linux kernel that see every program that starts, every write to a few sensitive files, the network connections that matter, a process becoming root, kernel modules loaded and one process taking control of another, as it happens, and its rules raise an alert within seconds when something looks like an attack.
 
 It's **off until you turn it on**, for each host or for all of them; scans, schedules and notifications work the same whether it's on or off. It needs the DeaconGuard agent 1.27.0 or later. A host with it off loads nothing into its kernel. The watchers, the code that loads them and the rules are all DeaconGuard's own; nothing else sits between the agent and the kernel.
@@ -127,15 +129,36 @@ An attacker who is already root on a machine can stop the agent, as they can any
 
 The same alert, by the same program for the same file in the same container, is sent once every 10 minutes; repeats in between are counted, and the next one says how many. At most 30 alerts a minute leave a machine. Alerts are kept 30 days, at most 5,000 per host.
 
+<div className="screenshot">
+  <ThemedImage
+    alt="A server's Runtime tab: live detection is active, with events checked, alerts in the last day and the agent's cost, and alerts for SSH keys and sudo rules changed and a program started from a temporary folder."
+    sources={{ light: '/img/screens/live-detection-light.png', dark: '/img/screens/live-detection-dark.png' }}
+  />
+</div>
+
 ### Which container
 
 From 1.33.0, with agents 1.33.0 and later, an alert from a process in a container names the container: its name and image, and in Kubernetes its namespace and pod, such as **In pod shop/api-7d9f · api**, with `ghcr.io/acme/api:2.1` under it. The Runtime tab's **Show** menu lists every container its alerts came from, and **Outside containers** for the machine's own processes.
+
+<div className="screenshot">
+  <ThemedImage
+    alt="A cluster's alerts: a program started from /tmp in pod shop/api connected to an address on the internet; each alert names its node, pod, container and image."
+    sources={{ light: '/img/screens/kubernetes-live-light.png', dark: '/img/screens/kubernetes-live-dark.png' }}
+  />
+</div>
 
 The kernel's watchers record the cgroup of every event, which names the container even after a short-lived program has exited and whatever process namespace the agent runs in. The agent then asks the container runtime about that container once, with `docker inspect`, `podman inspect` or `crictl inspect` (run on the node through its mounted root in Kubernetes), and remembers the answer for an hour. Docker, Podman, containerd and CRI-O are supported. When no runtime knows the container, the alert shows its short ID.
 
 ### Allowlist
 
 Some alerts are normal for a machine: a backup tool loading its kernel module, a monitoring agent using `ptrace`, build jobs running programs from `/tmp`. From 1.33.0, an admin can allow them, so they're skipped and only counted, and the alerts that matter stay visible:
+
+<div className="screenshot">
+  <ThemedImage
+    alt="The Don't alert on this again dialog: the alert's rule, where it applies, and the program, file, image, container and namespace to match."
+    sources={{ light: '/img/screens/live-allowlist-light.png', dark: '/img/screens/live-allowlist-dark.png' }}
+  />
+</div>
 
 - **Don't alert on this again**, on an alert in the Runtime tab, opens a rule filled in from it: the alert's rule, its program, its file or process, and its container's image (without the tag, so every tag), container name and namespace. Clear a field to match anything there; every field left filled in must match.
 - **Applies to:** the host, its cluster, or all hosts.

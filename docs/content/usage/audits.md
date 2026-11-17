@@ -3,6 +3,8 @@ title: Server audits
 description: Audit a server from top to bottom, graded A to F, for handing a newly built server over or checking an existing one.
 ---
 
+import ThemedImage from '@theme/ThemedImage';
+
 A **server audit** checks one machine from top to bottom in a single run and grades it from A to F. Use it when you build a server and hand it over to a client or a team, or to check where an existing server stands.
 
 ## What an audit checks
@@ -33,6 +35,13 @@ Audits need the agent 0.12.0 or later on the machine. Upgrade an older one with 
 ## The grade
 
 The **score**, out of 100, is the share of the baseline's applicable controls that pass, weighted by severity: a critical control counts 10, high 6, medium 3 and low 1. Controls that don't apply to the machine, or whose risk was accepted, are left out.
+
+<div className="screenshot">
+  <ThemedImage
+    alt="An audit of web-01: grade D, score 67 of 100 with 36 of 66 controls passed, what holds the grade back, and the results of the other checks."
+    sources={{ light: '/img/screens/audit-light.png', dark: '/img/screens/audit-dark.png' }}
+  />
+</div>
 
 The **grade** comes from the score: A from 90, B from 80, C from 70, D from 60, and F below that. Then anything that should stop a handover lowers it, whatever the score:
 

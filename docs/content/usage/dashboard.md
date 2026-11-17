@@ -3,7 +3,16 @@ title: Dashboard
 description: What the DeaconGuard dashboard shows.
 ---
 
+import ThemedImage from '@theme/ThemedImage';
+
 The server serves the dashboard over HTTPS with sign-in, optionally [with two-step sign-in](./accounts.md#two-step-sign-in); [local mode](./local-mode.md) serves the same dashboard on `127.0.0.1` without sign-in. The CLI and the dashboard share the same data.
+
+<div className="screenshot">
+  <ThemedImage
+    alt="The Hosts page: each machine with its operating system, last scan, live detection state, findings by check, and its tags to filter by."
+    sources={{ light: '/img/screens/hosts-light.png', dark: '/img/screens/hosts-dark.png' }}
+  />
+</div>
 
 ## Pages
 

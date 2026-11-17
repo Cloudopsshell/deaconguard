@@ -3,6 +3,8 @@ title: Kubernetes clusters
 description: Check a running Kubernetes cluster through its API, read-only - workloads, RBAC, namespaces, network policies, the version and its CVEs, the API server's settings and running images.
 ---
 
+import ThemedImage from '@theme/ThemedImage';
+
 `deaconguard kube scan` checks a running cluster through the Kubernetes API, read-only: it lists objects and changes nothing. It needs DeaconGuard 1.5.0 or later.
 
 ```bash
@@ -25,6 +27,20 @@ Kubernetes' own objects (`kube-system`, `kube-public`, `kube-node-lease`, and th
 ## In the dashboard
 
 To check a cluster from the server, on a schedule and with notifications, install the **cluster agent** in it: `cluster.enabled=true` in the [Helm chart](../installation/kubernetes.md#4-the-cluster-itself). It enrolls with the same token as the chart's node agents, `enrollment.existingSecret` (create it with **Enroll a machine** > **Kubernetes**), and appears on **Hosts** as a Kubernetes cluster, with its own page.
+
+<div className="screenshot">
+  <ThemedImage
+    alt="A cluster's page: live detection, scanning on change and the schedule for the whole cluster, counts of nodes, namespaces, vulnerabilities and misconfigurations, and the Workloads tab."
+    sources={{ light: '/img/screens/kubernetes-cluster-light.png', dark: '/img/screens/kubernetes-cluster-dark.png' }}
+  />
+</div>
+
+<div className="screenshot">
+  <ThemedImage
+    alt="The Workloads tab: namespaces with their deployments and pods, and each one's vulnerabilities and risky settings, such as a namespace without a NetworkPolicy."
+    sources={{ light: '/img/screens/kubernetes-workloads-light.png', dark: '/img/screens/kubernetes-workloads-dark.png' }}
+  />
+</div>
 
 ### The cluster is what you manage
 
