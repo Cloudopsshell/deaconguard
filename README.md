@@ -28,7 +28,7 @@ The dashboard after the first scan, a host's attack paths, and its configuration
 
 <img src="assets/screenshots/host-attack-paths.png" alt="A host's attack paths: the deploy account can become root through a sudo rule without a password." width="100%">
 
-<img src="assets/screenshots/host-configuration.png" alt="A host's configuration findings: SSH password login, X11 forwarding, automatic updates off and no host firewall, each with its evidence." width="100%">
+<img src="assets/screenshots/host-configuration.png" alt="A host's configuration findings: SSH lets root log in with a password, password login and X11 forwarding are on, each with its evidence and how to fix it." width="100%">
 
 ## How it works
 
