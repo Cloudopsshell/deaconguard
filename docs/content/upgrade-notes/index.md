@@ -11,7 +11,7 @@ Releases with nothing to do say so. The last 10 minor lines (now 1.26 to 1.35) a
 
 | Release | Released | What to do |
 | --- | --- | --- |
-| [1.35.0](./v1-35/v1-35-0.md) | 2026-11-17 | Nothing to do. Pipelines: pin the GitHub action to `v1.35.0` for the run summary, and for a refused code scanning upload to be a warning |
+| [1.35.0](./v1-35/v1-35-0.md) | 2026-11-18 | Nothing to do. Pipelines: pin the GitHub action to `v1.35.0` for the run summary, and for a refused code scanning upload to be a warning |
 | [1.34.0](./v1-34/v1-34-0.md) | 2026-11-16 | Nothing to do. The server now asks get.deaconguard.io once a day for the newest release's number; turn that off in Settings if you don't want it |
 | [1.33.1](./v1-33/v1-33-1.md) | 2026-11-15 | Nothing to do. New contact addresses and updated libraries |
 | [1.33.0](./v1-33/v1-33-0.md) | 2026-11-08 | Back up: database schema 35. Upgrade the agents for container names and allowlist rules skipped before the rate limit |
