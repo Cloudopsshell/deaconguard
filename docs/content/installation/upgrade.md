@@ -3,6 +3,8 @@ title: Upgrade
 description: Upgrade DeaconGuard servers and agents, with the install script, packages, Docker Compose, Helm or Kustomize.
 ---
 
+import ThemedImage from '@theme/ThemedImage';
+
 These steps are the same for every release. What a particular release changes, and anything to do before upgrading to it, is in its [upgrade notes](../upgrade-notes/index.md).
 
 ## Before you upgrade
@@ -16,6 +18,20 @@ These steps are the same for every release. What a particular release changes, a
 ## Knowing when there's a new release
 
 From 1.34.0 the dashboard tells admins: beside the version at the bottom of the sidebar it shows the newest release when the server is behind, such as **1.34.0 available**, linked to that release's upgrade notes. **Settings → New versions** shows the same, with when the server last checked.
+
+<div className="screenshot" style={{ maxWidth: '256px' }}>
+  <ThemedImage
+    alt="The bottom of the dashboard's sidebar on a 1.34.0 server: beside v1.34.0 it says 1.35.0 available."
+    sources={{ light: '/img/screens/update-hint-light.png', dark: '/img/screens/update-hint-dark.png' }}
+  />
+</div>
+
+<div className="screenshot">
+  <ThemedImage
+    alt="Settings, New versions: what the check asks and sends, and the Check for new versions switch, which says DeaconGuard 1.35.0 is available, this server runs 1.34.0, with links to what to do when upgrading and how to upgrade."
+    sources={{ light: '/img/screens/update-settings-light.png', dark: '/img/screens/update-settings-dark.png' }}
+  />
+</div>
 
 - **What it asks:** about a minute after it starts, and then once a day, the server reads the newest release's number from `https://get.deaconguard.io/stable.txt`, the file the install script reads. A failed request is tried again after an hour.
 - **What it sends:** nothing about your server. The request carries no version, no identifier and no numbers, and is the same from every server.
