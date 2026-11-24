@@ -109,6 +109,18 @@ jobs:
 | The report file | Every finding, as SARIF, JUnit, JSON or an SBOM; keep it with `actions/upload-artifact` | Nothing |
 | The repository's **Security → Code scanning** page | Findings as alerts that GitHub tracks between runs and shows on pull requests | `upload-sarif: "true"`, and see below |
 
+This is the Summary page of a real run, in a private repository, for an image that failed `fail-on: medium`:
+
+<div className="screenshot">
+  <img src="/img/screens/ci-image-summary.png" alt="A GitHub run's Summary page: DeaconGuard's image check failed on findings at or above medium. It lists the image's system, release support and digest, the counts by severity (6 medium, 2 low), and a table of findings with what to do about each." />
+</div>
+
+And for `scan: config` on a Dockerfile and a Kubernetes manifest, failing `fail-on: high`:
+
+<div className="screenshot">
+  <img src="/img/screens/ci-config-summary.png" alt="A GitHub run's Summary page: DeaconGuard's config check of 2 files failed on findings at or above high: a privileged container (critical), a container that may run as root (medium), and five low findings, each with what to change." />
+</div>
+
 ### Code scanning
 
 `upload-sarif: "true"` also sends the SARIF report to GitHub code scanning. The report goes to your own repository's Security tab and nowhere else. It shows the same findings as the Summary page, as alerts GitHub remembers between runs. GitHub decides who can use it:
@@ -128,6 +140,12 @@ The job then needs these permissions:
 ```
 
 From 1.35.0 a refused upload is a warning, with why, and doesn't fail the job: whether the job passes depends on what the check found. Before 1.35.0 a refused upload failed the job, even for a clean image; leave `upload-sarif` off there unless the repository has code scanning.
+
+A refused upload in a private repository without Code Security: the image passed, and the Summary page says why nothing was uploaded.
+
+<div className="screenshot">
+  <img src="/img/screens/ci-passed-summary.png" alt="A GitHub run's Summary page: DeaconGuard's check of alpine:3.22 passed, with nothing at or above high, and a note that the report was not uploaded to code scanning because the private repository doesn't have GitHub Code Security." />
+</div>
 
 | Input | Default | |
 | --- | --- | --- |
