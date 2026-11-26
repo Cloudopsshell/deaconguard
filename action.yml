@@ -171,9 +171,9 @@ runs:
       if: always() && steps.upload.outcome == 'failure'
       shell: bash
       run: |
-        message="DeaconGuard's report was not uploaded to code scanning; the check itself ran, and its result stands. Code scanning needs a public repository, or GitHub Code Security on a private one, and the job needs the permissions security-events: write and, in a private repository, actions: read. Set upload-sarif to false to skip the upload."
-        echo "::warning title=Not uploaded to code scanning::$message"
-        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '> **Not uploaded to code scanning.** %s\n\n' "${message#*; }" >> "$GITHUB_STEP_SUMMARY"; fi
+        why="The check itself ran, and its result stands. Code scanning needs a public repository, or GitHub Code Security on a private one, and the job needs the permissions security-events: write and, in a private repository, actions: read. Set upload-sarif to false to skip the upload."
+        echo "::warning title=Not uploaded to code scanning::DeaconGuard's report was not uploaded to code scanning. $why"
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '> **Not uploaded to code scanning.** %s\n\n' "$why" >> "$GITHUB_STEP_SUMMARY"; fi
 
     - name: Result
       shell: bash

@@ -22,7 +22,8 @@ The watchers run in the machine's kernel, which every container on the machine s
 | Sandboxed containers: gVisor, Kata Containers, Firecracker | No | Each has a kernel of its own, which the machine's agent can't see into |
 | Docker Desktop on a Mac or Windows | No | Its containers run in a hidden virtual machine without the agent |
 | Macs and Windows machines | No | The watchers are Linux's |
-| Linux older than 5.8 | No | The watchers need the kernel's ring buffer, new in 5.8; scans still run |
+| Linux 4.18 to 5.7: RHEL, Rocky Linux and AlmaLinux 8, Ubuntu 20.04, Debian 10 | Yes, from agent 1.36.0 | The agent; see [What it needs](#what-it-needs) for Kubernetes and Docker Compose |
+| Linux older than 4.18, such as RHEL and CentOS 7 | No | Their kernels lack what the watchers need; scans still run |
 
 With a server installed with [Docker Compose](../installation/docker.md), its machine is watched when the Compose file's optional agent runs (`docker compose --profile agent up -d`). In an alert from a container, the alert names the program; naming the container and the pod is planned for a later release.
 
@@ -121,7 +122,7 @@ The watchers look only at the user ID calls (`setuid`, `setreuid`, `setresuid`) 
 
 ### What it doesn't detect yet
 
-Live detection starts with what most break-ins on servers do. A way to run on kernels older than 5.8 is planned next. Scans still cover what they always did, such as [host changes](./host-changes.md), malware on disk and [attack paths](./attack-paths.md).
+Live detection starts with what most break-ins on servers do. Scans still cover what they always did, such as [host changes](./host-changes.md), malware on disk and [attack paths](./attack-paths.md).
 
 An attacker who is already root on a machine can stop the agent, as they can any tool on it. Then the host's live detection shows **Stopped**, and **Live detection stopped** and **Agents offline** notifications are sent.
 
@@ -178,13 +179,13 @@ Only alerts, and the status above. An alert holds the rule, the program and its 
 
 - **In the kernel**, the watchers look at each program that starts and each file opened for writing. A write is compared with the watched paths eight bytes at a time and dropped there unless it's one of them, so the agent hears about every program start but only the few writes that matter. Files opened only for reading cost nothing.
 - **Connections** add about 0.4 µs to each `connect()` a program makes, measured on a test machine making 200,000 in a row; the connections that don't matter are dropped in the kernel and never reach the agent.
-- **The agent** reads the watchers' events from a ring buffer of 256 KB, the kernel's own one, and runs the rules on them. It only reads `/proc` for an event a rule already suspects.
+- **The agent** reads the watchers' events from a ring buffer of 256 KB, the kernel's own one, and runs the rules on them. A kernel without the ring buffer (Linux before 5.8, but for some vendors' kernels such as RHEL 8's) gets a perf buffer per CPU instead: 256 KB in all, and at least 32 KB each. It only reads `/proc` for an event a rule already suspects.
 - Measured on a test machine (Ubuntu 24.04, arm64): at rest, the agent used **20 ms of CPU a minute** (0.03% of one CPU) and **22 MB** of memory. Under a storm of 4,400 programs starting a second, with as many file writes, far busier than most servers, it used **about 3% of one CPU** and 26 MB, and the storm ran 2% slower than without it. The Runtime tab shows the agent's own numbers for each host.
 
-The watchers use only the kernel's stable tracepoints, for system calls and for programs starting and ending, which is why one build runs on every kernel from 5.8 on. The kernel checks each watcher before running it, so a watcher can't crash or hang the machine.
+The watchers use only the kernel's stable tracepoints, for system calls and for programs starting and ending, which is why one build runs on every kernel from 5.8 on. From 1.36.0, a second build of the same watchers runs on Linux 4.18 to 5.7: it reports through the older perf buffers, reads memory with the older helpers, and has its loops written out, as kernels before 5.3 accept none. The agent tries the kernel's ring buffer and picks the build by itself, and both raise the same alerts. On kernels before 5.11, the agent lifts its locked-memory limit, which those kernels count the watchers' memory against. The kernel checks each watcher before running it, so a watcher can't crash or hang the machine.
 
 ## What it needs
 
-- Linux 5.8 or later, on `x86_64` or `arm64`.
-- The agent running as root, as it does when installed with the install script or the packages. In Kubernetes and Docker Compose, the agent's container needs the `BPF` and `PERFMON` capabilities, which the Helm chart, the Kustomize base and the Compose file give it from 1.27.0.
+- Linux 4.18 or later, on `x86_64` or `arm64`: Linux 5.8 or later, or from agent 1.36.0, an older kernel from 4.18, such as RHEL, Rocky Linux and AlmaLinux 8 (4.18), Debian 10 (4.19) and Ubuntu 20.04 (5.4). The older kernels were tested on `x86_64`.
+- The agent running as root, as it does when installed with the install script or the packages. In Kubernetes and Docker Compose, the agent's container needs the `BPF` and `PERFMON` capabilities, which the Helm chart, the Kustomize base and the Compose file give it from 1.27.0. Kernels before 5.8 don't know those two: there the container needs `SYS_ADMIN` and `SYS_RESOURCE` instead. With Helm, set `agent.olderKernels: true` (1.36.0 and later); with Kustomize or Compose, add the two to the agent's capabilities. Leave them off on Linux 5.8 and later. Without them, the host shows **Not supported**, saying which capabilities are missing.
 - The kernel's tracing file system at `/sys/kernel/tracing` (or `/sys/kernel/debug/tracing`), which systemd mounts at boot. An agent installed on the machine mounts it when it isn't; an agent in a container can't, so on a Kubernetes node or a machine running the Compose agent without it, the host shows **Not supported**, saying so: mount it on the machine with `mount -t tracefs tracefs /sys/kernel/tracing`.

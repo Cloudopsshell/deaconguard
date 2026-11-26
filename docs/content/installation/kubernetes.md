@@ -185,6 +185,7 @@ With a values file, Helm uses the chart's defaults plus the file on each upgrade
 | `agent.resources` | 50m CPU, 128 MiB requested; 2.5 GiB limit | ClamAV, when the node has it, runs inside this limit and needs about 1.5 GB |
 | `agent.tolerations` | every taint | Which nodes get an agent; with `agent.nodeSelector` and `agent.affinity` |
 | `agent.priorityClassName` | `""` | |
+| `agent.olderKernels` | `false` | Nodes with Linux 4.18 to 5.7 (1.36.0 and later): gives the agent `SYS_ADMIN` and `SYS_RESOURCE` for [live detection](../usage/live-detection.md#what-it-needs), as those kernels predate `BPF` and `PERFMON`. Leave off on Linux 5.8 and later |
 | `cluster.enabled` | `false` | Install the cluster agent, which checks the cluster through its API |
 | `cluster.name` | `kubernetes` | The cluster's name on the server |
 | `cluster.enrollment.existingSecret`, `.secretKey`, `.token` | `""`, `token`, `""` | The cluster agent's own token instead of `enrollment`'s; a one-time token is enough for it alone |
@@ -325,7 +326,7 @@ The DaemonSet's pods:
 - mount the node's `/` **read-only** at `/host`, and its `/tmp` writable at `/host/tmp` for the [advanced malware scan](../checks.md#the-advanced-antivirus-scan)'s rules;
 - set `DEACONGUARD_HOST_ROOT=/host`, so every check runs in the node's root with the node's own tools. A check whose tool the node lacks reports that, as it would on the node itself;
 - use the node's process list (`hostPID`) and network (`hostNetwork`, with `ClusterFirstWithHostNet` to resolve the Service);
-- run as root, with every capability dropped except those the checks need: `SYS_CHROOT`, `DAC_READ_SEARCH`, `DAC_OVERRIDE`, `NET_ADMIN`, `AUDIT_CONTROL` and `SYS_PTRACE`, and `BPF` and `PERFMON` to load [live detection](../usage/live-detection.md)'s watchers into the node's kernel (1.27.0 and later); no privilege escalation, a read-only root filesystem, the runtime's default seccomp profile, and no service account token;
+- run as root, with every capability dropped except those the checks need: `SYS_CHROOT`, `DAC_READ_SEARCH`, `DAC_OVERRIDE`, `NET_ADMIN`, `AUDIT_CONTROL` and `SYS_PTRACE`, and `BPF` and `PERFMON` to load [live detection](../usage/live-detection.md)'s watchers into the node's kernel (1.27.0 and later), or on nodes with Linux 4.18 to 5.7, `SYS_ADMIN` and `SYS_RESOURCE` with `agent.olderKernels`; no privilege escalation, a read-only root filesystem, the runtime's default seccomp profile, and no service account token;
 - report the node's name, from `DEACONGUARD_HOSTNAME`, and keep their identity in `/var/lib/deaconguard-agent` on the node, so a restarted or upgraded pod is the same host on the server.
 
 A node's first pod enrolls with the token. If the server is replaced, say reinstalled with a new certificate, update the secret with a token from the new server and restart the DaemonSet: each pod enrolls with it. A pod also enrolls again when the server no longer knows it, so **removing a node's host on the server while its pod runs brings it back**; to stop scanning a node, keep the DaemonSet off it with `agent.nodeSelector` or `agent.affinity`, or [revoke the token](../usage/agents.md#reusable-tokens) first.

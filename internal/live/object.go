@@ -15,6 +15,12 @@ import (
 //go:embed watch.o
 var watchObject []byte
 
+// compatObject is the same watchers built for Linux 4.18 to 5.7, which
+// lack the ring buffer, by scripts/build-bpf.sh.
+//
+//go:embed watch-compat.o
+var compatObject []byte
+
 // MapSpec is a map the watchers use, from the object's "maps" section.
 type MapSpec struct {
 	Name       string

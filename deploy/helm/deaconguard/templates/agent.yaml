@@ -69,8 +69,9 @@ spec:
               drop: [ALL]
               # Run checks in the node's root, read every file, and list
               # firewall and audit rules; BPF and PERFMON load live
-              # detection's watchers into the kernel.
-              add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE, BPF, PERFMON]
+              # detection's watchers into the kernel, and SYS_ADMIN and
+              # SYS_RESOURCE do on kernels before 5.8 (agent.olderKernels).
+              add: [SYS_CHROOT, DAC_READ_SEARCH, DAC_OVERRIDE, NET_ADMIN, AUDIT_CONTROL, SYS_PTRACE, BPF, PERFMON{{ if .Values.agent.olderKernels }}, SYS_ADMIN, SYS_RESOURCE{{ end }}]
           volumeMounts:
             - name: host
               mountPath: /host

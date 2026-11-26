@@ -268,6 +268,28 @@ func TestObject(t *testing.T) {
 	}
 }
 
+// The watchers for older kernels have the same programs, report through a
+// perf buffer, and fit the 4,096 instructions kernels before 5.2 allow.
+func TestCompatObject(t *testing.T) {
+	object, err := ParseObject(compatObject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if object.License != "Dual MIT/GPL" || len(object.Programs) != 30 || len(object.Maps) != 16 {
+		t.Fatalf("object: %s, %d programs, %d maps", object.License, len(object.Programs), len(object.Maps))
+	}
+	for _, spec := range object.Maps {
+		if spec.Name == "events" && spec.Type != 4 {
+			t.Errorf("events is map type %d, not a perf event array", spec.Type)
+		}
+	}
+	for _, program := range object.Programs {
+		if n := len(program.Instructions) / instructionSize; n > 4096 {
+			t.Errorf("%s has %d instructions", program.Event, n)
+		}
+	}
+}
+
 func TestDetectorLimits(t *testing.T) {
 	d := NewDetector("", t.Logf)
 	now := time.Now()

@@ -18,8 +18,10 @@ type watcher struct {
 	maps     map[string]int
 	programs []int
 	links    []int
-	ring     *ring
+	events   events
 	cpus     int
+	// compat is whether the watchers for kernels before 5.8 run.
+	compat bool
 }
 
 // Counters are the watchers' running totals since they started.
@@ -27,9 +29,10 @@ type Counters struct {
 	Execs, Writes, Connects, Calls, Lost uint64
 }
 
-// minimumKernel is the first kernel with everything the watchers use,
-// the ring buffer above all.
-var minimumKernel = [2]int{5, 8}
+// minimumKernel is the first kernel with everything the watchers for
+// older kernels use: the cgroup of an event above all. Kernels from 5.8,
+// and older ones with the ring buffer, run the watchers made for 5.8.
+var minimumKernel = [2]int{4, 18}
 
 // KernelRelease is the running kernel's version, such as "6.8.0-45-generic".
 func KernelRelease() string {
@@ -42,11 +45,22 @@ func KernelRelease() string {
 
 // supportedKernel reports whether release is minimumKernel or later.
 func supportedKernel(release string) bool {
-	var major, minor int
-	if _, err := fmt.Sscanf(release, "%d.%d", &major, &minor); err != nil {
+	return releaseAtLeast(release, minimumKernel[0], minimumKernel[1])
+}
+
+// releaseAtLeast reports whether a kernel release, such as
+// "5.4.0-216-generic", is major.minor or later.
+func releaseAtLeast(release string, major, minor int) bool {
+	var gotMajor, gotMinor int
+	if _, err := fmt.Sscanf(release, "%d.%d", &gotMajor, &gotMinor); err != nil {
 		return false
 	}
-	return major > minimumKernel[0] || major == minimumKernel[0] && minor >= minimumKernel[1]
+	return gotMajor > major || gotMajor == major && gotMinor >= minor
+}
+
+// kernelAtLeast reports whether the running kernel is major.minor or later.
+func kernelAtLeast(major, minor int) bool {
+	return releaseAtLeast(KernelRelease(), major, minor)
 }
 
 // ErrUnsupported explains why this machine can't run live detection.
@@ -69,7 +83,13 @@ func startWatcher(hostRoot string) (*watcher, error) {
 	if reason := unsupportedReason(); reason != "" {
 		return nil, ErrUnsupported{reason}
 	}
-	object, err := ParseObject(watchObject)
+	raiseLockedMemory()
+	compat := !ringbufSupported()
+	source := watchObject
+	if compat {
+		source = compatObject
+	}
+	object, err := ParseObject(source)
 	if err != nil {
 		return nil, err
 	}
@@ -77,18 +97,27 @@ func startWatcher(hostRoot string) (*watcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("count the CPUs: %w", err)
 	}
-	w := &watcher{maps: map[string]int{}, cpus: cpus}
+	w := &watcher{maps: map[string]int{}, cpus: cpus, compat: compat}
 	fail := func(err error) (*watcher, error) {
 		w.close()
 		// The kernel's checker refuses a watcher with EACCES too, with its
 		// log ("processed N insns"): that's not a question of rights.
 		if (errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES)) && !strings.Contains(err.Error(), " insns ") {
-			return nil, ErrUnsupported{"the agent isn't allowed to load programs into the kernel: it needs root, or the BPF and PERFMON capabilities (" + err.Error() + ")"}
+			// BPF and PERFMON came with Linux 5.8; before, loading takes
+			// SYS_ADMIN, and SYS_RESOURCE to lift the locked-memory limit.
+			rights := "the BPF and PERFMON capabilities"
+			if !kernelAtLeast(5, 8) {
+				rights = "on this kernel, older than 5.8, the SYS_ADMIN and SYS_RESOURCE capabilities"
+			}
+			return nil, ErrUnsupported{"the agent isn't allowed to load programs into the kernel: it needs root, or " + rights + " (" + err.Error() + ")"}
 		}
 		return nil, err
 	}
 	var ringSize uint32
 	for _, spec := range object.Maps {
+		if spec.Type == mapTypePerfEventArray {
+			spec.MaxEntries = uint32(cpus)
+		}
 		fd, err := createMap(spec)
 		if err != nil {
 			return fail(err)
@@ -132,8 +161,18 @@ func startWatcher(hostRoot string) (*watcher, error) {
 			return fail(ErrUnsupported{"the kernel has no " + required + " tracepoint"})
 		}
 	}
-	if w.ring, err = openRing(w.maps["events"], ringSize); err != nil {
-		return fail(err)
+	if compat {
+		buffers, err := openPerfBuffers(w.maps["events"], cpus)
+		if err != nil {
+			return fail(err)
+		}
+		w.events = buffers
+	} else {
+		ring, err := openRing(w.maps["events"], ringSize)
+		if err != nil {
+			return fail(err)
+		}
+		w.events = ring
 	}
 	return w, nil
 }
@@ -216,10 +255,10 @@ func forkChildOffset(tracefsRoot string) uint32 {
 
 // poll waits up to timeoutMS for events and hands each to handle.
 func (w *watcher) poll(timeoutMS int, handle func(Event)) error {
-	if err := w.ring.wait(timeoutMS); err != nil {
+	if err := w.events.wait(timeoutMS); err != nil {
 		return err
 	}
-	w.ring.read(func(raw []byte) {
+	w.events.read(func(raw []byte) {
 		if event, err := ParseEvent(raw); err == nil {
 			handle(event)
 		}
@@ -272,8 +311,9 @@ func (w *watcher) counters() (Counters, error) {
 // close detaches and unloads the watchers; the kernel removes them once
 // their last file descriptor is closed.
 func (w *watcher) close() {
-	if w.ring != nil {
-		w.ring.close()
+	if w.events != nil {
+		w.events.close()
+		w.events = nil
 	}
 	for _, fd := range w.links {
 		unix.IoctlSetInt(fd, unix.PERF_EVENT_IOC_DISABLE, 0)
