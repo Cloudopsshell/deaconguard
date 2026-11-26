@@ -18,6 +18,12 @@
 //
 // Build with scripts/build-bpf.sh. Every function is inlined and no string
 // constants are used, so the object needs no relocations but its maps'.
+//
+// It's built twice. watch.o uses what Linux 5.8 brought: the ring buffer
+// and the helpers that read user and kernel memory apart. watch-compat.o,
+// built with DG_COMPAT, is for Linux 4.18 to 5.7: it reports through a
+// per-CPU perf buffer instead, reads memory with the older helpers, and
+// writes its loops out in full, as kernels before 5.3 accept no loops.
 
 typedef unsigned char u8;
 typedef unsigned short u16;
@@ -34,6 +40,7 @@ typedef long long s64;
 #define MAP_ARRAY 2
 #define MAP_PERCPU_ARRAY 6
 #define MAP_LRU_HASH 9
+#define MAP_PERF_EVENT_ARRAY 4
 #define MAP_RINGBUF 27
 
 // A map, as DeaconGuard's loader reads it from the "maps" section.
@@ -54,12 +61,26 @@ static u64 (*current_pid_tgid)(void) = (void *)14;
 static u64 (*current_uid_gid)(void) = (void *)15;
 static long (*current_comm)(void *buf, u32 size) = (void *)16;
 static u64 (*current_cgroup)(void) = (void *)80;
+#ifdef DG_COMPAT
+// Before Linux 5.5 one helper reads user and kernel memory alike.
+static long (*read_user)(void *dst, u32 size, const void *src) = (void *)4;
+static long (*read_kernel)(void *dst, u32 size, const void *src) = (void *)4;
+static long (*read_user_str)(void *dst, u32 size, const void *src) = (void *)45;
+static long (*read_kernel_str)(void *dst, u32 size, const void *src) = (void *)45;
+static long (*perf_output)(void *ctx, void *map, u64 flags, void *data, u64 size) = (void *)25;
+// BPF_F_CURRENT_CPU: the perf buffer of the CPU the watcher runs on.
+#define CURRENT_CPU 0xffffffffULL
+// Kernels before 5.3 refuse loops: clang writes each one out in full.
+#define LOOP _Pragma("unroll")
+#else
 static long (*read_user)(void *dst, u32 size, const void *src) = (void *)112;
 static long (*read_kernel)(void *dst, u32 size, const void *src) = (void *)113;
 static long (*read_user_str)(void *dst, u32 size, const void *src) = (void *)114;
 static long (*read_kernel_str)(void *dst, u32 size, const void *src) = (void *)115;
 static void *(*ring_reserve)(void *ring, u64 size, u64 flags) = (void *)131;
 static void (*ring_submit)(void *data, u64 flags) = (void *)132;
+#define LOOP
+#endif
 
 #define COMM_LEN 16
 #define PATH_LEN 256
@@ -189,7 +210,15 @@ struct name {
 #define COUNT_CALL 4
 #define COUNTERS 5
 
+#ifdef DG_COMPAT
+// One perf buffer per CPU: the agent sets the number of CPUs and puts each
+// CPU's buffer in. Events are built in event_buf, as the stack is too
+// small for one.
+struct dg_map events SEC("maps") = {MAP_PERF_EVENT_ARRAY, sizeof(u32), sizeof(u32), 0, 0};
+struct dg_map event_buf SEC("maps") = {MAP_PERCPU_ARRAY, sizeof(u32), sizeof(struct event), 1, 0};
+#else
 struct dg_map events SEC("maps") = {MAP_RINGBUF, 0, 0, 1 << 18, 0};
+#endif
 struct dg_map pending_execs SEC("maps") = {MAP_LRU_HASH, sizeof(u32), sizeof(struct pending), 4096, 0};
 struct dg_map scratch SEC("maps") = {MAP_PERCPU_ARRAY, sizeof(u32), sizeof(struct pending), 1, 0};
 // Twice PATH_LEN, so reading a word past a path's end stays in the value.
@@ -240,6 +269,26 @@ INLINE int is_self(void) {
 	return pid && *pid != 0 && *pid == (u32)(current_pid_tgid() >> 32);
 }
 
+// An event to fill in, or 0 when there's no room for it.
+INLINE struct event *event_begin(void) {
+#ifdef DG_COMPAT
+	u32 zero = 0;
+	return map_lookup(&event_buf, &zero);
+#else
+	return ring_reserve(&events, sizeof(struct event), 0);
+#endif
+}
+
+// Hands a filled-in event to the agent.
+INLINE void event_end(void *ctx, struct event *e) {
+#ifdef DG_COMPAT
+	if (perf_output(ctx, &events, CURRENT_CPU, e, sizeof(struct event)) < 0)
+		count(COUNT_LOST);
+#else
+	ring_submit(e, 0);
+#endif
+}
+
 // Remembers the program that is about to start: who starts it, and its
 // arguments, which are only readable now.
 INLINE int remember_exec(const char *const *argv) {
@@ -249,7 +298,7 @@ INLINE int remember_exec(const char *const *argv) {
 		return 0;
 	current_comm(pending->comm, COMM_LEN);
 	u32 offset = 0;
-	for (int i = 0; i < MAX_ARGS; i++) {
+	LOOP for (int i = 0; i < MAX_ARGS; i++) {
 		const char *arg = 0;
 		if (read_user(&arg, sizeof(arg), &argv[i]) < 0 || !arg)
 			break;
@@ -293,13 +342,13 @@ struct process_exec {
 // exec_paths, compared a word at a time as in watched below.
 INLINE int marked_path(const char *buf) {
 	const u64 *words = (const u64 *)buf;
-	for (u32 i = 0; i < EXEC_PATHS_MAX; i++) {
+	LOOP for (u32 i = 0; i < EXEC_PATHS_MAX; i++) {
 		u32 key = i;
 		struct watched *w = map_lookup(&exec_paths, &key);
 		if (!w || w->kind == 0)
 			break;
 		u64 diff = 0;
-		for (int j = 0; j < 6; j++)
+		LOOP for (int j = 0; j < 6; j++)
 			diff |= (words[j] ^ w->prefix[j]) & w->mask[j];
 		if (!diff)
 			return 1;
@@ -317,7 +366,7 @@ int process_exec(struct process_exec *ctx) {
 			map_delete(&pending_execs, &old);
 		return 0;
 	}
-	struct event *e = ring_reserve(&events, sizeof(struct event), 0);
+	struct event *e = event_begin();
 	if (!e) {
 		count(COUNT_LOST);
 		if (pending)
@@ -351,7 +400,7 @@ int process_exec(struct process_exec *ctx) {
 		e->args_len = pending->args_len;
 		map_delete(&pending_execs, &old);
 	}
-	ring_submit(e, 0);
+	event_end(ctx, e);
 	return 0;
 }
 
@@ -361,38 +410,46 @@ int process_exec(struct process_exec *ctx) {
 INLINE int watched(const char *buf) {
 	if (buf[0] == '/') {
 		const u64 *words = (const u64 *)buf;
-		for (u32 i = 0; i < WATCHED_MAX; i++) {
+		// The first KIND_THEN entry the path starts with, when no prefix
+		// matches: the agent sets one, /home/NAME/.ssh/.
+		u32 then = WATCHED_MAX;
+		LOOP for (u32 i = 0; i < WATCHED_MAX; i++) {
 			u32 key = i;
 			struct watched *w = map_lookup(&watched_paths, &key);
 			if (!w || w->kind == 0)
 				break;
 			u64 diff = 0;
-			for (int j = 0; j < 6; j++)
+			LOOP for (int j = 0; j < 6; j++)
 				diff |= (words[j] ^ w->prefix[j]) & w->mask[j];
 			if (diff)
 				continue;
 			if (w->kind == KIND_PREFIX)
 				return 1;
-			// KIND_THEN: skip one folder, then compare "after".
-			u32 at = 0;
-			u32 start = w->len & 63;
-			for (u32 j = 0; j < 64; j++) {
-				char c = buf[(start + j) & (PATH_LEN - 1)];
-				if (c == 0)
-					break;
-				if (c == '/') {
-					at = start + j + 1;
-					break;
-				}
-			}
-			if (at == 0)
-				continue;
-			u64 next = 0;
-			read_kernel(&next, sizeof(next), buf + (at & (PATH_LEN - 1)));
-			if (((next ^ w->after) & w->after_mask) == 0)
-				return 1;
+			if (then == WATCHED_MAX)
+				then = i;
 		}
-		return 0;
+		if (then == WATCHED_MAX)
+			return 0;
+		// KIND_THEN: skip one folder, then compare "after".
+		struct watched *w = map_lookup(&watched_paths, &then);
+		if (!w)
+			return 0;
+		u32 at = 0;
+		u32 start = w->len & 63;
+		LOOP for (u32 j = 0; j < 64; j++) {
+			char c = buf[(start + j) & (PATH_LEN - 1)];
+			if (c == 0)
+				break;
+			if (c == '/') {
+				at = start + j + 1;
+				break;
+			}
+		}
+		if (at == 0)
+			return 0;
+		u64 next = 0;
+		read_kernel(&next, sizeof(next), buf + (at & (PATH_LEN - 1)));
+		return ((next ^ w->after) & w->after_mask) == 0;
 	}
 	// A relative path, such as "passwd" written from inside /etc: compare
 	// it, less a leading "./", with the watched names. Paths with folders
@@ -403,13 +460,13 @@ INLINE int watched(const char *buf) {
 		base = 2;
 	u64 last[4] = {0, 0, 0, 0};
 	read_kernel(last, sizeof(last), buf + base);
-	for (u32 i = 0; i < NAMES_MAX; i++) {
+	LOOP for (u32 i = 0; i < NAMES_MAX; i++) {
 		u32 key = i;
 		struct name *w = map_lookup(&watched_names, &key);
 		if (!w || w->mask[0] == 0)
 			break;
 		u64 diff = 0;
-		for (int j = 0; j < 4; j++)
+		LOOP for (int j = 0; j < 4; j++)
 			diff |= (last[j] ^ w->word[j]) & w->mask[j];
 		if (!diff)
 			return 1;
@@ -418,7 +475,7 @@ INLINE int watched(const char *buf) {
 }
 
 // Reports a write to a watched path.
-INLINE int written(const char *user_path, u32 how) {
+INLINE int written(void *ctx, const char *user_path, u32 how) {
 	count(COUNT_WRITE);
 	if (!user_path || is_self())
 		return 0;
@@ -429,7 +486,7 @@ INLINE int written(const char *user_path, u32 how) {
 	long n = read_user_str(buf, PATH_LEN, user_path);
 	if (n <= 1 || !watched(buf))
 		return 0;
-	struct event *e = ring_reserve(&events, sizeof(struct event), 0);
+	struct event *e = event_begin();
 	if (!e) {
 		count(COUNT_LOST);
 		return 0;
@@ -447,7 +504,7 @@ INLINE int written(const char *user_path, u32 how) {
 	e->parent_comm[0] = 0;
 	e->args[0] = 0;
 	__builtin_memcpy(e->path, buf, PATH_LEN);
-	ring_submit(e, 0);
+	event_end(ctx, e);
 	return 0;
 }
 
@@ -458,7 +515,7 @@ SEC("tp/syscalls/sys_enter_openat")
 int enter_openat(struct sys_enter *ctx) {
 	if (!(ctx->args[2] & WRITE_FLAGS))
 		return 0;
-	return written((const char *)ctx->args[1], HOW_OPEN);
+	return written(ctx, (const char *)ctx->args[1], HOW_OPEN);
 }
 
 SEC("tp/syscalls/sys_enter_openat2")
@@ -467,7 +524,7 @@ int enter_openat2(struct sys_enter *ctx) {
 	// struct open_how starts with the flags.
 	if (read_user(&flags, sizeof(flags), (const void *)ctx->args[2]) < 0 || !(flags & WRITE_FLAGS))
 		return 0;
-	return written((const char *)ctx->args[1], HOW_OPEN);
+	return written(ctx, (const char *)ctx->args[1], HOW_OPEN);
 }
 
 // x86-64 also has open, creat, rename and symlink; arm64 only the *at forms.
@@ -475,42 +532,42 @@ SEC("tp/syscalls/sys_enter_open")
 int enter_open(struct sys_enter *ctx) {
 	if (!(ctx->args[1] & WRITE_FLAGS))
 		return 0;
-	return written((const char *)ctx->args[0], HOW_OPEN);
+	return written(ctx, (const char *)ctx->args[0], HOW_OPEN);
 }
 
 SEC("tp/syscalls/sys_enter_creat")
 int enter_creat(struct sys_enter *ctx) {
-	return written((const char *)ctx->args[0], HOW_OPEN);
+	return written(ctx, (const char *)ctx->args[0], HOW_OPEN);
 }
 
 SEC("tp/syscalls/sys_enter_renameat2")
 int enter_renameat2(struct sys_enter *ctx) {
-	return written((const char *)ctx->args[3], HOW_RENAME);
+	return written(ctx, (const char *)ctx->args[3], HOW_RENAME);
 }
 
 SEC("tp/syscalls/sys_enter_renameat")
 int enter_renameat(struct sys_enter *ctx) {
-	return written((const char *)ctx->args[3], HOW_RENAME);
+	return written(ctx, (const char *)ctx->args[3], HOW_RENAME);
 }
 
 SEC("tp/syscalls/sys_enter_rename")
 int enter_rename(struct sys_enter *ctx) {
-	return written((const char *)ctx->args[1], HOW_RENAME);
+	return written(ctx, (const char *)ctx->args[1], HOW_RENAME);
 }
 
 SEC("tp/syscalls/sys_enter_symlinkat")
 int enter_symlinkat(struct sys_enter *ctx) {
-	return written((const char *)ctx->args[2], HOW_LINK);
+	return written(ctx, (const char *)ctx->args[2], HOW_LINK);
 }
 
 SEC("tp/syscalls/sys_enter_symlink")
 int enter_symlink(struct sys_enter *ctx) {
-	return written((const char *)ctx->args[1], HOW_LINK);
+	return written(ctx, (const char *)ctx->args[1], HOW_LINK);
 }
 
 SEC("tp/syscalls/sys_enter_linkat")
 int enter_linkat(struct sys_enter *ctx) {
-	return written((const char *)ctx->args[3], HOW_LINK);
+	return written(ctx, (const char *)ctx->args[3], HOW_LINK);
 }
 
 // sched_process_fork, in the parent: the new process inherits the parent's
@@ -575,13 +632,13 @@ int process_exit(void *ctx) {
 INLINE int comm_watched(void) {
 	u64 comm[4] = {0, 0, 0, 0};
 	current_comm(comm, COMM_LEN);
-	for (u32 i = 0; i < NAMES_MAX; i++) {
+	LOOP for (u32 i = 0; i < NAMES_MAX; i++) {
 		u32 key = i;
 		struct name *w = map_lookup(&connect_comms, &key);
 		if (!w || w->mask[0] == 0)
 			break;
 		u64 diff = 0;
-		for (int j = 0; j < 4; j++)
+		LOOP for (int j = 0; j < 4; j++)
 			diff |= (comm[j] ^ w->word[j]) & w->mask[j];
 		if (!diff)
 			return 1;
@@ -617,7 +674,7 @@ int enter_connect(struct sys_enter *ctx) {
 		why |= WHY_COMM;
 	if (!why)
 		return 0;
-	struct event *e = ring_reserve(&events, sizeof(struct event), 0);
+	struct event *e = event_begin();
 	if (!e) {
 		count(COUNT_LOST);
 		return 0;
@@ -640,7 +697,7 @@ int enter_connect(struct sys_enter *ctx) {
 		read_user(e->path, 16, address + 8);
 	e->args[0] = why;
 	e->args[1] = 0;
-	ring_submit(e, 0);
+	event_end(ctx, e);
 	return 0;
 }
 
@@ -758,7 +815,7 @@ INLINE int returned(struct sys_exit *ctx) {
 		map_delete(&calls, &tid);
 		return 0;
 	}
-	struct event *e = ring_reserve(&events, sizeof(struct event), 0);
+	struct event *e = event_begin();
 	if (!e) {
 		count(COUNT_LOST);
 		map_delete(&calls, &tid);
@@ -785,7 +842,7 @@ INLINE int returned(struct sys_exit *ctx) {
 	if (call->kind == KIND_MODULE && call->pointer)
 		read_user_str(e->args, ARG_MAX, (const char *)call->pointer);
 	map_delete(&calls, &tid);
-	ring_submit(e, 0);
+	event_end(ctx, e);
 	return 0;
 }
 

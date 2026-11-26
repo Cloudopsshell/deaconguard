@@ -8,6 +8,23 @@ upgrade notes.
 
 ## [Unreleased]
 
+## [1.36.0] - 2026-11-26
+
+### Added
+
+- **Live detection on Linux 4.18 to 5.7**, with agents 1.36.0 and later: RHEL, Rocky Linux and AlmaLinux 8, Ubuntu 20.04 and Debian 10, with every alert of newer kernels. The agent tries the kernel's ring buffer, new in 5.8, and without it runs a second build of the same watchers that reports through per-CPU perf buffers (256 KB in all), reads memory with the older helpers and has its loops written out, as kernels before 5.3 accept none. RHEL 8's kernel has the ring buffer and runs the usual watchers. On kernels before 5.11, the agent lifts its locked-memory limit, which those kernels count the watchers' maps against. Linux older than 4.18, such as RHEL 7, still shows **Not supported**.
+- **`agent.olderKernels`** in the Helm chart gives the node agent `SYS_ADMIN` and `SYS_RESOURCE` for live detection on nodes with Linux 4.18 to 5.7, which predate the `BPF` and `PERFMON` capabilities. Off by default. With Kustomize or Docker Compose, add the two capabilities to the agent.
+
+### Fixed
+
+- **A clearer reason when the agent can't load the watchers** on a kernel before 5.8: it names `SYS_ADMIN` and `SYS_RESOURCE`, which those kernels need, instead of `BPF` and `PERFMON`.
+- **The config check's Summary heading separates its paths**: "Dockerfiles and manifests in Dockerfile, deploy", not "in Dockerfile deploy".
+- **The Summary page's note on a refused code scanning upload starts with a capital letter.**
+
+### Changed
+
+- Updated `golang.org/x/net` to 0.63.0, `actions/setup-go` to 7.1.0, and the dashboard's minor and patch dependencies.
+
 ## [1.35.0] - 2026-11-18
 
 ### Added
@@ -531,7 +548,8 @@ The first stable release, and the first published from this repository. DeaconGu
 
 - Updated excelize, the Excel report library, to a commit that fixes 15 advisories in reading workbooks (GHSA-mx22-3794-2vpv and others). DeaconGuard only writes workbooks, so none of them could be reached.
 
-[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.31.0...HEAD
+[Unreleased]: https://github.com/Cloudopsshell/deaconguard/compare/v1.36.0...HEAD
+[1.36.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.31.0...v1.36.0
 [1.31.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.29.0...v1.30.0
 [1.29.0]: https://github.com/Cloudopsshell/deaconguard/compare/v1.28.0...v1.29.0

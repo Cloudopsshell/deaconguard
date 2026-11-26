@@ -160,6 +160,11 @@ agent:
   # Where each node keeps its agent's identity, so a restarted pod is the
   # same host on the server.
   identityPath: /var/lib/deaconguard-agent
+  # Live detection on nodes with Linux 4.18 to 5.7 (1.36.0 and later):
+  # their kernels predate the BPF and PERFMON capabilities, so the agent's
+  # container gets SYS_ADMIN and SYS_RESOURCE instead. Leave off on nodes
+  # with Linux 5.8 or later.
+  olderKernels: false
   resources:
     requests:
       cpu: 50m

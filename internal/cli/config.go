@@ -106,7 +106,7 @@ func runConfig(arguments []string, input io.Reader, output, diagnostics io.Write
 	return writeFindings(findingsReport{
 		findings: result.Findings, notes: result.Notes, document: result, suite: strings.Join(paths, " "),
 		summary:  fmt.Sprintf("Checked %d %s", len(result.Files), pluralWord(len(result.Files), "file", "files")),
-		withLine: true, summaryFile: summaryFile, heading: "Dockerfiles and manifests in " + strings.Join(paths, " "),
+		withLine: true, summaryFile: summaryFile, heading: "Dockerfiles and manifests in " + strings.Join(paths, ", "),
 	}, format, outputFile, failOn, output, diagnostics)
 }
 
