@@ -214,6 +214,8 @@ It needs Linux on amd64 or arm64, `curl` and `sha256sum`.
 
 ### Jenkins
 
+This stage follows one that built the image as `shop:${GIT_COMMIT}`, on an agent with Docker:
+
 ```groovy
 pipeline {
   agent any
@@ -223,8 +225,13 @@ pipeline {
       steps {
         sh 'curl -fsSL https://raw.githubusercontent.com/Cloudopsshell/deaconguard/v@RELEASE@/ci/install.sh | sh -s -- @RELEASE@'
         sh 'docker save shop:${GIT_COMMIT} -o shop.tar'
-        sh 'deaconguard image scan shop.tar --ignore-unfixed --fail-on high --format junit --output deaconguard-image.xml'
-        sh 'deaconguard config scan . --fail-on high --format junit --output deaconguard-config.xml'
+        // Each check fails the build on its findings, after both have run.
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          sh 'deaconguard image scan shop.tar --ignore-unfixed --fail-on high --format junit --output deaconguard-image.xml'
+        }
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          sh 'deaconguard config scan . --fail-on high --format junit --output deaconguard-config.xml'
+        }
       }
     }
   }
@@ -234,7 +241,17 @@ pipeline {
 }
 ```
 
-With the Warnings Next Generation plugin, `--format sarif` and `recordIssues(tools: [sarif(pattern: 'deaconguard.sarif')])` show the findings as issues instead.
+`catchError` lets the second check run when the first finds something; with two plain `sh` steps, the first check's findings would stop the build before the second runs. The build's **Tests** page lists every finding as a test, failed when it's at or above `--fail-on`:
+
+<div className="screenshot">
+  <img src="/img/screens/jenkins-tests.png" alt="A Jenkins build's Tests page: 25 tests, 14 failed, each failed test a DeaconGuard finding, such as an image running as root from old/Dockerfile and libcrypto3 vulnerabilities in the shop image." />
+</div>
+
+With the Warnings Next Generation plugin, `--format sarif --output deaconguard.sarif` and `recordIssues(enabledForFailure: true, tools: [sarif(pattern: 'deaconguard.sarif')])` in `post` show the findings as issues, by severity and from build to build. Without `enabledForFailure: true`, the plugin skips a build that failed, which is just when the findings matter.
+
+<div className="screenshot">
+  <img src="/img/screens/jenkins-issues.png" alt="A Jenkins build's SARIF Warnings page: DeaconGuard's findings by severity in a chart, their history across builds, and a table by CVE." />
+</div>
 
 ### Bitbucket Pipelines
 
