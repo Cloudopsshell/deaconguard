@@ -20,6 +20,7 @@ upgrade notes.
 - **A clearer reason when the agent can't load the watchers** on a kernel before 5.8: it names `SYS_ADMIN` and `SYS_RESOURCE`, which those kernels need, instead of `BPF` and `PERFMON`.
 - **The config check's Summary heading separates its paths**: "Dockerfiles and manifests in Dockerfile, deploy", not "in Dockerfile deploy".
 - **The Summary page's note on a refused code scanning upload starts with a capital letter.**
+- **The Jenkins example runs both checks** when the first finds something, with `catchError`; before, the image check's findings stopped the build before the Dockerfile and manifest check ran. The Warnings plugin tip adds `enabledForFailure: true`, without which the plugin skips a failed build. Both were tried on Jenkins 2.528 LTS.
 
 ### Changed
 
